@@ -1,36 +1,35 @@
 /// Format of the NamedMDNode:
-/// !Loop_Number_of_kernel = !{!1, !2, !3, ...}
-/// !1 = metadata !{metadata !"matrixmul", metadata !"loop1"}
-/// !2 = metadata !{metadata !"matrixmul", metadata !"loop2"}
-/// !3 = metadata !{metadata !"main", metadata !"loop1"}
+/// !lia.kernelloopnumber = !{!n, !n+1, !n+2, ...}
 /// ...
+/// !n = metadata !{metadata !"kernel1", metadata !"loop1"}
+/// !n+1 = metadata !{metadata !"kernel1", metadata !"loop2"}
+/// !n+2 = metadata !{metadata !"kernel2", metadata !"loop1"}
+/// ...
+
+/// First element: kernel name
+/// Second element: auto-generated loop ID
 
 /// Therefore, to get loop number in a function, we need to check the number of 
 /// metadata node that contains the function name.
-///
 
 #include "profile_h/LoopNumberPass.h"
 
 #define DEBUG_TYPE "loop-number"
 
-static const char *mdKindName = "Loop_Number_of_kernel";
-
 using namespace llvm;
 
 LoopNumber::LoopNumber() : LoopPass(ID) {
-	//func_hasLoop_number = 0;
-	//loopNumInaFunc.clear();
-	loop_counter = 0;
+	firstRun = true;
+	loopCounter = 0;
 	LoopsMetadataNode.clear();
 	DEBUG(dbgs() << "Initialize LoopNumber pass\n");
 	initializeLoopNumberPass(*PassRegistry::getPassRegistry());
 }
 
-bool LoopNumber::doInitialization(Loop* lp, LPPassManager &LPM) {
-	Module* M = lp->getHeader()->getParent()->getParent();
-	if (!M->getNamedMetadata(mdKindName)) {
-		NMD = M->getOrInsertNamedMetadata(mdKindName);
-	}
+bool LoopNumber::doInitialization(Loop *L, LPPassManager &LPM) {
+	Module *M = L->getHeader()->getParent()->getParent();
+	if(!M->getNamedMetadata(loopNumberMDKindName))
+		NMD = M->getOrInsertNamedMetadata(loopNumberMDKindName);
 
 	return true;
 }
@@ -42,11 +41,9 @@ void LoopNumber::getAnalysisUsage(AnalysisUsage &AU) const {
 	AU.addRequiredID(LoopSimplifyID);
 	AU.addPreservedID(LoopSimplifyID);
 
-	//AU.addRequiredID(LCSSAID);
-	//AU.addPreservedID(LCSSAID);
-
 	AU.setPreservesCFG();
 	AU.setPreservesAll();
+
 	// FIXME: Loop unroll requires LCSSA. And LCSSA requires dom info.
 	// If loop unroll does not preserve dom info then LCSSA pass on next
 	// loop will receive invalid dom info.
@@ -54,87 +51,65 @@ void LoopNumber::getAnalysisUsage(AnalysisUsage &AU) const {
 	//AU.addPreserved<DominatorTreeWrapperPass>();
 }
 
-bool LoopNumber::runOnLoop(Loop* lp, LPPassManager &LPM) {
-
+bool LoopNumber::runOnLoop(Loop *L, LPPassManager &LPM) {
 	/// Check whether loop is in a simplify form
-	if (!lp->isLoopSimplifyForm()) {
-		assert(false && "Loop is not in a Simplify Form!\n");
-	}
+	assert(L->isLoopSimplifyForm() && "Loop is not in a simplify form!\n");
 
-	Function* func = lp->getHeader()->getParent();
+	Function *F = L->getHeader()->getParent();
 	/// Ignore uninterested functions
-	std::vector<std::string>::iterator fnName_it;
-	fnName_it = std::find(kernel_names.begin(), kernel_names.end(), func->getName());
-	if (fnName_it == kernel_names.end()) {
-		// This function is uninteresting, just ignore it.
+	if(!isFunctionOfInterest(F->getName()))
 		return false;
+
+	if(firstRun) {
+		errs() << "========================================================\n";
+		errs() << "Counting number of top-level loops in \"" << F->getName() << "\"\n";
+		firstRun = false;
 	}
 
-	LLVMContext &Context = func->getContext();
+	LLVMContext &Context = F->getContext();
 
-	std::vector<Function*>::iterator it;
-	it = std::find(exploredFunc.begin(), exploredFunc.end(), func);
-	if (it == exploredFunc.end()) {
+	std::vector<Function *>::iterator it;
+	it = std::find(exploredFunc.begin(), exploredFunc.end(), F);
+	if(it == exploredFunc.end()) {
 		// Reset loop counter for a new function.
-		loop_counter = 0;
-		exploredFunc.push_back(func);
+		firstRun = false;
+		loopCounter = 0;
+		exploredFunc.push_back(F);
 	}
 
-	/*
-	std::string func_name = func->getName();
-	std::map<std::string, unsigned>::iterator it;
-	it = loopNumInaFunc.find(func_name);
-	if (it == loopNumInaFunc.end()) {
-		// Create an entry of the map for this function and initialize the number
-		// of loops in the function as 0
-		loopNumInaFunc.insert(std::make_pair(func_name, 0));
-		MDString* func_MDname = MDString::get(Context, func->getName());
-		LoopsMetadataNode.push_back(func_MDname);
-		// Initialize loop_counter
-		loop_counter = 0;
-	}*/
-
-	unsigned depth = lp->getLoopDepth();
+	unsigned depth = L->getLoopDepth();
 	/// Trace the top-level loop of a loop
-	if (depth == 1) {
-		loop_counter++;
-
-		MDString* func_name = MDString::get(Context, func->getName());
-		LoopsMetadataNode.push_back(func_name);
-		std::string loop_name = "loop" + std::to_string(loop_counter);
-		LoopsMetadataNode.push_back(MDString::get(Context, loop_name));
-		MDNode* MD = MDNode::getWhenValsUnresolved(Context, ArrayRef<Value*>(LoopsMetadataNode), false);
+	if(depth == 1) {
+		MDString *funcName = MDString::get(Context, F->getName());
+		LoopsMetadataNode.push_back(funcName);
+		std::string loopName = "loop" + std::to_string(loopCounter++);
+		LoopsMetadataNode.push_back(MDString::get(Context, loopName));
+		MDNode *MD = MDNode::getWhenValsUnresolved(Context, ArrayRef<Value *>(LoopsMetadataNode), false);
 		NMD->addOperand(MD);
 		LoopsMetadataNode.clear();
 	}
 
-	/// Update loop number in a function
-	//loopNumInaFunc[func_name] = loop_counter;
-
 	return true;
 }
 
-/*
-unsigned LoopNumber::getNumberLoopOfFunc(std::string func_name) const{
-	return loopNumInaFunc.at(func_name);
-}
-
-unsigned LoopNumber::getNumberFuncHasLoop() const {
-	return loopNumInaFunc.size();
-}*/
-
 char LoopNumber::ID = 0;
-INITIALIZE_PASS_BEGIN(LoopNumber, "LoopNumber",
-					  "This pass is used to calculate the number of loops inside functions.",
-					  false,
-					  true)
+INITIALIZE_PASS_BEGIN(
+	LoopNumber,
+	"LoopNumber",
+	"This pass is used to calculate the number of top-level loops inside functions.",
+	false,
+	true
+)
 INITIALIZE_PASS_DEPENDENCY(LoopInfo)
 INITIALIZE_PASS_DEPENDENCY(LoopSimplify)
-INITIALIZE_PASS_END(LoopNumber, "LoopNumber",
-					"This pass is used to calculate the number of loops inside functions.",
-					false,
-					true)
+INITIALIZE_PASS_END(
+	LoopNumber,
+	"LoopNumber",
+	"This pass is used to calculate the number of top-level loops inside functions.",
+	false,
+	true
+)
 
-Pass* llvm::createLoopNumberPass() {
+Pass *llvm::createLoopNumberPass() {
 	return new LoopNumber();
 }

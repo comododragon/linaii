@@ -1,5 +1,4 @@
 #include "profile_h/InstrumentForDDDGPass.h"
-#include "profile_h/auxiliary.h"
 
 #define DEBUG_TYPE "instrument-code-for-building-dddg"
 
@@ -47,11 +46,213 @@ char list_of_intrinsics[NUM_OF_INTRINSICS][25] = {
 	"llvm.umul.with.overflow",
 	"llvm.fmuladd",		//specialised arithmetic
 	"dmaLoad",
-	"dmaStore",
+	"dmaStore"
 };
 
+void TraceLogger::initialiseDefaults(Module &M) {
+	LLVMContext &C = M.getContext();
+
+	log0 = cast<Function>(
+		M.getOrInsertFunction(
+			"trace_logger_log0",
+			Type::getVoidTy(C),
+			Type::getInt64Ty(C),
+			Type::getInt8PtrTy(C),
+			Type::getInt8PtrTy(C),
+			Type::getInt8PtrTy(C),
+			Type::getInt64Ty(C),
+			NULL
+		)
+	);
+
+	logInt = cast<Function>(
+		M.getOrInsertFunction(
+			"trace_logger_log_int",
+			Type::getVoidTy(C),
+			Type::getInt64Ty(C),
+			Type::getInt64Ty(C),
+			Type::getInt64Ty(C),
+			Type::getInt64Ty(C),
+			Type::getInt8PtrTy(C),
+			NULL
+		)
+	);
+
+	logDouble = cast<Function>(
+		M.getOrInsertFunction(
+			"trace_logger_log_double",
+			Type::getVoidTy(C),
+			Type::getInt64Ty(C),
+			Type::getInt64Ty(C),
+			Type::getDoubleTy(C),
+			Type::getInt64Ty(C),
+			Type::getInt8PtrTy(C),
+			NULL
+		)
+	);
+
+	logIntNoReg = cast<Function>(
+		M.getOrInsertFunction(
+			"trace_logger_log_int_noreg",
+			Type::getVoidTy(C),
+			Type::getInt64Ty(C),
+			Type::getInt64Ty(C),
+			Type::getInt64Ty(C),
+			Type::getInt64Ty(C),
+			NULL
+		)
+	);
+
+	logDoubleNoReg = cast<Function>(
+		M.getOrInsertFunction(
+			"trace_logger_log_double_noreg",
+			Type::getVoidTy(C),
+			Type::getInt64Ty(C),
+			Type::getInt64Ty(C),
+			Type::getDoubleTy(C),
+			Type::getInt64Ty(C),
+			NULL
+		)
+	);
+}
+
+Constant *Injector::createGlobalVariableAndGetGetElementPtr(std::string value) {
+	LLVMContext &C = M->getContext();
+
+	// Creates an LLVM string with the provided value
+	Constant *vValue = ConstantDataArray::getString(C, value, true);
+	// Create an LLVM array type composed of value.length() + 1 elements of 8-bit integers
+	ArrayType *arrayTy = ArrayType::get(IntegerType::get(C, 8), value.length() + 1);
+	// Create an LLVM global variable array using the aforementioned array type
+	GlobalVariable *gVarArray = new GlobalVariable(*M, arrayTy, true, GlobalValue::PrivateLinkage, 0, ".str");
+
+	// Initialise the LLVM global variable array with value
+	gVarArray->setInitializer(vValue);
+	std::vector<Constant *> indexes;
+	// Create an LLVM constant integer with value 0 in base 10
+	ConstantInt *zero = ConstantInt::get(C, APInt(32, StringRef("0"), 10));
+	indexes.push_back(zero);
+	indexes.push_back(zero);
+
+	// Create a getelementptr for the value string
+	return ConstantExpr::getGetElementPtr(gVarArray, indexes);
+}
+
+void Injector::initialise(Module &M, TraceLogger &TL) {
+	this->M = &M;
+	this->TL = &TL;
+}
+
+void Injector::injectPHINodeTrace(BasicBlock::iterator it, int lineNo, std::string funcID, std::string bbID, std::string instID, int opcode) {
+	LLVMContext &C = M->getContext();
+	CallInst *tlCall;
+	IRBuilder<> IRB(it);
+
+	// Create LLVM values for the provided arguments
+	Value *vLineNo = ConstantInt::get(IRB.getInt64Ty(), lineNo);
+	Value *vOpcode = ConstantInt::get(IRB.getInt64Ty(), opcode);
+
+	// Create global variables with strings and getelementptr calls
+	Constant *vvFuncID = createGlobalVariableAndGetGetElementPtr(funcID);
+	Constant *vvBB = createGlobalVariableAndGetGetElementPtr(bbID);
+	Constant *vvInst = createGlobalVariableAndGetGetElementPtr(instID);
+
+	// TODO: entender o que realmente signfica uma call para trace_logger_log0
+	// Call trace_logger_log0 with the aforementioned values
+	tlCall = IRB.CreateCall5(TL->log0, vLineNo, vvFuncID, vvBB, vvInst, vOpcode);
+
+	// Update databases
+	staticInstID2OpcodeMap.insert(std::make_pair(instID, opcode));
+	instName2bbNameMap.insert(std::make_pair(instID, bbID));
+
+	// This instruction is a branch
+	if(LLVM_IR_Br == (unsigned) opcode) {
+		bbFuncNamePairTy bbFnName = std::make_pair(bbID, funcID);
+		bbFuncNamePair2lpNameLevelPairMapTy::iterator itHeader = headerBBFuncnamePair2lpNameLevelPairMap.find(bbFnName);
+		headerBBFuncNamePair2lastInstMapTy::iterator itLastInst = headerBBFuncNamePair2lastInstMap.find(bbFnName);
+		bool foundHeader = itHeader != headerBBFuncnamePair2lpNameLevelPairMap.end();
+		bool foundLastInst = itLastInst != headerBBFuncNamePair2lastInstMap.end();
+
+			// If not found, update database
+		if(foundHeader && !foundLastInst)
+			headerBBFuncNamePair2lastInstMap.insert(std::make_pair(bbFnName, instID));
+
+		bbFuncNamePair2lpNameLevelPairMapTy::iterator itExiting = exitBBFuncnamePair2lpNameLevelPairMap.find(bbFnName);
+		headerBBFuncNamePair2lastInstMapTy::iterator itLtItExiting = exitingBBFuncNamePair2lastInstMap.find(bbFnName);
+		bool foundExiting = itExiting != exitBBFuncnamePair2lpNameLevelPairMap.end();
+		bool foundLtItExiting = itLtItExiting != exitingBBFuncNamePair2lastInstMap.end();
+
+		// If not found, update database
+		if(foundExiting && !foundLtItExiting)
+			exitingBBFuncNamePair2lastInstMap.insert(std::make_pair(bbFnName, instID));
+	}
+}
+
+void Injector::injectPHINodeInputTrace(BasicBlock::iterator it, int operandNumber, std::string regID, int type, int dataSize, Value *value, bool isReg) {
+	LLVMContext &C = M->getContext();
+	CallInst *tlCall;
+	IRBuilder<> IRB(it);
+
+	// Create LLVM values for the provided arguments
+	Value *vOperandNumber = ConstantInt::get(IRB.getInt64Ty(), operandNumber);
+	Value *vType = ConstantInt::get(IRB.getInt64Ty(), type);
+	Value *vDataSize = ConstantInt::get(IRB.getInt64Ty(), dataSize);
+	Value *vIsReg = ConstantInt::get(IRB.getInt64Ty(), isReg);
+	Value *vValue;
+
+	if(isReg) {
+		Constant *vvRegID = createGlobalVariableAndGetGetElementPtr(regID);
+
+		if(value) {
+			if(llvm::Type::IntegerTyID == type) {
+				vValue = IRB.CreateZExt(value, IRB.getInt64Ty());
+				tlCall = IRB.CreateCall5(TL->logInt, vOperandNumber, vDataSize, vValue, vIsReg, vvRegID);
+			}
+			else if(type >= llvm::Type::HalfTyID && type <= llvm::Type::PPC_FP128TyID) {
+				vValue = IRB.CreateFPExt(value, IRB.getDoubleTy());
+				tlCall = IRB.CreateCall5(TL->logDouble, vOperandNumber, vDataSize, vValue, vIsReg, vvRegID);
+			}
+			else if(llvm::Type::PointerTyID == type) {
+				vValue = IRB.CreatePtrToInt(value, IRB.getInt64Ty());
+				tlCall = IRB.CreateCall5(TL->logInt, vOperandNumber, vDataSize, vValue, vIsReg, vvRegID);
+			}
+			else {
+				// TODO: assert mesmo ou apenas um silent error?
+				assert(false && "PHINode input is of unsupported type");
+			}
+		}
+		else {
+			vValue = ConstantInt::get(IRB.getInt64Ty(), 0);
+			tlCall = IRB.CreateCall5(TL->logInt, vOperandNumber, vDataSize, vValue, vIsReg, vvRegID);
+		}
+	}
+	else {
+		if(value) {
+			if(llvm::Type::IntegerTyID == type) {
+				vValue = IRB.CreateZExt(value, IRB.getInt64Ty());
+				tlCall = IRB.CreateCall4(TL->logIntNoReg, vOperandNumber, vDataSize, vValue, vIsReg);
+			}
+			else if(type >= llvm::Type::HalfTyID && type <= llvm::Type::PPC_FP128TyID) {
+				vValue = IRB.CreateFPExt(value, IRB.getDoubleTy());
+				tlCall = IRB.CreateCall4(TL->logDoubleNoReg, vOperandNumber, vDataSize, vValue, vIsReg);
+			}
+			else if(llvm::Type::PointerTyID == type) {
+				vValue = IRB.CreatePtrToInt(value, IRB.getInt64Ty());
+				tlCall = IRB.CreateCall4(TL->logIntNoReg, vOperandNumber, vDataSize, vValue, vIsReg);
+			}
+			else {
+				// TODO: assert mesmo ou apenas um silent error?
+				assert(false && "PHINode input is of unsupported type");
+			}
+		}
+		else {
+			vValue = ConstantInt::get(IRB.getInt64Ty(), 0);
+			tlCall = IRB.CreateCall4(TL->logIntNoReg, vOperandNumber, vDataSize, vValue, vIsReg);
+		}
+	}
+}
+
 InstrumentForDDDG::InstrumentForDDDG() : ModulePass(ID) {
-	DEBUG(dbgs() << "-------------------\n");
 	DEBUG(dbgs() << "\n\tInitialize InstrumentForDDDG pass\n");
 	staticInstID2OpcodeMap.clear();
 	instName2bbNameMap.clear();
@@ -63,116 +264,20 @@ void InstrumentForDDDG::getAnalysisUsage(AnalysisUsage &AU) const {
 }
 
 bool InstrumentForDDDG::doInitialization(Module &M) {
+	assert(!args.kernelNames.empty() && "No kernel set\n");
 
-	// Add external trace_logger function declaratio
-	TL_log0 = cast<Function>(M.getOrInsertFunction("trace_logger_log0", Type::getVoidTy(M.getContext()),
-																									Type::getInt64Ty(M.getContext()),
-																									Type::getInt8PtrTy((M.getContext())),
-																									Type::getInt8PtrTy((M.getContext())),
-																									Type::getInt8PtrTy((M.getContext())),
-																									Type::getInt64Ty(M.getContext()),
-																									NULL));
+	TL.initialiseDefaults(M);
+	IJ.initialise(M, TL);
+	ST = createSlotTracker(&M);
+	ST->initialize();
+	currModule = &M;
+	currFunction = NULL;
 
-	TL_log_int = cast<Function>(M.getOrInsertFunction("trace_logger_log_int", Type::getVoidTy(M.getContext()),
-																										Type::getInt64Ty(M.getContext()),
-																										Type::getInt64Ty(M.getContext()),
-																										Type::getInt64Ty(M.getContext()),
-																										Type::getInt64Ty(M.getContext()),
-																										Type::getInt8PtrTy((M.getContext())),
-																										NULL));
-
-	TL_log_double = cast<Function>(M.getOrInsertFunction("trace_logger_log_double", Type::getVoidTy(M.getContext()),
-																												Type::getInt64Ty(M.getContext()),
-																												Type::getInt64Ty(M.getContext()),
-																												Type::getDoubleTy(M.getContext()),
-																												Type::getInt64Ty(M.getContext()),
-																												Type::getInt8PtrTy((M.getContext())),
-																												NULL));
-
-	TL_log_int_noreg = cast<Function>(M.getOrInsertFunction("trace_logger_log_int_noreg", Type::getVoidTy(M.getContext()),
-																													Type::getInt64Ty(M.getContext()),
-																													Type::getInt64Ty(M.getContext()),
-																													Type::getInt64Ty(M.getContext()),
-																													Type::getInt64Ty(M.getContext()),
-																													NULL));
-
-	TL_log_double_noreg = cast<Function>(M.getOrInsertFunction("trace_logger_log_double_noreg", Type::getVoidTy(M.getContext()),
-																															Type::getInt64Ty(M.getContext()),
-																															Type::getInt64Ty(M.getContext()),
-																															Type::getDoubleTy(M.getContext()),
-																															Type::getInt64Ty(M.getContext()),
-																															NULL));
-
-	char func_string[256] = "";
-	//func_string = getenv("WORKLOAD");
-	if (kernel_names.empty()) {
-		assert(false && "ERROR: Please set kernel_names!\n");
-	}
-
-	char temp_str[128] = "";
-	unsigned size_ker_name = kernel_names.size();
-	for (unsigned i = 0; i < size_ker_name; i++) {
-		strcpy(temp_str, kernel_names.at(i).c_str());
-		if (i == size_ker_name-1) {
-			strcat( func_string, temp_str );
-		}
-		else {
-			strcat( func_string, strcat(temp_str, ",") );
-		}
-	}
-
-	if (func_string == NULL)
-	{
-		//errs() << "Please set WORKLOAD as an environment variable!\n";
-		return false;
-	}
-	functions = str_split(func_string, ',', &num_of_functions);
-
-	for (unsigned i = 0; i < num_of_functions; i++) {
-		DEBUG(dbgs() << "Function " << i << " = " << *(functions + i) << "\n");
-	}
-
-	st = createSlotTracker(&M);
-	st->initialize();
-	curr_module = &M;
-	curr_function = NULL;
 	return false;
 }
 
-char ** InstrumentForDDDG::str_split(char *a_str, const char a_delim, unsigned *size) {
-	int count = 0;
-	char *tmp = a_str;
-	char *last_comma = 0;
-	char delim[2];
-	delim[0] = a_delim;
-	delim[1] = 0;
-
-	while (*tmp) {
-		if (a_delim == *tmp) {
-			count++;
-			last_comma = tmp;
-		}
-		tmp++;
-	}
-	count++;
-
-	char **result;
-	result = (char **)malloc(sizeof(char *)* count);
-	if (result) {
-		int idx = 0;
-		char * token = strtok(a_str, delim);
-		while (token) {
-			assert(idx < count);
-			*(result + idx) = strdup(token);
-			idx++;
-			token = strtok(0, delim);
-		}
-	}
-	*size = count;
-	return result;
-}
-
-int InstrumentForDDDG::trace_or_not(char* func) {
+int InstrumentForDDDG::isTrace(char *func) {
+#if 0
 	if (is_tracking_function(func)) {
 		return 1;
 	}
@@ -192,284 +297,215 @@ int InstrumentForDDDG::trace_or_not(char* func) {
 	}
 
 	return -1;
-}
-
-bool InstrumentForDDDG::is_tracking_function(string func) {
-	for (unsigned i = 0; i < num_of_functions; i++) {
-		if (strcmp(*(functions + i), func.c_str()) == 0) {
-			return true;
-		}
-	}
-	return false;
+#endif
 }
 
 int InstrumentForDDDG::getMemSize(Type *T) {
-	int size = 0;
-	if (T->isPointerTy()) {
+	if(T->isPointerTy()) {
 		return 8 * 8;
 	}
-	//return getMemSize(T->getPointerElementType());
-	else if (T->isFunctionTy()) {
-		size = 0;
+	else if(T->isFunctionTy()) {
+		return 0;
 	}
-	else if (T->isLabelTy()) {
-		size = 0;
+	else if(T->isLabelTy()) {
+		return 0;
 	}
-	else if (T->isStructTy())	{
+	else if(T->isStructTy()) {
+		int size = 0;
 		StructType *S = dyn_cast<StructType>(T);
-		for (unsigned i = 0; i != S->getNumElements(); i++)	{
-			Type *t = S->getElementType(i);
-			size += getMemSize(t);
+
+		for(int i = 0; i < S->getNumElements(); i++)
+			size += getMemSize(S->getElementType(i));
+
+		return size;
+	}
+	else if(T->isFloatingPointTy()) {
+		switch(T->getTypeID()) {
+			case llvm::Type::HalfTyID:
+				return 2 * 8;
+			case llvm::Type::FloatTyID:
+				return 4 * 8;
+			case llvm::Type::DoubleTyID:
+				return 8 * 8;
+			case llvm::Type::X86_FP80TyID:
+				return 10 * 8;
+			case llvm::Type::FP128TyID:
+				return 16 * 8;
+			case llvm::Type::PPC_FP128TyID:
+				return 16 * 8;
+			default:
+				assert(false && "Requested size of unknown floating point data type");
 		}
 	}
-	else if (T->isFloatingPointTy()) {
-		switch (T->getTypeID())	{
-		case llvm::Type::HalfTyID:        ///<  1: 16-bit floating point typ
-			size = 16; break;
-		case llvm::Type::FloatTyID:       ///<  2: 32-bit floating point type
-			size = 4 * 8; break;
-		case llvm::Type::DoubleTyID:      ///<  3: 64-bit floating point type
-			size = 8 * 8; break;
-		case llvm::Type::X86_FP80TyID:    ///<  4: 80-bit floating point type (X87)
-			size = 10 * 8; break;
-		case llvm::Type::FP128TyID:       ///<  5: 128-bit floating point type (112-bit mantissa)
-			size = 16 * 8; break;
-		case llvm::Type::PPC_FP128TyID:   ///<  6: 128-bit floating point type (two 64-bits, PowerPC)
-			size = 16 * 8; break;
-		default:
-			fprintf(stderr, "!!Unknown floating point type size\n");
-			assert(false && "Unknown floating point type size");
-		}
+	else if(T->isIntegerTy()) {
+		return cast<IntegerType>(T)->getBitWidth();
 	}
-	else if (T->isIntegerTy()) {
-		size = cast<IntegerType>(T)->getBitWidth();
+	else if(T->isVectorTy()) {
+		return cast<VectorType>(T)->getBitWidth();
 	}
-	else if (T->isVectorTy()) {
-		size = cast<VectorType>(T)->getBitWidth();
-	}
-	else if (T->isArrayTy()) {
+	else if(T->isArrayTy()) {
 		ArrayType *A = dyn_cast<ArrayType>(T);
-		size = (int)A->getNumElements()* A->getElementType()->getPrimitiveSizeInBits();
+		return (int) A->getNumElements() * A->getElementType()->getPrimitiveSizeInBits();
 	}
 	else {
-		fprintf(stderr, "!!Unknown data type: %d\n", T->getTypeID());
-		assert(false && "Unknown data type");
+		assert(false && "Requested size of unknown data type");
 	}
 
-	return size;
+	return -1;
 }
 
+#if 0
 /// Function used to instrument LLVM-IR
-void InstrumentForDDDG::print_line(BasicBlock::iterator itr, int line, int line_number, char *func_or_reg_id,
-																	 char *bbID, char *instID, int opty, int datasize, Value *value,
-																	 bool is_reg) {
-	CallInst *tl_call;
-	IRBuilder<> IRB(itr);
+void InstrumentForDDDG::printLine(
+	BasicBlock::iterator it, int line, int lineNo, std::string funcOrRegID,
+	std::string bbID, std::string instID, int opcodeOrType, int dataSize, Value *value, 
+	bool isReg
+) {
+	CallInst *tlCall;
+	IRBuilder<> IRB(it);
 
-	Value *v_line, *v_opty, *v_value, *v_linenumber;
-	v_line = ConstantInt::get(IRB.getInt64Ty(), line);
-	v_opty = ConstantInt::get(IRB.getInt64Ty(), opty);
-	v_linenumber = ConstantInt::get(IRB.getInt64Ty(), line_number);
+	// Create LLVM values for the provided arguments
+	Value *vLine, *vOpcodeOrType, *vValue, *vLineNo;
+	vLine = ConstantInt::get(IRB.getInt64Ty(), line);
+	vOpcodeOrType = ConstantInt::get(IRB.getInt64Ty(), opcodeOrType);
+	vLineNo = ConstantInt::get(IRB.getInt64Ty(), lineNo);
 
-	//print line 0
-	if (line == 0) {
-		Constant *v_func_id = ConstantDataArray::getString(curr_module->getContext(), func_or_reg_id, true);
-		ArrayType* ArrayTy_0 = ArrayType::get(IntegerType::get(curr_module->getContext(), 8), (strlen(func_or_reg_id) + 1));
-		GlobalVariable *gvar_array = new GlobalVariable(*curr_module, ArrayTy_0,
-			true, GlobalValue::PrivateLinkage, 0, ".str");
-		gvar_array->setInitializer(v_func_id);
-		std::vector<Constant*> indices;
-		ConstantInt *zero = ConstantInt::get(curr_module->getContext(), APInt(32, StringRef("0"), 10));
-		indices.push_back(zero);
-		indices.push_back(zero);
-		Constant * vv_func_id = ConstantExpr::getGetElementPtr(gvar_array, indices);
+	// Print line 0
+	if(!line) {
+		// Create global variables with strings and getelementptr calls
+		Constant *vvFuncID = createGlobalVariableAndGetGetElementPtr(funcOrRegID);
+		Constant *vvBB = createGlobalVariableAndGetGetElementPtr(bbID);
+		Constant *vvInst = createGlobalVariableAndGetGetElementPtr(instID);
 
-		Constant *v_bb = ConstantDataArray::getString(curr_module->getContext(), bbID, true);
-		ArrayType * ArrayTy_bb = ArrayType::get(IntegerType::get(curr_module->getContext(), 8), (strlen(bbID) + 1));
-		GlobalVariable *gvar_array_bb = new GlobalVariable(*curr_module, ArrayTy_bb,
-																											  true, GlobalValue::PrivateLinkage, 0, ".str");
-		gvar_array_bb->setInitializer(v_bb);
-		ConstantInt *zero_bb = ConstantInt::get(curr_module->getContext(), APInt(32, StringRef("0"), 10));
-		std::vector<Constant*> indices_bb;
-		indices_bb.push_back(zero_bb);
-		indices_bb.push_back(zero_bb);
-		Constant * vv_bb = ConstantExpr::getGetElementPtr(gvar_array_bb, indices_bb);
+		// TODO: entender o que realmente signfica uma call para trace_logger_log0
+		// Call trace_logger_log0 with the aforementioned values
+		tlCall = IRB.CreateCall5(TL.log0, vLineNo, vvFuncID, vvBB, vvInst, vOpcodeOrType);
 
-		Constant *v_inst = ConstantDataArray::getString(curr_module->getContext(), instID, true);
-		ArrayType *ArrayTy_instid = ArrayType::get(IntegerType::get(curr_module->getContext(), 8), (strlen(instID) + 1));
-		GlobalVariable *gvar_array_instid = new GlobalVariable(*curr_module, ArrayTy_instid,
-																														true, GlobalValue::PrivateLinkage, 0, ".str");
-		gvar_array_instid->setInitializer(v_inst);
-		std::vector<Constant*> indices_instid;
-		ConstantInt *zero_instid = ConstantInt::get(curr_module->getContext(), APInt(32, StringRef("0"), 10));
-		indices_instid.push_back(zero_instid);
-		indices_instid.push_back(zero_instid);
-		Constant * vv_inst = ConstantExpr::getGetElementPtr(gvar_array_instid, indices_instid);
-		tl_call = IRB.CreateCall5(TL_log0, v_linenumber, vv_func_id, vv_bb, vv_inst, v_opty);
-
-		// record instruction id into staticInstID2OpcodeMap
-		insertInstid(instID, (unsigned) opty);
+		// Update databases
+		insertInstID(instID, opcodeOrType);
 		insertInstid2bbName(instID, bbID);
-		if ((unsigned) opty == LLVM_IR_Br) {
-			bbFuncNamePairTy bbfnName = std::make_pair(bbID, func_or_reg_id);
-			bbFuncNamePair2lpNameLevelPairMapTy::iterator it_header = headerBBFuncnamePair2lpNameLevelPairMap.find(bbfnName);
-			headerBBFuncNamePair2lastInstMapTy::iterator it_lastInst = headerBBFuncNamePair2lastInstMap.find(bbfnName);
-			bool foundInheaderBBFuncnamePair2lpNameLevelPairMap = it_header != headerBBFuncnamePair2lpNameLevelPairMap.end();
-			bool foundInheaderBBFuncNamePair2firstInstMap = it_lastInst != headerBBFuncNamePair2lastInstMap.end();
-			if (foundInheaderBBFuncnamePair2lpNameLevelPairMap && !foundInheaderBBFuncNamePair2firstInstMap) {
-				headerBBFuncNamePair2lastInstMap.insert(std::make_pair(bbfnName, instID));
-			}
 
-			bbFuncNamePair2lpNameLevelPairMapTy::iterator it_exiting = exitBBFuncnamePair2lpNameLevelPairMap.find(bbfnName);
-			headerBBFuncNamePair2lastInstMapTy::iterator it_ltIt_exiting = exitingBBFuncNamePair2lastInstMap.find(bbfnName);
-			bool foundInexitBBFuncnamePair2lpNameLevelPairMap = it_exiting != exitBBFuncnamePair2lpNameLevelPairMap.end();
-			bool foundInexitingBBFuncNamePair2lastInstMap = it_ltIt_exiting != exitingBBFuncNamePair2lastInstMap.end();
-			if (foundInexitBBFuncnamePair2lpNameLevelPairMap && !foundInexitingBBFuncNamePair2lastInstMap) {
-				exitingBBFuncNamePair2lastInstMap.insert(std::make_pair(bbfnName, instID));
-			}
+		// This instruction is a branch
+		if(LLVM_IR_Br == (unsigned) opcodeOrType) {
+			bbFuncNamePairTy bbFnName = std::make_pair(bbID, funcOrRegID);
+			bbFuncNamePair2lpNameLevelPairMapTy::iterator itHeader = headerBBFuncnamePair2lpNameLevelPairMap.find(bbFnName);
+			headerBBFuncNamePair2lastInstMapTy::iterator itLastInst = headerBBFuncNamePair2lastInstMap.find(bbFnName);
+			bool foundHeader = itHeader != headerBBFuncnamePair2lpNameLevelPairMap.end();
+			bool foundLastInst = itLastInst != headerBBFuncNamePair2lastInstMap.end();
+
+			// If not found, update database
+			if(foundHeader && !foundLastInst)
+				headerBBFuncNamePair2lastInstMap.insert(std::make_pair(bbFnName, instID));
+
+			bbFuncNamePair2lpNameLevelPairMapTy::iterator itExiting = exitBBFuncnamePair2lpNameLevelPairMap.find(bbFnName);
+			headerBBFuncNamePair2lastInstMapTy::iterator itLtItExiting = exitingBBFuncNamePair2lastInstMap.find(bbFnName);
+			bool foundExiting = itExiting != exitBBFuncnamePair2lpNameLevelPairMap.end();
+			bool foundLtItExiting = itLtItExiting != exitingBBFuncNamePair2lastInstMap.end();
+
+			// If not found, update database
+			if(foundExiting && !foundLtItExiting)
+				exitingBBFuncNamePair2lastInstMap.insert(std::make_pair(bbFnName, instID));
 		}
-
 	}
-	//print line with reg
 	else {
-		Value *v_size;
-		v_size = ConstantInt::get(IRB.getInt64Ty(), datasize);
-		Value *v_is_reg;
-		v_is_reg = ConstantInt::get(IRB.getInt64Ty(), is_reg);
+		Value *vSize = ConstantInt::get(IRB.getInt64Ty(), dataSize);
+		Value *vIsReg = ConstantInt::get(IRB.getInt64Ty(), isReg);
 
-		//if (func_or_reg_id != NULL)
-		if (is_reg) {
-			assert(func_or_reg_id != NULL);
-			Constant *v_reg_id = ConstantDataArray::getString(curr_module->getContext(), func_or_reg_id, true);
-			ArrayType* ArrayTy_0 = ArrayType::get(IntegerType::get(curr_module->getContext(), 8),
-																						(strlen(func_or_reg_id) + 1));
-			GlobalVariable *gvar_array = new GlobalVariable(*curr_module, ArrayTy_0,
-																											true, GlobalValue::PrivateLinkage, 0, ".str");
-			gvar_array->setInitializer(v_reg_id);
-			std::vector<Constant*> indices;
-			ConstantInt *zero = ConstantInt::get(curr_module->getContext(), APInt(32, StringRef("0"), 10));
-			indices.push_back(zero);
-			indices.push_back(zero);
-			Constant * vv_reg_id = ConstantExpr::getGetElementPtr(gvar_array, indices);
+		if(isReg) {
+			Constant *vvRegID = createGlobalVariableAndGetGetElementPtr(funcOrRegID);
 
-			if (value != NULL) {
-				if (opty == llvm::Type::IntegerTyID) {
-					v_value = IRB.CreateZExt(value, IRB.getInt64Ty());
-					tl_call = IRB.CreateCall5(TL_log_int, v_line, v_size, v_value, v_is_reg, vv_reg_id);
+			if(value) {
+				if(llvm::Type::IntegerTyID == opcodeOrType) {
+					vValue = IRB.CreateZExt(value, IRB.getInt64Ty());
+					tlCall = IRB.CreateCall5(TL.logInt, vLine, vSize, vValue, vIsReg, vvRegID);
 				}
-				else if (opty >= llvm::Type::HalfTyID &&opty <= llvm::Type::PPC_FP128TyID) {
-					v_value = IRB.CreateFPExt(value, IRB.getDoubleTy());
-					tl_call = IRB.CreateCall5(TL_log_double, v_line, v_size, v_value, v_is_reg, vv_reg_id);
+				else if(opcodeOrType >= llvm::Type::HalfTyID && opcodeOrType <= llvm::Type::PPC_FP128TyID) {
+					vValue = IRB.CreateFPExt(value, IRB.getDoubleTy());
+					tlCall = IRB.CreateCall5(TL.logDouble, vLine, vSize, vValue, vIsReg, vvRegID);
 				}
-				// deal with functions individually
-				else if (opty == llvm::Type::PointerTyID) {
-					v_value = IRB.CreatePtrToInt(value, IRB.getInt64Ty());
-					tl_call = IRB.CreateCall5(TL_log_int, v_line, v_size, v_value, v_is_reg, vv_reg_id);
+				else if(llvm::Type::PointerTyID == opcodeOrType) {
+					vValue = IRB.CreatePtrToInt(value, IRB.getInt64Ty());
+					tlCall = IRB.CreateCall5(TL.logInt, vLine, vSize, vValue, vIsReg, vvRegID);
 				}
 				else {
-					fprintf(stderr, "normal data else: %d, %s\n", opty, func_or_reg_id);
+					// TODO: assert mesmo ou apenas um silent error?
+					assert(false && "Invalid type provided for trace generation");
 				}
 			}
-			//else if (value == NULL &&  bbID != NULL && strcmp(bbID, "phi") == 0 )
-			//{
-			//v_value = ConstantInt::get(IRB.getInt64Ty(), 999);
-			//tl_call = IRB.CreateCall5(TL_log_int, v_line, v_size, v_value, v_is_reg, vv_reg_id);
-			//}
 			else {
-				v_value = ConstantInt::get(IRB.getInt64Ty(), 0);
-				tl_call = IRB.CreateCall5(TL_log_int, v_line, v_size, v_value, v_is_reg, vv_reg_id);
+				vValue = ConstantInt::get(IRB.getInt64Ty(), 0);
+				tlCall = IRB.CreateCall5(TL.logInt, vLine, vSize, vValue, vIsReg, vvRegID);
 			}
-			//else
-			//fprintf(stderr, "normal data else: %d, %s\n",opty, func_or_reg_id);
-		} 
-		// is_reg = 0
+		}
 		else {
-			if (value != NULL) {
-				if (opty == llvm::Type::IntegerTyID) {
-					v_value = IRB.CreateZExt(value, IRB.getInt64Ty());
-					tl_call = IRB.CreateCall4(TL_log_int_noreg, v_line, v_size, v_value, v_is_reg);
+			if(value) {
+				if(llvm::Type::IntegerTyID == opcodeOrType) {
+					vValue = IRB.CreateZExt(value, IRB.getInt64Ty());
+					tlCall = IRB.CreateCall4(TL.logIntNoReg, vLine, vSize, vValue, vIsReg);
 				}
-				else if (opty >= llvm::Type::HalfTyID &&opty <= llvm::Type::PPC_FP128TyID) {
-					v_value = IRB.CreateFPExt(value, IRB.getDoubleTy());
-					tl_call = IRB.CreateCall4(TL_log_double_noreg, v_line, v_size, v_value, v_is_reg);
+				else if(opcodeOrType >= llvm::Type::HalfTyID && opcodeOrType <= llvm::Type::PPC_FP128TyID) {
+					vValue = IRB.CreateFPExt(value, IRB.getDoubleTy());
+					tlCall = IRB.CreateCall4(TL.logDoubleNoReg, vLine, vSize, vValue, vIsReg);
 				}
-				// deal with functions individually
-				else if (opty == llvm::Type::PointerTyID) {
-					v_value = IRB.CreatePtrToInt(value, IRB.getInt64Ty());
-					tl_call = IRB.CreateCall4(TL_log_int_noreg, v_line, v_size, v_value, v_is_reg);
+				else if(llvm::Type::PointerTyID == opcodeOrType) {
+					vValue = IRB.CreatePtrToInt(value, IRB.getInt64Ty());
+					tlCall = IRB.CreateCall4(TL.logIntNoReg, vLine, vSize, vValue, vIsReg);
 				}
 				else {
-					fprintf(stderr, "value not empty, normal data else: %d\n", opty);
+					// TODO: assert mesmo ou apenas um silent error?
+					assert(false && "Invalid type provided for trace generation");
 				}
 			}
-			//else if (value == NULL &&  bbID != NULL && strcmp(bbID, "phi") == 0 )
-			//{
-			//v_value = ConstantInt::get(IRB.getInt64Ty(), 999);
-			//tl_call = IRB.CreateCall4(TL_log_int_noreg, v_line, v_size, v_value, v_is_reg);
-			//}
 			else {
-				v_value = ConstantInt::get(IRB.getInt64Ty(), 0);
-				tl_call = IRB.CreateCall4(TL_log_int_noreg, v_line, v_size, v_value, v_is_reg);
+				vValue = ConstantInt::get(IRB.getInt64Ty(), 0);
+				tlCall = IRB.CreateCall4(TL.logIntNoReg, vLine, vSize, vValue, vIsReg);
 			}
-			//fprintf(stderr, "normal data else: %d\n",opty);
 		}
 	}
-} // End of print_line(...)
-
-void InstrumentForDDDG::insertInstid(std::string inst_id, unsigned op_code) {
-	staticInstID2OpcodeMap.insert(std::make_pair(inst_id, op_code));
 }
 
-void InstrumentForDDDG::insertInstid2bbName(std::string inst_id, std::string bbName){
-	instName2bbNameMap.insert(std::make_pair(inst_id, bbName));
+void InstrumentForDDDG::insertInstID(std::string instID, unsigned opcode) {
+	staticInstID2OpcodeMap.insert(std::make_pair(instID, opcode));
 }
 
-bool InstrumentForDDDG::getInstId(Instruction *itr, char* bbid, char* instid, int &instc) {
-	int id = st->getLocalSlot(itr);
-	bool f = itr->hasName();
-	if (f) {
-		strcpy(instid, (char*)itr->getName().str().c_str());
+void InstrumentForDDDG::insertInstid2bbName(std::string instID, std::string bbName) {
+	instName2bbNameMap.insert(std::make_pair(instID, bbName));
+}
+#endif
+
+bool InstrumentForDDDG::getInstID(Instruction *I, std::string bbID, int &instCnt, std::string &instID) {
+	int id = ST->getLocalSlot(I);
+
+	if(I->hasName()) {
+		instID = I->getName();
+		return true;
+	}
+	else if(id >= 0) {
+		instID = std::to_string(id);
+		return true;
+	}
+	else if(-1 == id) {
+		instID = bbID + "-" + std::to_string(instCnt++);
 		return true;
 	}
 
-	if (!f && id >= 0) {
-		sprintf(instid, "%d", id);
-		return true;
-	}
-	else if (!f && id == -1) {
-		char tmp[10];
-		char dash[5] = "-";
-		sprintf(tmp, "%d", instc);
-		if (bbid != NULL) {
-			strcpy(instid, bbid);
-		}
-		strcat(instid, dash);
-		strcat(instid, tmp);
-		instc++;
-		return true;
-	}
-
+	// I'm not sure if the code would ever reach this position (i.e. id different from >= 0 and -1?). But anyway...
 	return false;
 }
 
-void InstrumentForDDDG::getBBId(Value *BB, char *bbid) {
-	int id;
-	id = st->getLocalSlot(BB);
-	bool hasName = BB->hasName();
-	if (hasName) {
-		strcpy(bbid, (char*)BB->getName().str().c_str());
-	}
+std::string InstrumentForDDDG::getBBID(Value *BB) {
+	int id = ST->getLocalSlot(BB);
 
-	if (!hasName && id >= 0) {
-		sprintf(bbid, "%d", id);
-	}
-	else if (!hasName && id == -1) {
-		fprintf(stderr, "!!This block does not have a name or a ID!\n");
-	}
+	if(BB->hasName())
+		return BB->getName();
+	else if(id >= 0)
+		return std::to_string(id);
+	else
+		return NULL;
 }
 
-void InstrumentForDDDG::extract_memory_trace_for_access_pattern() {
-
+void InstrumentForDDDG::extractMemoryTraceForAccessPattern() {
+#if 0
 	std::string file_name = inputPath + "mem_trace.txt";
 	std::ofstream mem_trace;
 	mem_trace.open(file_name);
@@ -569,147 +605,132 @@ void InstrumentForDDDG::extract_memory_trace_for_access_pattern() {
 	gzclose(tracefile);
 	mem_trace.close();
 	std::cout << "DEBUG-INFO: [Mem-trace] Finished" << std::endl;
+#endif
 }
 
 bool InstrumentForDDDG::runOnModule(Module &M) {
-	errs() << "DEBUG-INFO: [instrumentation_instrument-pass] Start instrumentation\n";
-	bool result;
-	Module::iterator FI, FE;
-	Function::iterator BI, BE;
-	std::vector<std::string>::iterator it_name;
-	for (FI = M.begin(), FE = M.end(); FI != FE; ++FI) {
-		it_name = std::find(kernel_names.begin(), kernel_names.end(), FI->getName());
-		if (it_name != kernel_names.end()) {
-			for (BI = FI->begin(), BE = FI->end(); BI != BE; ++BI) {
-				result = performOnBasicBlock(*BI);
-			}
+	errs() << "========================================================\n";
+	errs() << "Starting code instrumentation for DDDG generation\n";
+
+	// TODO: Ver se ela logica ta OK pro result
+	bool result = false;
+	for(Module::iterator FI = M.begin(); FI != M.end(); FI++) {
+		if(isFunctionOfInterest(FI->getName())) {
+			VERBOSE_PRINT(errs() << "[instrumentForDDDG] Injecting trace code in \"" + FI->getName() + "\"\n");
+			for(Function::iterator BI = FI->begin(); BI != FI->end(); BI++)
+				result += performOnBasicBlock(*BI);
 		}
-	}
-	if (enable_no_trace == false) {
-		VERBOSE_PRINT(errs() << "DEBUG-INFO: [profiling_profiling-engine] Start profiling engine\n");
-		/// Integrate JIT profiling engine and run the embedded profiler
-		ProfilingEngine P(M, TL_log0, TL_log_int, TL_log_double, TL_log_int_noreg, TL_log_double_noreg);
-		P.runOnProfiler();
-		/// Finished Profiling
-		VERBOSE_PRINT(errs() << "DEBUG-INFO: [profiling_profiling-engine] Finished\n");
-		if (memory_trace_gen == true) {
-			extract_memory_trace_for_access_pattern();
-		}
-	}
-	else {
-		errs() << "DEBUG-INFO: [profiling_profiling-engine] We already have generated dynamic trace for this application, no need to generate again.\n";
 	}
 
-	if (enable_profiling_time_only == true) {
-		errs() << "DEBUG-INFO: [profiling_profiling-engine] Only get profiling time without estimating FPGA execution time\n";
-		return result;
+	// TODO: parei aqui
+
+	if(args.MODE_TRACE_AND_ESTIMATE == args.mode || args.MODE_TRACE_ONLY == args.mode) {
+		VERBOSE_PRINT(errs() << "[instrumentForDDDG] Starting profiling engine\n");
+
+		/// Integrate JIT profiling engine and run the embedded profiler
+		ProfilingEngine P(M, TL);
+		P.runOnProfiler();
+
+		/// Finished Profiling
+		VERBOSE_PRINT(errs() << "[instrumentForDDDG] Profiling finished\n");
+
+		if(args.memTrace) {
+			VERBOSE_PRINT(errs() << "[instrumentForDDDG] Starting memory trace extraction\n");
+			extractMemoryTraceForAccessPattern();
+			VERBOSE_PRINT(errs() << "[instrumentForDDDG] Memory trace extraction finished\n");
+		}
+
+		if(args.MODE_TRACE_ONLY == args.mode)
+			return result;
+	}
+	else {
+		VERBOSE_PRINT(errs() << "[instrumentForDDDG] Skipping dynamic trace\n");
 	}
 
 	// Verify the module
-	std::string ErrorStr;
-	raw_string_ostream OS(ErrorStr);
-	if (verifyModule(M, &OS)){
-		errs() << OS.str() << "\n";
-		assert(false && "DEBUG-INFO: [instrumentation_instrument-pass] Module is broken!\n");
-	}
+	assert(verifyModuleAndPrintErrors(M) && "Errors found in module\n");
 
 	loopBasedTraceAnalysis();
 
-	VERBOSE_PRINT(errs() << "DEBUG-INFO: [instrumentation_instrument-pass] Finished\n");
+	VERBOSE_PRINT(errs() << "[instrumentForDDDG] Finished\n");
+
 	return result;
 }
 
 bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 	Function *F = BB.getParent();
-	int instc = 0;
-	char funcName[256];
+	int instCnt = 0;
+	std::string funcName = F->getName();
 
-	if (curr_function != F) {
-		st->purgeFunction();
-		st->incorporateFunction(F);
-		curr_function = F;
+	if(currFunction != F) {
+		ST->purgeFunction();
+		ST->incorporateFunction(F);
+		currFunction = F;
 	}
-	strcpy(funcName, curr_function->getName().str().c_str());
-	if (!is_tracking_function(funcName)) {
+
+	if(!isFunctionOfInterest(funcName))
 		return false;
-	}
 
-	//cout << "Tracking function: " << funcName << endl;
-	
-	//deal with phi nodes
-	BasicBlock::iterator insertp = BB.getFirstInsertionPt();
-	BasicBlock::iterator itr = BB.begin();
-	if (dyn_cast<PHINode>(itr)) {
-		for (; PHINode *N = dyn_cast<PHINode>(itr); itr++) {
-			//errs() << "\tTracking instruction: " << *itr << "\n";
-			//errs() << "\t\tin function: " << funcName << "\n";
-			Value *curr_operand = NULL;
-			bool is_reg = 0;
+	// Deal with phi nodes
+	BasicBlock::iterator insIt = BB.getFirstInsertionPt();
+	BasicBlock::iterator it = BB.begin();
+	if(dyn_cast<PHINode>(it)) {
+		for(; PHINode *N = dyn_cast<PHINode>(it); it++) {
+			Value *currOperand = NULL;
+			bool isReg = 0;
 			int size = 0, opcode;
-			char bbid[256], instid[256];
-			char operR[256];
-			//int DataSize, value;
+			std::string bbID, instID, operR;
+			int lineNumber = -1;
 
-			int line_number = -1;
+			bbID = getBBID(&BB);
+			getInstID(it, bbID, instCnt, instID);
+			opcode = it->getOpcode();
 
-			getBBId(&BB, bbid);
-			getInstId(itr, bbid, instid, instc);
-			opcode = itr->getOpcode();
-
-			if (MDNode *N = itr->getMetadata("dbg")) {
-				DILocation Loc(N);                      // DILocation is in DebugInfo.h
-				line_number = Loc.getLineNumber();
+			if(MDNode *N = it->getMetadata("dbg")) {
+				DILocation Loc(N);
+				lineNumber = Loc.getLineNumber();
 			}
-			print_line(insertp, 0, line_number, funcName, bbid, instid, opcode);
 
-			//for instructions using registers
-			int i, num_of_operands = itr->getNumOperands();
+			// Create a call to trace logger just informing the register receiving phi
+			IJ.injectPHINodeTrace(insIt, lineNumber, funcName, bbID, instID, opcode);
+			//printLine(insIt, 0, lineNumber, funcName, bbID, instID, opcode);
 
-			if (num_of_operands > 0) {
-				char phi[5] = "phi";
-				for (i = num_of_operands - 1; i >= 0; i--) {
-					curr_operand = itr->getOperand(i);
-					//is_reg = 0;
-					is_reg = curr_operand->hasName();
-					if (Instruction *I = dyn_cast<Instruction>(curr_operand)) {
-						int flag = 0;
-						is_reg = getInstId(I, NULL, operR, flag);
-						assert(flag == 0);
-						if (curr_operand->getType()->isVectorTy()) {
-							print_line(insertp, i + 1, -1, operR, phi, NULL,
-												 curr_operand->getType()->getTypeID(),
-												 getMemSize(curr_operand->getType()),
-												 NULL,
-												 is_reg);
-						}
-						else {
-							print_line(insertp, i + 1, -1, operR, phi, NULL,
-												 I->getType()->getTypeID(),
-												 getMemSize(I->getType()),
-												 NULL,
-												 is_reg);
-						}
-					}
-					else if (curr_operand->getType()->isVectorTy()) {
-						char operand_id[256];
-						strcpy(operand_id, curr_operand->getName().str().c_str());
-						print_line(insertp, i + 1, -1, operand_id, phi, NULL,
-											 curr_operand->getType()->getTypeID(),
-											 getMemSize(curr_operand->getType()),
-											 NULL,
-											 is_reg);
-					}
-					else{
-						char operand_id[256];
-						strcpy(operand_id, curr_operand->getName().str().c_str());
-						print_line(insertp, i + 1, -1, operand_id, phi, NULL,
-											 curr_operand->getType()->getTypeID(),
-											 getMemSize(curr_operand->getType()),
-											 curr_operand,
-											 is_reg);
-					}
+			// Create calls to trace logger informing the inputs for phi
+			int numOfOperands = it->getNumOperands();
+			for(int i = numOfOperands - 1; i >= 0; i--) {
+				currOperand = it->getOperand(i);
+				isReg = currOperand->hasName();
+
+				// Input to phi is an instruction
+				if(Instruction *I = dyn_cast<Instruction>(currOperand)) {
+					int flag = 0;
+					isReg = getInstID(I, "", flag, operR);
+					assert(0 == flag && "Unnamed instruction with no local slot found");
+
+					// Input to phi is of vector type
+					if(currOperand->getType()->isVectorTy())
+						IJ.injectPHINodeInputTrace(insIt, i + 1, operR, currOperand->getType()->getTypeID(), getMemSize(currOperand->getType()), NULL, isReg);
+					else
+						IJ.injectPHINodeInputTrace(insIt, i + 1, operR, I->getType()->getTypeID(), getMemSize(I->getType()), NULL, isReg);
+
+					//if(currOperand->getType()->isVectorTy())
+					//	printLine(insIt, i + 1, -1, operR, "phi", "", currOperand->getType()->getTypeID(), getMemSize(currOperand->getType()), NULL, isReg);
+					//else
+					//	printLine(insIt, i + 1, -1, operR, "phi", "", I->getType()->getTypeID(), getMemSize(I->getType()), NULL, isReg);
+				}
+				// Input to phi is of vector type
+				else if(currOperand->getType()->isVectorTy()) {
+					IJ.injectPHINodeInputTrace(insIt, i + 1, currOperand->getName(), currOperand->getType()->getTypeID(), getMemSize(currOperand->getType()), NULL, isReg);
+					//printLine(insIt, i + 1, -1, currOperand->getName(), "phi", "", currOperand->getType()->getTypeID(), getMemSize(currOperand->getType()), NULL, isReg);
+				}
+				// Input to phi is none of the above
+				else {
+					IJ.injectPHINodeInputTrace(insIt, i + 1, currOperand->getName(), currOperand->getType()->getTypeID(), getMemSize(currOperand->getType()), currOperand, isReg);
+					//printLine(insIt, i + 1, -1, currOperand->getName(), "phi", "", currOperand->getType()->getTypeID(), getMemSize(currOperand->getType()), currOperand, isReg);
 				}
 			}
+
+#if 0
 
 			if (!itr->getType()->isVoidTy()) {
 				is_reg = 1;
@@ -729,9 +750,11 @@ bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 										 itr, is_reg);
 				}
 			}
+#endif
 		}
 	}
 
+#if 0
 	//for ALL instructions
 	BasicBlock::iterator nextitr;
 	for (BasicBlock::iterator itr = insertp; itr != BB.end(); itr = nextitr) {
@@ -997,9 +1020,11 @@ bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 	}
 
 	return true;
+#endif
 }
 
-void InstrumentForDDDG::remove_config(std::string kernel_name, std::string input_path) {
+void InstrumentForDDDG::removeConfig(std::string kernelName, std::string inputPath) {
+#if 0
 	//std::string input_kernel = input_path + kernel_name;
 	std::string input_kernel = outputPath + kernel_name;
 	std::string pipelining(input_kernel + "_pipelining_config");
@@ -1047,11 +1072,11 @@ void InstrumentForDDDG::remove_config(std::string kernel_name, std::string input
 			assert(false && "Error: deleting completely array partitioning configuration file!\n");
 		}
 	}
-
+#endif
 }
 
-void InstrumentForDDDG::parse_config(std::string kernel_name, std::string input_path)
-{
+void InstrumentForDDDG::parseConfig(std::string kernelName, std::string inputPath) {
+#if 0
 	ifstream config_file;
 	//std::string input_kernel = input_path + kernel_name;
 	std::string input_kernel = outputPath + kernel_name;
@@ -1277,9 +1302,11 @@ void InstrumentForDDDG::parse_config(std::string kernel_name, std::string input_
 			increase_load_latency = false;
 		}
 	}
+#endif
 }
 
-void InstrumentForDDDG::getUnrollingConfiguration(lpNameLevelPair2headBBnameMapTy& lpNameLvPair2headerBBMap) {
+void InstrumentForDDDG::getUnrollingConfiguration(lpNameLevelPair2headBBnameMapTy &lpNameLvPair2headerBBMap) {
+#if 0
 	// Initialize loopName2levelUnrollPairListMap, all unrolling factors are set to 1 as default.
 	loopName2levelUnrollVecMap.clear();
 	lpNameLevelPair2headBBnameMapTy::iterator it = lpNameLvPair2headerBBMap.begin();
@@ -1301,9 +1328,11 @@ void InstrumentForDDDG::getUnrollingConfiguration(lpNameLevelPair2headBBnameMapT
 	// Read unrolling configuration and update loopName2levelUnrollPairListMap and 
 	unrollingConfig.clear();
 	bool succeed_or_not = readUnrollingConfig(loopName2levelUnrollVecMap, unrollingConfig);
+#endif
 }
 
-bool InstrumentForDDDG::readUnrollingConfig(loopName2levelUnrollVecMapTy& lpName2levelUrPairVecMap, std::unordered_map<int, int > &unrolling_config) {
+bool InstrumentForDDDG::readUnrollingConfig(loopName2levelUnrollVecMapTy &lpName2levelUrPairVecMap, std::unordered_map<int, int> &unrollingConfig) {
+#if 0
 	//loopName2levelUnrollPairListMapTy vector is better
 	std::string kernel_name = kernel_names.at(0);
 	ifstream config_file;
@@ -1361,9 +1390,11 @@ bool InstrumentForDDDG::readUnrollingConfig(loopName2levelUnrollVecMapTy& lpName
 	}
 	config_file.close();
 	return 1;
+#endif
 }
 
 void InstrumentForDDDG::loopBasedTraceAnalysis() {
+#if 0
 	errs() << "DEBUG-INFO: [trace-analysis_loop-based-trace-analysis] Analysis loops' IL and II inside the kernel\n";
 	/// Create Dynamic Data Dependence Graph
 	std::string trace_file_name = inputPath + "dynamic_trace.gz";
@@ -1474,9 +1505,11 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 	VERBOSE_PRINT(errs() << "DEBUG-INFO: [trace-analysis_loop-based-trace-analysis] Finished\n");
 	close_summary_file(summary);
 	errs() << "-------------------\n";
+#endif
 }
 
-void InstrumentForDDDG::open_summary_file(ofstream& summary_file, std::string kernel_name) {
+void InstrumentForDDDG::openSummaryFile(std::ofstream &summaryFile, std::string kernelKame) {
+#if 0
 	errs() << "DEBUG-INFO: [Lin-Analyzer summary] Writing summary into log file\n";
 	//std::string file_name(inputPath+kernel_name+"_summary.log");
 	std::string file_name(outputPath + kernel_name + "_summary.log");
@@ -1490,21 +1523,21 @@ void InstrumentForDDDG::open_summary_file(ofstream& summary_file, std::string ke
 	else {
 		assert(false && "Error: Cannot open summary file!\n");
 	}
+#endif
 }
 
-void InstrumentForDDDG::close_summary_file(ofstream& summary_file) {
+void InstrumentForDDDG::closeSummaryFile(std::ofstream &summaryFile) {
+#if 0
 	summary_file.close();
 	VERBOSE_PRINT(errs() << "DEBUG-INFO: [Lin-Analyzer summary] Summary file generated\n");
+#endif
 }
 
-ProfilingEngine::ProfilingEngine(Module &M, Function* log0Fn, Function* log_intFn, Function* log_doubleFn,
-																 Function* log_int_noregFn, Function* log_double_noregFn) : Mod(M), log0_Fn(log0Fn), 
-																 log_int_Fn(log_intFn), log_double_Fn(log_doubleFn), 
-																 log_int_noreg_Fn(log_int_noregFn), log_double_noreg_Fn(log_double_noregFn) {
-
+ProfilingEngine::ProfilingEngine(Module &M, TraceLogger &TL) : M(M), TL(TL) {
 }
 
-void ProfilingEngine::runOnProfiler(){
+void ProfilingEngine::runOnProfiler() {
+#if 0
 	errs() << "DEBUG-INFO: [profiling_profiling-engine] Running on Profiler\n";
 	ProfilingJITSingletonContext JTSC(this);
 	//std::unique_ptr<Module> M(generateInstrumentedModule());
@@ -1567,35 +1600,43 @@ void ProfilingEngine::runOnProfiler(){
 
 	//delete M
 	errs() << "DEBUG-INFO: [profiling_profiling-engine] Finished profiling: Status = " << Result << "\n";
+#endif
 }
 
 ProfilingJITContext::ProfilingJITContext() : P(nullptr) {
+#if 0
 	// If we have a native target, initialize it to ensure it is linked in and
 	// usable by the JIT.
 	InitializeNativeTarget();
 	InitializeNativeTargetAsmPrinter();
 	InitializeNativeTargetAsmParser();
+#endif
 }
 
 
 ProfilingJITSingletonContext::ProfilingJITSingletonContext(ProfilingEngine *P) {
+#if 0
 	GlobalContextDDDG->P = P;
+#endif
 }
 
 ProfilingJITSingletonContext::~ProfilingJITSingletonContext() {
+#if 0
 	GlobalContextDDDG->P = nullptr;
 	//TODO: Other clearup?
+#endif
 }
 
-
 char InstrumentForDDDG::ID = 0;
-INITIALIZE_PASS(InstrumentForDDDG, "instrumentCodeforDDDG",
-								"This pass is used to instrument code for building DDDG",
-								false,
-								true	/*false  We need to modify the code later. In initial step, we
-											just check the unique ID first*/
-								)
+
+INITIALIZE_PASS(
+	InstrumentForDDDG,
+	"instrumentCodeforDDDG",
+	"This pass is used to instrument code for building DDDG",
+	false,
+	true /* false We need to modify the code later. In initial step, we just check the unique ID first*/
+)
 
 ModulePass *llvm::createInstrumentForDDDGPass() {
-	return new 	InstrumentForDDDG();
+	return new InstrumentForDDDG();
 }

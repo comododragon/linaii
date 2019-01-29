@@ -1,16 +1,17 @@
-#include "llvm/IR/LLVMContext.h"
-#include "llvm/Support/raw_ostream.h"
-#include "llvm/Support/CommandLine.h"
-//#include "llvm/IR/Module.h"
-#include "llvm/IR/Function.h"
+#include <getopt.h>
+
 #include "llvm/PassManager.h"
-#include "llvm/Support/SourceMgr.h"
-#include "llvm/IRReader/IRReader.h"
-#include "llvm/Bitcode/BitcodeWriterPass.h"
-#include "llvm/Support/ToolOutputFile.h"
-#include "llvm/Support/FileSystem.h"
-#include "llvm/Support/Debug.h"
 #include "llvm/ADT/Triple.h"
+#include "llvm/Bitcode/BitcodeWriterPass.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IRReader/IRReader.h"
+#include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Debug.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/ToolOutputFile.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include "profile_h/lin-profile.h"
 
@@ -18,73 +19,65 @@
 
 using namespace llvm;
 
-std::string inputFileName;
-std::string inputPath;
-std::string outputPath;
-std::string config_filename;
-std::vector<std::string> kernel_names;
-
-bool enable_profiling_time_only;
-bool memory_trace_gen;
-bool enable_no_trace;
-bool show_cfg_detailed;
-bool show_cfg_only;
-bool show_dddg_bf_opt;
-bool show_dddg_af_opt;
-bool verbose_print;
-bool enable_store_buffer;
-bool enable_shared_load_removal;
-bool disable_shared_load_removal;
-bool enable_repeated_store_removal;
-bool enable_tree_height_reduction_float;
-bool enable_tree_height_reduction_integer;
-bool enable_memory_disambiguation;
-bool increase_load_latency;
-bool disable_fp_unit_threshold;
-bool enable_extra_scalar;
-bool enable_rw_rw_memory;
-bool target_vc707;
-std::vector<std::string> target_loops;
-
 /// Global map
 BBidFreqMap BBidFreq;
 BranchidFreqMap BranchIDFreq;
 
-const std::string help_message = "----------------------------------------------------------------------\n"
-																 "    Lin-analyzer: A High Level Analysis Tool for FPGA Accelerators\n"
-																 "----------------------------------------------------------------------\n"
-																 "Usage:	lin-analyzer [file.bc] -Ipath=[path] -config=[filename] [kernel-name] -Opath=[path] -TargetLoops=[index] [options]\n"
-																 "Options:\n"
-																 "	-h, --help               Help information.\n"
-																 "	-profiling-time          Profile kernels without FPGA estimation.\n"
-																 "	-mem-trace               Obtain memory trace for access pattern analysis without FPGA estimation. This\n"
-																 "	                         option should be used with -profiling-time together.\n"
-																 "	-no-trace                Disable dynamic trace generation.\n"
-																 "	-TargetLoops             Specify target loops focused. Eg., -TargetLoops=2,3: only analyse loop 2 and 3.\n"
-																 "	-cfg-detailed            Show CFG with detailed instructions.\n"
-																 "	-cfg-only                Show CFG only with basic blocks.\n"
-																 "	-dddg-bf-opt             Show DDDG before optimization. May slow down program if input size is large\n"
-																 "	-dddg-af-opt             Show DDDG after optimization. May slow down program if input size is large\n"
-																 "	-verbose                 Verbose mode, print more information.\n"
-																 "	-dis-store-buffer        Disable store-buffer optimization.\n"
-																 "	-shared-load-removal     Enable shared-load-removal optimization.\n"
-																 "	-dis-shared-load-removal Disable shared-load-removal opt., even for completely unrolling config.\n"
-																 "	-dis-rp-store-removal    Disable repeated-store-removal optimization.\n"
-																 "	-THR-float               Enable tree height reduction optimization for floating point operations.\n"
-																 "	-THR-integer             Enable tree height reduction optimization for integer operations.\n"
-																 "	-memory-disambig         Enable memory disambiguation optimization.\n"
-																 "	-dis-fp-threshold        Disable floating point unit threshold and area budget is unlimited.\n"
-																 "	-en-extra-scalar         Sometimes, result might be shifted, this option is used to improve prediction.\n"
-																 "	-en-rw-rw-memory         Use memory with two ports and each supports read and write operation. Default is\n"
-																 "	                         read-only and read-write.\n"
-																 "	-vc707                   Target for Xilinx Virtex7 VC707. Default is Xilinx Zedboard or ZC702\n"
-																 "\n"
-																 "Report bugs to guanwen<guanwen@comp.nus.edu.sg>\n"
-																 "----------------------------------------------------------------------\n";
+const std::string helpMessage =
+	"Lin-analyzer: A High Level Analysis Tool for FPGA Accelerators\n"
+	"Usage: lin-analyzer [OPTION]... BYTECODEFILE KERNELNAME\n"
+	"Where:\n"
+	"    BYTECODEFILE is the optimised .bc file generated with the LLVM toolchain\n"
+	"    KERNELNAME is the kernel name (i.e. function name) to be analysed\n"
+	"    OPTION may be:\n"
+	"        -h       , --help            : this message\n"
+	"        -i PATH  , --workdir=PATH    : input working directory where trace should happen\n"
+	"                                       (e.g. containing files used by the application).\n"
+	"                                       Default is $CWD\n"
+	"        -o PATH  , --out-workdir=PATH: output working directory where temporary files\n"
+	"                                       will be written. Default is $CWD\n"
+	"        -c FILE  , --config-file=FILE: use FILE as the configuration file for this\n"
+	"                                       application. Default is workdir/config.cfg\n"
+	"        -m MODE  , --mode=MODE       : set execution mode to MODE, where MODE may be:\n"
+	"                                           all       : perform dynamic trace and cycle\n"
+	"                                                       estimation (DEFAULT)\n"
+	"                                           trace     : perform dynamic trace only,\n"
+	"                                                       generating dynamic_trace.gz\n"
+	"                                           estimation: perform cycle estimation only,\n"
+	"                                                       using provided dynamic_trace.gz\n"
+	"        -t TARGET, --target=TARGET   : select TARGET FPGA platform, where TARGET may be:\n"
+	"                                           ZC702: Xilinx Zynq-7000 SoC (DEFAULT)\n"
+	"                                           VC707: Xilinx Virtex-7 FPGA\n"
+	"        -v       , --verbose         : be verbose, print a lot of information\n"
+	"        -l LOOPS , --loops=LOOPS     : specify loops to be analysed comma-separated (e.g.\n"
+	"                                       --loops=2,3 only analyse loops 2 and 3)\n"
+	"                   --mem-trace       : obtain memory trace for access pattern analysis.\n"
+	"                                       Ignored if -m estimation | --mode=estimation is\n"
+	"                                       set.\n"
+	"                                       Can only be used with -m trace | --mode=trace\n"
+	"                   --show-cfg        : show CFG with basic blocks\n"
+	"                   --show-detail-cfg : show detailed CFG with instructions\n"
+	"                   --show-pre-dddg   : show DDDG before optimisation\n"
+	"                   --show-post-dddg  : show DDDG after optimisation\n"
+	"                   --fno-sb          : disable store-buffer optimisation\n"
+	"                   --f-slr           : enable shared-load-removal optimisation\n"
+	"                   --fno-slr         : disable shared-load-removal optimisation\n"
+	"                   --fno-rsr         : disable repeated-store-removal optimisation\n"
+	"                   --f-thr-float     : enable tree-height-reduction for floating point\n"
+	"                                       operations\n"
+	"                   --f-thr-int       : enable tree-height-reduction for integer\n"
+	"                                       operations\n"
+	"                   --f-md            : enable memory-disambiguation optimisation\n"
+	"                   --fno-ft          : disable FPU threshold optimisation\n"
+	"                   --f-es            : enable extra-scalar\n"
+	"                   --f-rwrwm         : enable RWRW memory\n"
+	"Report bugs to abperina<abperina@usp.br>\n"
+	"or guanwen<guanwen@comp.nus.edu.sg>\n";
+
+ArgPack args;
 
 int main(int argc, char **argv) {
-
-	parse_input_arguments(argc, argv);
+	parseInputArguments(argc, argv);
 
 	errs() << "********************************************************\n";
 	errs() << "********************************************************\n\n";
@@ -96,16 +89,8 @@ int main(int argc, char **argv) {
 	SMDiagnostic Err;
 
 	std::unique_ptr<Module> M;
-
-	// Note: The path should include \5C in Unix or / in Windows in the end!
-
-	// Store the location of InputFilename
-	inputFileName = InputFilename.c_str();
-
 	M.reset(ParseIRFile(InputFilename, Err, Context));
-	//M.reset(ParseIRFile("E:/llvm/home/henry/llvm_3.5/input/test1.bc", Err, Context));
-
-	if (!M.get()) {
+	if(!M.get()) {
 		Err.print(argv[0], errs());
 		return 1;
 	}
@@ -113,17 +98,15 @@ int main(int argc, char **argv) {
 	Module &mod = *M.get();
 	Triple TheTriple(mod.getTargetTriple());
 
-	if (OutputFilename.empty()) {
-		if (InputFilename == "-") {
+	if(OutputFilename.empty()) {
+		if(InputFilename == "-") {
 			OutputFilename = "-";
 		}
 		else {
-			const std::string &IFN = InputFilename;
-			int Len = IFN.length();
-			// If the source ends in .bc, strip it off
-			if (IFN[Len - 3] == '.' && IFN[Len - 2] == 'b' && IFN[Len - 1] == 'c') {
-				OutputFilename = std::string(IFN.begin(), IFN.end() - 3) + "_trace.bc";
-			}
+			const std::string &inputFilenameStr = InputFilename;
+			int len = inputFilenameStr.length();
+			// We are assuming that InputFilename ends with ".bc", a constraint detected when the arguments were collected
+			OutputFilename = std::string(inputFilenameStr.begin(), inputFilenameStr.end() - 3) + "_trace.bc";
 		}
 	}
 
@@ -131,38 +114,22 @@ int main(int argc, char **argv) {
 	std::unique_ptr<tool_output_file> Out;
 	std::string ErrorInfo;
 	Out.reset(new tool_output_file(OutputFilename.c_str(), ErrorInfo, sys::fs::F_None));
-	if (!ErrorInfo.empty()) {
+	if(!ErrorInfo.empty()) {
 		errs() << ErrorInfo << "\n";
 		return 1;
 	}
 
 	PassManager Passes;
+	// Counting number of top-level loops in each function of interest (and store in the form of metadata)
 	Passes.add(createLoopNumberPass());
+	// Assigning IDs to BBs, acquiring array names
 	Passes.add(createAssignBasicBlockIDPass());
+	// Assigning IDs to load and store instructions
 	Passes.add(createAssignLoadStoreIDPass());
+	// Extracting loops information, counting number of load/store instructions and arithmetic instructions inside specific loops
 	Passes.add(createExtractLoopInfoPass());
-#ifndef BUILD_DDDG_H
-	Passes.add(createQueryBasicBlockIDPass());
-	// The query functions of Load/Store ID are implemented in AssignLoadStoreIDPass.
-	Passes.add(createQueryLoadStoreIDPass()); 
-#if defined(TWO_TIME_PROFILING) || defined(ENABLE_INSTDISTRIBUTION)
-	Passes.add(createGetLoopBoundPass());
-#endif // End of TWO_TIME_PROFILING or ENABLE_INSTDISTRIBUTION
-
-#ifdef ENABLE_INSTDISTRIBUTION
-	Passes.add(createGetInstDistributionPass());
-#else // define ENABLE_INSTDISTRIBUTION
-	Passes.add(createCodeInstrumentPass());
-	Passes.add(createAnalysisProfilingPass());
-#endif // End of ENABLE_INSTDISTRIBUTION
-
-#else // define BUILD_DDDG_H
 	Passes.add(createInstrumentForDDDGPass());
-#endif // End of ifndef BUILD_DDDG_H
 	Passes.add(createBitcodeWriterPass(Out->os()));
-
-	// Before executing passes, print the final values of the LLVM options.
-	//cl::PrintOptionValues();
 
 	Passes.run(mod);
 
@@ -172,196 +139,233 @@ int main(int argc, char **argv) {
 	return 0;
 }
 
-void parse_input_arguments(int argc, char **argv) {
-	//assert(argc > 3 && "Note: Please provide path of input data, bitcode and names of kernel functions\n");
-	if (argc < 2) {
-		// Print message
-		errs() << "Missing input arguments (\"lin-analyzer --help\" or \"lin-analyzer -h\" for help)\n\n";
-		exit(-1);
-	} else if (argc < 3) {
-		std::string first_argv = argv[1];
-		if (!first_argv.compare("-h") || !first_argv.compare("--help")) {
-			//Print Help message
-			errs() << help_message;
-			exit(-1);
-		}
-		else {
-			errs() << "Missing input arguments (\"lin-analyzer --help\" or \"lin-analyzer -h\" for help)\n\n";
-			exit(-1);
-		}
-	}
-	InputFilename = argv[1];
-	size_t pos = InputFilename.find(".bc");
-	if (pos == std::string::npos) {
-		errs() << "Wrong input argument, input bitcode file should be *.bc (\"lin-analyzer --help\" or \"lin-analyzer -h\" for help)\n\n";
+void parseInputArguments(int argc, char **argv) {
+	char temp[PATH_MAX];
+	if(NULL == getcwd(temp, PATH_MAX)) {
+		errs() << "Error: " << strerror(errno) << "\n";
 		exit(-1);
 	}
-	errs() << "Input bitcode file: " << InputFilename << "\n";
-	std::string input_path = argv[2];
-	size_t pos_path = input_path.find("-Ipath=");
-	if (pos_path == std::string::npos) {
-		errs() << "Wrong input argument, path should be valid (\"lin-analyzer --help\" or \"lin-analyzer -h\" for help)\n\n";
-		exit(-1);
-	}
-	pos_path = input_path.find("=");
-	inputPath = input_path.substr(pos_path + 1);
-#ifdef _MSC_VER
-	inputPath += "\\";
-#else
-	inputPath += "/";
-#endif // End of _MSC_VER
-	errs() << "Input path: " << inputPath << "\n";
+	std::string optargStr;
+	size_t commaPos;
 
-	outputPath = inputPath;
+	args.inputFileName = "";
+	args.workDir = temp;
+	args.outWorkDir = temp;
+	args.configFileName = "config.cfg";
+	args.mode = args.MODE_TRACE_AND_ESTIMATE;
+	args.target = args.TARGET_XILINX_ZC702;
+	args.verbose = false;
+	args.memTrace = false;
+	args.showCFG = false;
+	args.showCFGDetailed = false;
+	args.showPreOptDDDG = false;
+	args.showPostOptDDDG = false;
+	args.fSBOpt = true;
+	args.fSLROpt = false;
+	args.fNoSLROpt = false;
+	args.fRSROpt = true;
+	args.fTHRFloatOpt = false;
+	args.fTHRIntOpt = false;
+	args.fMemDisambuigOpt = false;
+	args.fNoFPUThresOpt = false;
+	args.fExtraScalar = false;
+	args.fRWRWMem = false;
 
-	std::string config_name = argv[3];
-	size_t pos_conf = config_name.find("-config=");
-	if (pos_conf == std::string::npos) {
-		errs() << "Wrong input argument, missing configuration file name (\"lin-analyzer --help\" or \"lin-analyzer -h\" for help)\n\n";
-		exit(-1);
-	}
-	pos_conf = config_name.find("=");
-	config_filename = config_name.substr(pos_conf + 1);
+	int c;
+	while(true) {
+		static struct option longOptions[] = {
+			{"help", no_argument, 0, 'h'},
+			{"workdir", required_argument, 0, 'i'},
+			{"out-workdir", required_argument, 0, 'o'},
+			{"config-file", required_argument, 0, 'c'},
+			{"mode", required_argument, 0, 'm'},
+			{"target", required_argument, 0, 't'},
+			{"verbose", no_argument, 0, 'v'},
+			{"loops", required_argument, 0, 'l'},
+			{"mem-trace", no_argument, 0, 0xF00},
+			{"show-cfg", no_argument, 0, 0xF01},
+			{"show-detail-cfg", no_argument, 0, 0xF02},
+			{"show-pre-dddg", no_argument, 0, 0xF03},
+			{"show-post-dddg", no_argument, 0, 0xF04},
+			{"fno-sb", no_argument, 0, 0xF05},
+			{"f-slr", no_argument, 0, 0xF06},
+			{"fno-slr", no_argument, 0, 0xF07},
+			{"fno-rsr", no_argument, 0, 0xF08},
+			{"f-thr-float", no_argument, 0, 0xF09},
+			{"f-thr-int", no_argument, 0, 0xF0A},
+			{"f-md", no_argument, 0, 0xF0B},
+			{"fno-ft", no_argument, 0, 0xF0C},
+			{"f-es", no_argument, 0, 0xF0D},
+			{"f-rwrwm", no_argument, 0, 0xF0E},
+			{0, 0, 0, 0}
+		};
+		int optionIndex = 0;
 
-	kernel_names.clear();
-	kernel_names.push_back(argv[4]);
+		c = getopt_long(argc, argv, "+hi:o:c:m:t:vl:", longOptions, &optionIndex);
+		if(-1 == c)
+			break;
 
-	enable_profiling_time_only = false;
-	memory_trace_gen = false;
-	enable_no_trace = false;
-	show_cfg_detailed = false;
-	show_cfg_only = false;
-	show_dddg_bf_opt = false;
-	show_dddg_af_opt = false;
-	verbose_print = false;
-	enable_store_buffer = true;
-	enable_shared_load_removal = false;
-	disable_shared_load_removal = false;
-	enable_repeated_store_removal = true;
-	enable_tree_height_reduction_float = false;
-	enable_tree_height_reduction_integer = false;
-	enable_memory_disambiguation = false;
-	disable_fp_unit_threshold = false;
-	enable_extra_scalar = false;
-	enable_rw_rw_memory = false;
-	target_vc707 = false;
-	target_loops.clear();
-
-	for (int i = 5; i < argc; i++) {
-		std::string tmp_str = argv[i];
-		if (!tmp_str.compare("-profiling-time")) {
-			enable_profiling_time_only = true;
-		}
-		else if (!tmp_str.compare("-mem-trace")) {
-			memory_trace_gen = true;
-		}
-		else if (!tmp_str.compare("-no-trace")) {
-			enable_no_trace = true;
-		}
-		else if (tmp_str.find("-TargetLoops")!=std::string::npos) {
-			// Split strings
-			size_t pos_name = tmp_str.find("=");
-			std::string loop_indexes = tmp_str.substr(pos_name+1);
-			if (loop_indexes == "") {
-				errs() << "Please specify indexes of target loops, starting from 0. Initialization loops will be counted.\n\n";
+		switch(c) {
+			case 'h':
+				errs() << helpMessage;
 				exit(-1);
-			}
-			else {
-				size_t has_comma = loop_indexes.find(",");
-				if (has_comma == std::string::npos) {
-					target_loops.push_back(loop_indexes);
+				break;
+			case 'i':
+				args.workDir = optarg;
+				break;
+			case 'o':
+				args.outWorkDir = optarg;
+				break;
+			case 'c':
+				args.configFileName = optarg;
+				break;
+			case 'm':
+				optargStr = optarg;
+				if(!optargStr.compare("trace"))
+					args.mode = args.MODE_TRACE_ONLY;
+				else if(!optargStr.compare("estimation"))
+					args.mode = args.MODE_ESTIMATE_ONLY;
+				break;
+			case 't':
+				optargStr = optarg;
+				if(!optargStr.compare("VC707"))
+					args.mode = args.TARGET_XILINX_VC707;
+				break;
+			case 'v':
+				args.verbose = true;
+				break;
+			case 'l':
+				optargStr = optarg;
+				commaPos = optargStr.find(",");
+				if(std::string::npos == commaPos) {
+					args.targetLoops.push_back(optargStr);
 				}
 				else {
-					while (loop_indexes.find(",") != std::string::npos) {
-						size_t pos_comma = loop_indexes.find(",");
-						std::string lp_index = loop_indexes.substr(0, pos_comma);
-						loop_indexes.erase(0, pos_comma+1);
-						if (lp_index != "") {
-							target_loops.push_back(lp_index);
-						}
+					while(optargStr.find(",") != std::string::npos) {
+						commaPos = optargStr.find(",");
+						std::string loopIndex = optargStr.substr(0, commaPos);
+						optargStr.erase(0, commaPos + 1);
+						if(loopIndex != "")
+							args.targetLoops.push_back(loopIndex);
 					}
-					// Get the last element
-					if (loop_indexes != "") {
-						target_loops.push_back(loop_indexes);
-					}
+					if(optargStr != "")
+						args.targetLoops.push_back(optargStr);
 				}
-			}
+				break;
+			case 0xF00:
+				args.memTrace = true;
+				break;
+			case 0xF01:
+				args.showCFG = true;
+				break;
+			case 0xF02:
+				args.showCFGDetailed = true;
+				break;
+			case 0xF03:
+				args.showPreOptDDDG = true;
+				break;
+			case 0xF04:
+				args.showPostOptDDDG = true;
+				break;
+			case 0xF05:
+				args.fSBOpt = false;
+				break;
+			case 0xF06:
+				args.fSLROpt = true;
+				break;
+			case 0xF07:
+				args.fNoSLROpt = true;
+				break;
+			case 0xF08:
+				args.fRSROpt = false;
+				break;
+			case 0xF09:
+				args.fTHRFloatOpt = true;
+				break;
+			case 0xF0A:
+				args.fTHRIntOpt = true;
+				break;
+			case 0xF0B:
+				args.fMemDisambuigOpt = true;
+				break;
+			case 0xF0C:
+				args.fNoFPUThresOpt = true;
+				break;
+			case 0xF0D:
+				args.fExtraScalar = true;
+				break;
+			case 0xF0E:
+				args.fRWRWMem = true;
+				break;
 		}
-		else if (!tmp_str.compare("-cfg-detailed")) {
-			show_cfg_detailed = true;
-		}
-		else if (!tmp_str.compare("-cfg-only")) {
-			show_cfg_only = true;
-		}
-		else if (!tmp_str.compare("-dddg-bf-opt")) {
-			show_dddg_bf_opt = true;
-		}
-		else if (!tmp_str.compare("-dddg-af-opt")) {
-			show_dddg_af_opt = true;
-		}
-		else if (!tmp_str.compare("-verbose")) {
-			verbose_print = true;
-		}
-		else if (!tmp_str.compare("-dis-store-buffer")) {
-			enable_store_buffer = false;
-		}
-		else if (!tmp_str.compare("-shared-load-removal")) {
-			enable_shared_load_removal = true;
-		}
-		else if (!tmp_str.compare("-dis-shared-load-removal")) {
-			disable_shared_load_removal = true;
-		}
-		else if (!tmp_str.compare("-dis-rp-store-removal")) {
-			enable_repeated_store_removal = false;
-		}
-		else if (!tmp_str.compare("-THR-float")) {
-			enable_tree_height_reduction_float = true;
-		}
-		else if (!tmp_str.compare("-THR-integer")) {
-			enable_tree_height_reduction_integer = true;
-		}
-		else if (!tmp_str.compare("-memory-disambiguation")) {
-			enable_memory_disambiguation = true;
-		}
-		else if (!tmp_str.compare("-dis-fp-threshold")) {
-			disable_fp_unit_threshold = true;
-		}
-		else if (!tmp_str.compare("-en-extra-scalar")) {
-			enable_extra_scalar = true;
-		} 
-		else if (!tmp_str.compare("-en-rw-rw-memory")) {
-			enable_rw_rw_memory = true;
-		}
-		else if (!tmp_str.compare("-vc707")) {
-			target_vc707 = true;
-		}
-		else if (!tmp_str.compare("-h") || !tmp_str.compare("--help")) {
-			//Print Help message
-			errs() << help_message;
-			exit(-1);
-		}
-		else if (tmp_str.find("-Opath=") != std::string::npos) {
-			size_t pos_oPath = tmp_str.find("=");
-			outputPath = tmp_str.substr(pos_path + 1);
-#ifdef _MSC_VER
-			outputPath += "\\";
-#else
-			outputPath += "/";
-#endif // End of _MSC_VER
-		}
-		else {
-			errs() << "Wrong input argument (\"lin-analyzer --help\" or \"lin-analyzer -h\" for help)\n\n";
-			exit(-1);
-		}
-
 	}
+
+	// Note: The path should include \5C in Unix or / in Windows in the end!
+#ifdef _MSC_VER
+	args.workDir += "\\";
+	args.outWorkDir += "\\";
+#else
+	args.workDir += "/";
+	args.outWorkDir += "/";
+#endif
+
+	if((argc - optind) != 2) {
+		errs() << "Missing input arguments (run \"" << argv[0] << " --help\" for help)\n";
+		exit(-1);
+	}
+
+	InputFilename = argv[optind];
+	args.inputFileName = InputFilename.c_str();
+	int len = args.inputFileName.length();
+	if(len < 3 || args.inputFileName.substr(len - 3, len).compare(".bc")) {
+		errs() << "Invalid bitcode filename (wrong extension)\n";
+		exit(-1);
+	}
+
+	args.kernelNames.clear();
+	args.kernelNames.push_back(argv[optind + 1]);
+
+	if(!args.targetLoops.size())
+		args.targetLoops.push_back("0");
+
+	VERBOSE_PRINT(
+		errs() << "Input bitcode file: " << InputFilename << "\n";
+		errs() << "Kernel name: " << args.kernelNames[0] << "\n";
+		errs() << "Input working directory: " << args.workDir << "\n";
+		errs() << "Output working directory: " << args.outWorkDir << "\n";
+		errs() << "Configuration file: " << args.configFileName << "\n";
+		errs() << "Mode: ";
+		switch(args.mode) {
+			case args.MODE_TRACE_ONLY:
+				errs() << "dynamic trace only\n";
+				break;
+			case args.MODE_ESTIMATE_ONLY:
+				errs() << "cycle estimation only\n";
+				break;
+			default:
+				errs() << "dynamic trace and cycle estimation\n";
+				break;
+		}
+		errs() << "Target: ";
+		switch(args.mode) {
+			case args.TARGET_XILINX_VC707:
+				errs() << "Xilinx Virtex-7 FPGA\n";
+				break;
+			default:
+				errs() << "Xilinx Zynq-7000 SoC\n";
+				break;
+		}
+		errs() << "Target loops: " << args.targetLoops[0];
+		for(unsigned int i = 1; i < args.targetLoops.size(); i++)
+			errs() << ", " << args.targetLoops[i];
+		errs() << "\n";
+	);
 
 	// Loading kernel names into kernel_names vector
 	DEBUG(dbgs() << "We only focus on the kernel for this application: \n");
-	DEBUG(dbgs() << "\tKernel name: " << kernel_names[0] << "\n");
+	DEBUG(dbgs() << "\tKernel name: " << args.kernelNames[0] << "\n");
 
 	DEBUG(dbgs() << "Please make sure all functions within a kernel function are included.");
 	DEBUG(dbgs() << "We also need to consider these functions. Otherwise, the tool will ");
 	DEBUG(dbgs() << "ignore all these functions and cause problems!\n");
-
 }

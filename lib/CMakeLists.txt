@@ -4,4 +4,5 @@ if (NOT TARGET LLVMLinProfiler)
 endif (NOT TARGET LLVMLinProfiler)
 
 #add_subdirectory(Profile)
+add_subdirectory(Aux)
 add_subdirectory(Build_DDDG)

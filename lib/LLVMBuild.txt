@@ -1,3 +1,4 @@
 [common]
+subdirectories = Aux
 subdirectories = Profile
 subdirectories = Build_DDDG

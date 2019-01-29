@@ -5,4 +5,4 @@ subdirectories = lib tools
 type = Tool
 name = lin-analyzer
 parent = Tools
-required_libraries = Support LLVMLinProfiler BuildDDDGlib
+required_libraries = Support LLVMLinProfiler BuildDDDGlib Auxlib

@@ -5,12 +5,12 @@
 #define LOOPNUMBERPASS_H
 
 #include "llvm/Pass.h"
+#include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/LoopPass.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Function.h"
-#include "llvm/Analysis/LoopPass.h"
-#include "llvm/Analysis/LoopInfo.h"
-#include "llvm/Support/raw_os_ostream.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/raw_os_ostream.h"
 #include "llvm/Transforms/Scalar.h"
 
 #include "profile_h/Passes.h"
@@ -18,27 +18,20 @@
 
 namespace llvm {
 
-	class LoopNumber : public LoopPass {
-		
-	public:
-		static char ID;
-		LoopNumber();
-		bool doInitialization(Loop *lp, LPPassManager &LPM);
-		void getAnalysisUsage(AnalysisUsage &AU) const;
-		bool runOnLoop(Loop* lp, LPPassManager &LPM);
-		/*
-		unsigned getNumberLoopOfFunc(std::string func_name) const;
-		unsigned getNumberFuncHasLoop() const;
-		*/
+class LoopNumber : public LoopPass {		
+	bool firstRun;
+	unsigned loopCounter;
+	NamedMDNode *NMD;
+	std::vector<Value *> LoopsMetadataNode;
+	std::vector<Function *> exploredFunc;
 
-	private:
-		//unsigned func_hasLoop_number;
-		unsigned loop_counter;
-		//std::map<std::string, unsigned> loopNumInaFunc;
-		NamedMDNode* NMD;
-		std::vector<Value*> LoopsMetadataNode;
-		std::vector<Function* > exploredFunc;
-	};
+public:
+	static char ID;
+	LoopNumber();
+	bool doInitialization(Loop *L, LPPassManager &LPM);
+	void getAnalysisUsage(AnalysisUsage &AU) const;
+	bool runOnLoop(Loop *L, LPPassManager &LPM);
+};
 
 } // End of llvm namespace
 

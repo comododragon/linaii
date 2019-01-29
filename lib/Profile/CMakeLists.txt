@@ -8,17 +8,15 @@ add_llvm_library(LLVMLinProfiler
 	#file_func.cpp
 	#opcode_func.cpp
 	#generic_func.cpp
-	GetInstDistributionPass.cpp
 	LoopNumberPass.cpp
 	AssignBasicBlockID.cpp
 	AssignLoadStoreID.cpp
-	QueryBasicBlockID.cpp
-	QueryLoadStoreID.cpp
 	ExtractLoopInfoPass.cpp
-	GetLoopBoundPass.cpp
-	CodeInstrumentPass.cpp
 	TraceDataStructure.cpp
-	AnalysisProfilingPass.cpp
+	)
+
+target_link_libraries(LLVMLinProfiler
+	Auxlib
 	)
 
 llvm_config(LLVMLinProfiler jit)

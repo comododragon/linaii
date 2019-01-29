@@ -1,43 +1,41 @@
 #ifndef INSTRUMENT_FOR_DDDG_PASS_H
 #define INSTRUMENT_FOR_DDDG_PASS_H
 
-#include <vector>
 #include <cmath>
+#include <cstdio>
+#include <fstream>
+#include <iostream>
+#include <vector>
+#include <stdlib.h>
+#include <string>
+#include <string.h>
+
 #include "llvm/Pass.h"
-#include "llvm/IR/BasicBlock.h"
-#include "llvm/IR/Constants.h"
-#include "llvm/IR/Instructions.h"
-#include "llvm/IR/Module.h"
-#include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/Metadata.h"
-#include "llvm/IR/DebugInfo.h"
-#include "llvm/IR/Verifier.h"
 #include "llvm/ExecutionEngine/GenericValue.h"
 #include "llvm/ExecutionEngine/JIT.h"
-#include "llvm/Support/raw_os_ostream.h"
+#include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DebugInfo.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/Metadata.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/Verifier.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/TargetSelect.h"
-
+#include "llvm/Support/raw_os_ostream.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
 
-#include "profile_h/Passes.h"
-#include "profile_h/auxiliary.h"
-
-#include "profile_h/SlotTracker.h"
-#include "profile_h/TraceFunctions.h"
-#include "profile_h/generic_func.h"
 #include "profile_h/BaseDatapath.h"
 #include "profile_h/DDDG.h"
 #include "profile_h/DynamicDatapath.h"
-
-#include <string.h>
-#include <stdlib.h>
-#include <fstream>
-#include <iostream>
-#include <string>
-#include <cstdio>
+#include "profile_h/Passes.h"
+#include "profile_h/SlotTracker.h"
+#include "profile_h/TraceFunctions.h"
+#include "profile_h/auxiliary.h"
+#include "profile_h/generic_func.h"
 
 #define NUM_OF_INTRINSICS 35
 #define NUM_OF_LLVM_INTRINSICS 33
@@ -46,104 +44,100 @@
 #define DMA_STORE 98
 #define DMA_LOAD 99
 
-using namespace std;
-
 namespace llvm {
 
-	class InstrumentForDDDG : public ModulePass {
+typedef struct {
+	Function *log0;
+	Function *logInt;
+	Function *logDouble;
+	Function *logIntNoReg;
+	Function *logDoubleNoReg;
 
-	public:
-		static char ID;
-		InstrumentForDDDG();
-		void getAnalysisUsage(AnalysisUsage &AU) const;
-		bool doInitialization(Module &M);
-		bool runOnModule(Module &M);
+	void initialiseDefaults(Module &M);
+} TraceLogger;
 
-		char ** str_split(char *a_str, const char a_delim, unsigned *size);
-		int trace_or_not(char* func);
-		bool is_tracking_function(string func);
-		int getMemSize(Type *T);
+class Injector {
+	Module *M;
+	TraceLogger *TL;
 
-		/// Function used to instrument LLVM-IR
-		void print_line(BasicBlock::iterator itr, int line, int line_number, char *func_or_reg_id,
-										char *bbID, char *instID, int opty,	int datasize = 0, Value *value = NULL, 
-										bool is_reg = 0);
+	Constant *createGlobalVariableAndGetGetElementPtr(std::string value);
 
-		void insertInstid(std::string inst_id, unsigned op_code);
+public:
+	void initialise(Module &M, TraceLogger &TL);
 
-		void insertInstid2bbName(std::string inst_id, std::string bbName);
+	void injectPHINodeTrace(BasicBlock::iterator it, int lineNo, std::string funcID, std::string bbID, std::string instID, int opcode);
+	void injectPHINodeInputTrace(BasicBlock::iterator it, int operandNumber, std::string regID, int type, int dataSize, Value *value, bool isReg);
+};
 
-		bool getInstId(Instruction *itr, char* bbid, char* instid, int &instc);
+class InstrumentForDDDG : public ModulePass {
+	TraceLogger TL;
+	Injector IJ;
+	Module *currModule;
+	Function *currFunction;
+	SlotTracker *ST;
 
-		void getBBId(Value *BB, char *bbid);
+	std::unordered_map<int, int> unrollingConfig;
+	std::vector<std::string> pipelineLoopLevelVec;
 
-		bool performOnBasicBlock(BasicBlock &BB);
+	void extractMemoryTraceForAccessPattern();
 
-		void remove_config(std::string kernel_name, std::string input_path);
-		void parse_config(std::string kernel_name, std::string input_path);
-		void getUnrollingConfiguration(lpNameLevelPair2headBBnameMapTy& lpNameLvPair2headerBBMap);
-		bool readUnrollingConfig(loopName2levelUnrollVecMapTy& lpName2levelUrPairVecMap, std::unordered_map<int, int > &unrolling_config);
+public:
+	static char ID;
+	InstrumentForDDDG();
+	void getAnalysisUsage(AnalysisUsage &AU) const;
+	bool doInitialization(Module &M);
+	bool runOnModule(Module &M);
 
-		void loopBasedTraceAnalysis();
+	int isTrace(char *func);
+	int getMemSize(Type *T);
 
-		void open_summary_file(ofstream& summary_file, std::string kernel_name);
-		void close_summary_file(ofstream& summary_file);
+#if 0
+	/// Function used to instrument LLVM-IR
+	void printLine(BasicBlock::iterator it, int line, int lineNo, std::string funcOrRegID,
+					std::string bbID, std::string instID, int opcodeOrType, int dataSize = 0, Value *value = NULL, 
+					bool isReg = false);
+	void insertInstID(std::string instID, unsigned opcode);
+	void insertInstid2bbName(std::string instID, std::string bbName);
+#endif
 
-	private:
-		Function *TL_log0, *TL_log_int, *TL_log_double, *TL_log_int_noreg, *TL_log_double_noreg;
-		Module *curr_module;
+	bool getInstID(Instruction *I, std::string bbID, int &instCnt, std::string &instID);
 
-		SlotTracker *st;
-		Function *curr_function;
+	std::string getBBID(Value *BB);
 
-		void extract_memory_trace_for_access_pattern();
+	bool performOnBasicBlock(BasicBlock &BB);
 
-		char **functions;
-		unsigned num_of_functions;
+	void removeConfig(std::string kernelName, std::string inputPath);
+	void parseConfig(std::string kernelName, std::string inputPath);
+	void getUnrollingConfiguration(lpNameLevelPair2headBBnameMapTy &lpNameLvPair2headerBBMap);
+	bool readUnrollingConfig(loopName2levelUnrollVecMapTy &lpName2levelUrPairVecMap, std::unordered_map<int, int> &unrollingConfig);
 
-		//loopName2levelUnrollVecMapTy loopName2levelUnrollVecMap;
-		std::unordered_map<int, int> unrollingConfig;
-		std::vector<std::string> pipeline_loop_levelVec;
-	};
+	void loopBasedTraceAnalysis();
 
-	//Embedded Profiler Engine
-	class ProfilingEngine {
+	void openSummaryFile(std::ofstream &summaryFile, std::string kernelName);
+	void closeSummaryFile(std::ofstream &summaryFile);
+};
 
-	public:
+// Embedded Profiler Engine
+class ProfilingEngine {
+	Module &M;
+	TraceLogger &TL;
 
-		ProfilingEngine(Module &M, Function* log0Fn, Function* log_intFn, Function* log_doubleFn,
-										Function* log_int_noregFn, Function* log_double_noregFn);
-		/*
-		explicit EmbeddedProfilerEngine(Module &M, Function* loadFn, Function* storeFn) :
-		Mod(M), RecordLoadFn(loadFn), RecordStoreFn(storeFn) {}*/
-		void runOnProfiler();
+public:
+	ProfilingEngine(Module &M, TraceLogger &TL);
+	void runOnProfiler();
+};
 
-	private:
+struct ProfilingJITContext {
+	ProfilingEngine *P;
+	ProfilingJITContext();
+};
 
-		Module& Mod;
+struct ProfilingJITSingletonContext {
+	ProfilingJITSingletonContext(ProfilingEngine *P);
+	~ProfilingJITSingletonContext();
+};
 
-		Function* log0_Fn;
-		Function* log_int_Fn;
-		Function* log_double_Fn;
-		Function* log_int_noreg_Fn;
-		Function* log_double_noreg_Fn;
-
-	};
-
-	struct ProfilingJITContext {
-		ProfilingEngine *P;
-		ProfilingJITContext();
-
-	private:
-		//uint64_t LastBBid;
-	};
-
-	struct ProfilingJITSingletonContext{
-		ProfilingJITSingletonContext(ProfilingEngine *P);
-		~ProfilingJITSingletonContext();
-	};
-
-	static ManagedStatic<ProfilingJITContext> GlobalContextDDDG;
+static ManagedStatic<ProfilingJITContext> GlobalContextDDDG;
 
 } // End of llvm namespace
 

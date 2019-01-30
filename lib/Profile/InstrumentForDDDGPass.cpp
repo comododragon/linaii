@@ -11,44 +11,6 @@ std::ofstream summary;
 
 using namespace llvm;
 
-char list_of_intrinsics[NUM_OF_INTRINSICS][25] = {
-	"llvm.memcpy",	// standard C lib
-	"llvm.memmove",
-	"llvm.memset",
-	"llvm.sqrt",
-	"llvm.powi",
-	"llvm.sin",
-	"llvm.cos",
-	"llvm.pow",
-	"llvm.exp",
-	"llvm.exp2",
-	"llvm.log",
-	"llvm.log10",
-	"llvm.log2",
-	"llvm.fma",
-	"llvm.fabs",
-	"llvm.copysign",
-	"llvm.floor",
-	"llvm.ceil",
-	"llvm.trunc",
-	"llvm.rint",
-	"llvm.nearbyint",
-	"llvm.round",
-	"llvm.bswap",	//bit manipulation
-	"llvm.ctpop",
-	"llvm.ctlz",
-	"llvm.cttz",
-	"llvm.sadd.with.overflow",	//arithmetic with overflow
-	"llvm.uadd.with.overflow",
-	"llvm.ssub.with.overflow",
-	"llvm.usub.with.overflow",
-	"llvm.smul.with.overflow",
-	"llvm.umul.with.overflow",
-	"llvm.fmuladd",		//specialised arithmetic
-	"dmaLoad",
-	"dmaStore"
-};
-
 void TraceLogger::initialiseDefaults(Module &M) {
 	LLVMContext &C = M.getContext();
 
@@ -116,6 +78,60 @@ void TraceLogger::initialiseDefaults(Module &M) {
 	);
 }
 
+int Injector::getMemSizeInBits(Type *T) {
+	if(T->isPointerTy()) {
+		return 8 * 8;
+	}
+	else if(T->isFunctionTy()) {
+		return 0;
+	}
+	else if(T->isLabelTy()) {
+		return 0;
+	}
+	else if(T->isStructTy()) {
+		int size = 0;
+		StructType *S = dyn_cast<StructType>(T);
+
+		for(int i = 0; i < S->getNumElements(); i++)
+			size += getMemSizeInBits(S->getElementType(i));
+
+		return size;
+	}
+	else if(T->isFloatingPointTy()) {
+		switch(T->getTypeID()) {
+			case llvm::Type::HalfTyID:
+				return 2 * 8;
+			case llvm::Type::FloatTyID:
+				return 4 * 8;
+			case llvm::Type::DoubleTyID:
+				return 8 * 8;
+			case llvm::Type::X86_FP80TyID:
+				return 10 * 8;
+			case llvm::Type::FP128TyID:
+				return 16 * 8;
+			case llvm::Type::PPC_FP128TyID:
+				return 16 * 8;
+			default:
+				assert(false && "Requested size of unknown floating point data type");
+		}
+	}
+	else if(T->isIntegerTy()) {
+		return cast<IntegerType>(T)->getBitWidth();
+	}
+	else if(T->isVectorTy()) {
+		return cast<VectorType>(T)->getBitWidth();
+	}
+	else if(T->isArrayTy()) {
+		ArrayType *A = dyn_cast<ArrayType>(T);
+		return (int) A->getNumElements() * A->getElementType()->getPrimitiveSizeInBits();
+	}
+	else {
+		assert(false && "Requested size of unknown data type");
+	}
+
+	return -1;
+}
+
 Constant *Injector::createGlobalVariableAndGetGetElementPtr(std::string value) {
 	LLVMContext &C = M->getContext();
 
@@ -143,7 +159,7 @@ void Injector::initialise(Module &M, TraceLogger &TL) {
 	this->TL = &TL;
 }
 
-void Injector::injectPHINodeTrace(BasicBlock::iterator it, int lineNo, std::string funcID, std::string bbID, std::string instID, int opcode) {
+void Injector::injectTraceHeader(BasicBlock::iterator it, int lineNo, std::string funcID, std::string bbID, std::string instID, int opcode) {
 	LLVMContext &C = M->getContext();
 	CallInst *tlCall;
 	IRBuilder<> IRB(it);
@@ -188,66 +204,67 @@ void Injector::injectPHINodeTrace(BasicBlock::iterator it, int lineNo, std::stri
 	}
 }
 
-void Injector::injectPHINodeInputTrace(BasicBlock::iterator it, int operandNumber, std::string regID, int type, int dataSize, Value *value, bool isReg) {
+void Injector::injectTrace(BasicBlock::iterator it, int lineNo, std::string regOrFuncID, Type *T, Value *value, bool isReg) {
 	LLVMContext &C = M->getContext();
 	CallInst *tlCall;
 	IRBuilder<> IRB(it);
+	int type = T->getTypeID();
 
 	// Create LLVM values for the provided arguments
-	Value *vOperandNumber = ConstantInt::get(IRB.getInt64Ty(), operandNumber);
+	Value *vLineNo = ConstantInt::get(IRB.getInt64Ty(), lineNo);
 	Value *vType = ConstantInt::get(IRB.getInt64Ty(), type);
-	Value *vDataSize = ConstantInt::get(IRB.getInt64Ty(), dataSize);
+	Value *vDataSize = ConstantInt::get(IRB.getInt64Ty(), getMemSizeInBits(T));
 	Value *vIsReg = ConstantInt::get(IRB.getInt64Ty(), isReg);
 	Value *vValue;
 
 	if(isReg) {
-		Constant *vvRegID = createGlobalVariableAndGetGetElementPtr(regID);
+		Constant *vvRegOrFuncID = createGlobalVariableAndGetGetElementPtr(regOrFuncID);
 
 		if(value) {
 			if(llvm::Type::IntegerTyID == type) {
 				vValue = IRB.CreateZExt(value, IRB.getInt64Ty());
-				tlCall = IRB.CreateCall5(TL->logInt, vOperandNumber, vDataSize, vValue, vIsReg, vvRegID);
+				tlCall = IRB.CreateCall5(TL->logInt, vLineNo, vDataSize, vValue, vIsReg, vvRegOrFuncID);
 			}
 			else if(type >= llvm::Type::HalfTyID && type <= llvm::Type::PPC_FP128TyID) {
 				vValue = IRB.CreateFPExt(value, IRB.getDoubleTy());
-				tlCall = IRB.CreateCall5(TL->logDouble, vOperandNumber, vDataSize, vValue, vIsReg, vvRegID);
+				tlCall = IRB.CreateCall5(TL->logDouble, vLineNo, vDataSize, vValue, vIsReg, vvRegOrFuncID);
 			}
 			else if(llvm::Type::PointerTyID == type) {
 				vValue = IRB.CreatePtrToInt(value, IRB.getInt64Ty());
-				tlCall = IRB.CreateCall5(TL->logInt, vOperandNumber, vDataSize, vValue, vIsReg, vvRegID);
+				tlCall = IRB.CreateCall5(TL->logInt, vLineNo, vDataSize, vValue, vIsReg, vvRegOrFuncID);
 			}
 			else {
 				// TODO: assert mesmo ou apenas um silent error?
-				assert(false && "PHINode input is of unsupported type");
+				assert(false && "Value is of unsupported type");
 			}
 		}
 		else {
 			vValue = ConstantInt::get(IRB.getInt64Ty(), 0);
-			tlCall = IRB.CreateCall5(TL->logInt, vOperandNumber, vDataSize, vValue, vIsReg, vvRegID);
+			tlCall = IRB.CreateCall5(TL->logInt, vLineNo, vDataSize, vValue, vIsReg, vvRegOrFuncID);
 		}
 	}
 	else {
 		if(value) {
 			if(llvm::Type::IntegerTyID == type) {
 				vValue = IRB.CreateZExt(value, IRB.getInt64Ty());
-				tlCall = IRB.CreateCall4(TL->logIntNoReg, vOperandNumber, vDataSize, vValue, vIsReg);
+				tlCall = IRB.CreateCall4(TL->logIntNoReg, vLineNo, vDataSize, vValue, vIsReg);
 			}
 			else if(type >= llvm::Type::HalfTyID && type <= llvm::Type::PPC_FP128TyID) {
 				vValue = IRB.CreateFPExt(value, IRB.getDoubleTy());
-				tlCall = IRB.CreateCall4(TL->logDoubleNoReg, vOperandNumber, vDataSize, vValue, vIsReg);
+				tlCall = IRB.CreateCall4(TL->logDoubleNoReg, vLineNo, vDataSize, vValue, vIsReg);
 			}
 			else if(llvm::Type::PointerTyID == type) {
 				vValue = IRB.CreatePtrToInt(value, IRB.getInt64Ty());
-				tlCall = IRB.CreateCall4(TL->logIntNoReg, vOperandNumber, vDataSize, vValue, vIsReg);
+				tlCall = IRB.CreateCall4(TL->logIntNoReg, vLineNo, vDataSize, vValue, vIsReg);
 			}
 			else {
 				// TODO: assert mesmo ou apenas um silent error?
-				assert(false && "PHINode input is of unsupported type");
+				assert(false && "Value is of unsupported type");
 			}
 		}
 		else {
 			vValue = ConstantInt::get(IRB.getInt64Ty(), 0);
-			tlCall = IRB.CreateCall4(TL->logIntNoReg, vOperandNumber, vDataSize, vValue, vIsReg);
+			tlCall = IRB.CreateCall4(TL->logIntNoReg, vLineNo, vDataSize, vValue, vIsReg);
 		}
 	}
 }
@@ -276,82 +293,62 @@ bool InstrumentForDDDG::doInitialization(Module &M) {
 	return false;
 }
 
-int InstrumentForDDDG::isTrace(char *func) {
-#if 0
-	if (is_tracking_function(func)) {
-		return 1;
-	}
-		
-	for (int i = 0; i < NUM_OF_INTRINSICS; i++) {
-		if (strstr(func, list_of_intrinsics[i]) == func) {
-			// TODO: Super hacky way of ensuring that dmaLoad and dmaStore always
-			// get tracked (by adding them as llvm intrinsics). We should come up
-			// with a better way of doing this...
-			if (i < NUM_OF_LLVM_INTRINSICS) {
-				return i + 2;
-			}
-			else {
-				return 1;
-			}
-		}
+// XXX: Yes, there is ABSOLUTELY a better way to do that, but I am afraid of breaking something
+// up if I try to improve this code (maybe some valid logic depends on that? Who knows? God knows?
+// The original developer knows? Or maybe no one knows?)
+// Anywayssssss... Just leaving this as it is.
+int InstrumentForDDDG::shouldTrace(std::string call) {
+	std::string intrinsicsList[] = {
+		"llvm.memcpy",
+		"llvm.memmove",
+		"llvm.memset",
+		"llvm.sqrt",
+		"llvm.powi",
+		"llvm.sin",
+		"llvm.cos",
+		"llvm.pow",
+		"llvm.exp",
+		"llvm.exp2",
+		"llvm.log",
+		"llvm.log10",
+		"llvm.log2",
+		"llvm.fma",
+		"llvm.fabs",
+		"llvm.copysign",
+		"llvm.floor",
+		"llvm.ceil",
+		"llvm.trunc",
+		"llvm.rint",
+		"llvm.nearbyint",
+		"llvm.round",
+		"llvm.bswap",
+		"llvm.ctpop",
+		"llvm.ctlz",
+		"llvm.cttz",
+		"llvm.sadd.with.overflow",
+		"llvm.uadd.with.overflow",
+		"llvm.ssub.with.overflow",
+		"llvm.usub.with.overflow",
+		"llvm.smul.with.overflow",
+		"llvm.umul.with.overflow",
+		"llvm.fmuladd"
+	};
+	const char *cCall = call.c_str();
+
+	if(isFunctionOfInterest(call))
+		return TRACE_FUNCTION_OF_INTEREST;
+
+	if(cCall == strstr(cCall, "dmaLoad"))
+		return TRACE_DMA_LOAD;
+	if(cCall == strstr(cCall, "dmaStore"))
+		return TRACE_DMA_STORE;
+
+	for(std::string elem : intrinsicsList) {
+		if(cCall == strstr(cCall, elem.c_str()))
+			return TRACE_INTRINSIC;
 	}
 
-	return -1;
-#endif
-}
-
-int InstrumentForDDDG::getMemSize(Type *T) {
-	if(T->isPointerTy()) {
-		return 8 * 8;
-	}
-	else if(T->isFunctionTy()) {
-		return 0;
-	}
-	else if(T->isLabelTy()) {
-		return 0;
-	}
-	else if(T->isStructTy()) {
-		int size = 0;
-		StructType *S = dyn_cast<StructType>(T);
-
-		for(int i = 0; i < S->getNumElements(); i++)
-			size += getMemSize(S->getElementType(i));
-
-		return size;
-	}
-	else if(T->isFloatingPointTy()) {
-		switch(T->getTypeID()) {
-			case llvm::Type::HalfTyID:
-				return 2 * 8;
-			case llvm::Type::FloatTyID:
-				return 4 * 8;
-			case llvm::Type::DoubleTyID:
-				return 8 * 8;
-			case llvm::Type::X86_FP80TyID:
-				return 10 * 8;
-			case llvm::Type::FP128TyID:
-				return 16 * 8;
-			case llvm::Type::PPC_FP128TyID:
-				return 16 * 8;
-			default:
-				assert(false && "Requested size of unknown floating point data type");
-		}
-	}
-	else if(T->isIntegerTy()) {
-		return cast<IntegerType>(T)->getBitWidth();
-	}
-	else if(T->isVectorTy()) {
-		return cast<VectorType>(T)->getBitWidth();
-	}
-	else if(T->isArrayTy()) {
-		ArrayType *A = dyn_cast<ArrayType>(T);
-		return (int) A->getNumElements() * A->getElementType()->getPrimitiveSizeInBits();
-	}
-	else {
-		assert(false && "Requested size of unknown data type");
-	}
-
-	return -1;
+	return NOT_TRACE;
 }
 
 #if 0
@@ -677,7 +674,7 @@ bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 	if(dyn_cast<PHINode>(it)) {
 		for(; PHINode *N = dyn_cast<PHINode>(it); it++) {
 			Value *currOperand = NULL;
-			bool isReg = 0;
+			bool isReg = false;
 			int size = 0, opcode;
 			std::string bbID, instID, operR;
 			int lineNumber = -1;
@@ -691,8 +688,8 @@ bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 				lineNumber = Loc.getLineNumber();
 			}
 
-			// Create a call to trace logger just informing the register receiving phi
-			IJ.injectPHINodeTrace(insIt, lineNumber, funcName, bbID, instID, opcode);
+			// Inject phi node trace
+			IJ.injectTraceHeader(insIt, lineNumber, funcName, bbID, instID, opcode);
 			//printLine(insIt, 0, lineNumber, funcName, bbID, instID, opcode);
 
 			// Create calls to trace logger informing the inputs for phi
@@ -709,9 +706,9 @@ bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 
 					// Input to phi is of vector type
 					if(currOperand->getType()->isVectorTy())
-						IJ.injectPHINodeInputTrace(insIt, i + 1, operR, currOperand->getType()->getTypeID(), getMemSize(currOperand->getType()), NULL, isReg);
+						IJ.injectTrace(insIt, i + 1, operR, currOperand->getType(), NULL, isReg);
 					else
-						IJ.injectPHINodeInputTrace(insIt, i + 1, operR, I->getType()->getTypeID(), getMemSize(I->getType()), NULL, isReg);
+						IJ.injectTrace(insIt, i + 1, operR, I->getType(), NULL, isReg);
 
 					//if(currOperand->getType()->isVectorTy())
 					//	printLine(insIt, i + 1, -1, operR, "phi", "", currOperand->getType()->getTypeID(), getMemSize(currOperand->getType()), NULL, isReg);
@@ -720,307 +717,175 @@ bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 				}
 				// Input to phi is of vector type
 				else if(currOperand->getType()->isVectorTy()) {
-					IJ.injectPHINodeInputTrace(insIt, i + 1, currOperand->getName(), currOperand->getType()->getTypeID(), getMemSize(currOperand->getType()), NULL, isReg);
+					IJ.injectTrace(insIt, i + 1, currOperand->getName(), currOperand->getType(), NULL, isReg);
 					//printLine(insIt, i + 1, -1, currOperand->getName(), "phi", "", currOperand->getType()->getTypeID(), getMemSize(currOperand->getType()), NULL, isReg);
 				}
 				// Input to phi is none of the above
 				else {
-					IJ.injectPHINodeInputTrace(insIt, i + 1, currOperand->getName(), currOperand->getType()->getTypeID(), getMemSize(currOperand->getType()), currOperand, isReg);
+					IJ.injectTrace(insIt, i + 1, currOperand->getName(), currOperand->getType(), currOperand, isReg);
 					//printLine(insIt, i + 1, -1, currOperand->getName(), "phi", "", currOperand->getType()->getTypeID(), getMemSize(currOperand->getType()), currOperand, isReg);
 				}
 			}
 
-#if 0
-
-			if (!itr->getType()->isVoidTy()) {
-				is_reg = 1;
-				if (itr->getType()->isVectorTy()) {
-					print_line(insertp, RESULT_LINE, -1, instid, NULL, NULL,
-										 itr->getType()->getTypeID(),
-										 getMemSize(itr->getType()),
-											NULL, is_reg);
+			// Inject phi node result trace
+			if(!(it->getType()->isVoidTy())) {
+				isReg = true;
+				if(it->getType()->isVectorTy()) {
+					IJ.injectTrace(insIt, RESULT_LINE, instID, it->getType(), NULL, isReg);
 				}
-				else if (itr->isTerminator()) {
-					fprintf(stderr, "It is terminator...\n");
+				else if(it->isTerminator()) {
+					// TODO: put a silent warning or fail assert?
 				}
 				else {
-					print_line(insertp, RESULT_LINE, -1, instid, NULL, NULL,
-										 itr->getType()->getTypeID(),
-										 getMemSize(itr->getType()),
-										 itr, is_reg);
+					IJ.injectTrace(insIt, RESULT_LINE, instID, it->getType(), it, isReg);
 				}
 			}
-#endif
 		}
 	}
 
-#if 0
-	//for ALL instructions
-	BasicBlock::iterator nextitr;
-	for (BasicBlock::iterator itr = insertp; itr != BB.end(); itr = nextitr) {
-		//errs() << "\tTracking instruction: " << *itr << "\n";
-		//errs() << "\t\tin function: " << funcName << "\n";
-		Value *curr_operand = NULL;
-		bool is_reg = 0;
+	// Deal with the rest (non-phi)
+	BasicBlock::iterator nextIt;
+	for(it = insIt; it != BB.end(); it = nextIt) {
+		Value *currOperand = NULL;
+		bool isReg = false;
 		int size = 0, opcode;
-		char bbid[256], instid[256];
-		char operR[256];
-		//int DataSize, value;
-		int line_number = -1;
+		std::string bbID, instID, operR;
+		int lineNumber = -1;
 
-		nextitr = itr;
-		nextitr++;
+		nextIt = it;
+		nextIt++;
 
-		//Get static BasicBlock ID: produce bbid
-		getBBId(&BB, bbid);
-		//Get static instruction ID: produce instid
-		getInstId(itr, bbid, instid, instc);
+		bbID = getBBID(&BB);
+		getInstID(it, bbID, instCnt, instID);
+		opcode = it->getOpcode();
 
-		//Get opcode: produce opcode
-		opcode = itr->getOpcode();
-
-		if (MDNode *N = itr->getMetadata("dbg")) {
-			DILocation Loc(N);                      // DILocation is in DebugInfo.h
-			line_number = Loc.getLineNumber();
+		if(MDNode *N = it->getMetadata("dbg")) {
+			DILocation Loc(N);
+			lineNumber = Loc.getLineNumber();
 		}
-		int callType = -1;
-		if (CallInst *I = dyn_cast<CallInst>(itr)) {
-			char callfunc[256];
-			Function *fun = I->getCalledFunction();
-			if (fun) {
-				strcpy(callfunc, fun->getName().str().c_str());
-			}
-			callType = trace_or_not(callfunc);
-			if (callType == -1) {
+
+		int stRes = NOT_TRACE;
+		if(CallInst *I = dyn_cast<CallInst>(it)) {
+			stRes = shouldTrace(I->getCalledFunction()->getName());
+			if(NOT_TRACE == stRes)
 				continue;
-			}
 		}
 
-		int i, num_of_operands = itr->getNumOperands();
-		if (itr->getOpcode() == Instruction::Call && callType == 1) {
+		int numOfOperands = it->getNumOperands();
 
-			CallInst *CI = dyn_cast<CallInst>(itr);
-			Function *fun = CI->getCalledFunction();
-			strcpy(operR, (char*)fun->getName().str().c_str());
-			if (fun->getName().str().find("dmaLoad") != std::string::npos) {
-				print_line(itr, 0, line_number, funcName, bbid, instid, DMA_LOAD);
-			}
-			else if (fun->getName().str().find("dmaStore") != std::string::npos) {
-				print_line(itr, 0, line_number, funcName, bbid, instid, DMA_STORE);
-			}
-			else {
-				print_line(itr, 0, line_number, funcName, bbid, instid, opcode);
-			}
+		if(Instruction::Call == it->getOpcode() && (TRACE_FUNCTION_OF_INTEREST == stRes || TRACE_DMA_LOAD == stRes || TRACE_DMA_STORE == stRes)) {
+			CallInst *CI = dyn_cast<CallInst>(it);
+			operR = CI->getCalledFunction()->getName();
 
-			curr_operand = itr->getOperand(num_of_operands - 1);
-			is_reg = curr_operand->hasName();
-			assert(is_reg);
-			print_line(itr, num_of_operands, -1, operR, NULL, NULL,
-								 curr_operand->getType()->getTypeID(),
-								 getMemSize(curr_operand->getType()),
-								 curr_operand,
-								 is_reg);
+			// Inject call trace
+			if(TRACE_DMA_LOAD == stRes || TRACE_DMA_STORE == stRes)
+				IJ.injectTraceHeader(it, lineNumber, funcName, bbID, instID, stRes);
+			else
+				IJ.injectTraceHeader(it, lineNumber, funcName, bbID, instID, opcode);
 
-			const Function::ArgumentListType &Args(fun->getArgumentList());
-			int num_of_call_operands = CI->getNumArgOperands();
-			int call_id = 0;
-			for (Function::ArgumentListType::const_iterator arg_it = Args.begin(), arg_end = Args.end(); arg_it != arg_end; ++arg_it) {
-				char curr_arg_name[256];
-				strcpy(curr_arg_name, (char *)arg_it->getName().str().c_str());
+			currOperand = it->getOperand(numOfOperands - 1);
+			isReg = currOperand->hasName();
+			assert(isReg && "Last operand of call has no name");
 
-				curr_operand = itr->getOperand(call_id);
-				is_reg = curr_operand->hasName();
-				if (Instruction *I = dyn_cast<Instruction>(curr_operand)) {
+			// Inject call last operand trace
+			IJ.injectTrace(it, numOfOperands, operR, currOperand->getType(), currOperand, isReg);
+
+			const Function::ArgumentListType &AL(CI->getCalledFunction()->getArgumentList());
+			int numOfCallOperands = CI->getNumArgOperands();
+			int callID = 0;
+
+			for(Function::ArgumentListType::const_iterator argIt = AL.begin(); argIt != AL.end(); argIt++) {
+				std::string currArgName = argIt->getName();
+
+				currOperand = it->getOperand(callID);
+				isReg = currOperand->hasName();
+
+				// Input to phi is an instruction
+				if(Instruction *I = dyn_cast<Instruction>(currOperand)) {
 					int flag = 0;
-					is_reg = getInstId(I, NULL, operR, flag);
-					assert(flag == 0);
-					if (curr_operand->getType()->isVectorTy()) {
-						print_line(itr, call_id + 1, -1, operR, NULL, NULL,
-											 curr_operand->getType()->getTypeID(),
-											 getMemSize(curr_operand->getType()),
-											 NULL,
-											 is_reg);
-						print_line(itr, FORWARD_LINE, -1, curr_arg_name, NULL, NULL,
-											 curr_operand->getType()->getTypeID(),
-											 getMemSize(curr_operand->getType()),
-											 NULL,
-											 true);
+					isReg = getInstID(I, "", flag, operR);
+					assert(0 == flag && "Unnamed instruction with no local slot found");
+
+					if(currOperand->getType()->isVectorTy()) {
+						IJ.injectTrace(it, callID + 1, operR, currOperand->getType(), NULL, isReg);
+						IJ.injectTrace(it, FORWARD_LINE, currArgName, currOperand->getType(), NULL, true);
 					}
 					else {
-						print_line(itr, call_id + 1, -1, operR, NULL, NULL,
-											 I->getType()->getTypeID(),
-											 getMemSize(I->getType()),
-											 curr_operand,
-											 is_reg);
-						print_line(itr, FORWARD_LINE, -1, curr_arg_name, NULL, NULL,
-											 I->getType()->getTypeID(),
-										 	 getMemSize(I->getType()),
-											 curr_operand,
-											 true);
+						IJ.injectTrace(it, callID + 1, operR, I->getType(), currOperand, isReg);
+						IJ.injectTrace(it, FORWARD_LINE, currArgName, I->getType(), currOperand, true);
 					}
 				}
 				else {
-					if (curr_operand->getType()->isVectorTy()) {
-						char operand_id[256];
-						strcpy(operand_id, curr_operand->getName().str().c_str());
-						print_line(itr, call_id + 1, -1, operand_id, NULL, NULL,
-											 curr_operand->getType()->getTypeID(),
-											 getMemSize(curr_operand->getType()),
-											 NULL,
-											 is_reg);
-						print_line(itr, FORWARD_LINE, -1, curr_arg_name, NULL, NULL,
-											 curr_operand->getType()->getTypeID(),
-											 getMemSize(curr_operand->getType()),
-											 NULL,
-											 true);
+					if(currOperand->getType()->isVectorTy()) {
+						IJ.injectTrace(it, callID + 1, currOperand->getName(), currOperand->getType(), NULL, isReg);
+						IJ.injectTrace(it, FORWARD_LINE, currArgName, currOperand->getType(), NULL, true);
 					}
-
-					else if (curr_operand->getType()->isLabelTy()) {
-						char label_id[256];
-						getBBId(curr_operand, label_id);
-						print_line(itr, call_id + 1, -1, label_id, NULL, NULL,
-											 curr_operand->getType()->getTypeID(),
-											 getMemSize(curr_operand->getType()),
-											 NULL,
-											 is_reg);
-						print_line(itr, FORWARD_LINE, -1, curr_arg_name, NULL, NULL,
-											 curr_operand->getType()->getTypeID(),
-											 getMemSize(curr_operand->getType()),
-											 NULL,
-											 true);
+					else if(currOperand->getType()->isLabelTy()) {
+						IJ.injectTrace(it, callID + 1, getBBID(currOperand), currOperand->getType(), NULL, isReg);
+						IJ.injectTrace(it, FORWARD_LINE, currArgName, currOperand->getType(), NULL, true);
 					}
-					// is function
-					else if (curr_operand->getValueID() == 2) {
-						char func_id[256];
-						strcpy(func_id, curr_operand->getName().str().c_str());
-						print_line(itr, call_id + 1, -1, func_id, NULL, NULL,
-											 curr_operand->getType()->getTypeID(),
-											 getMemSize(curr_operand->getType()),
-											 NULL,
-											 is_reg);
-						print_line(itr, FORWARD_LINE, -1, curr_arg_name, NULL, NULL,
-											 curr_operand->getType()->getTypeID(),
-											 getMemSize(curr_operand->getType()),
-											 NULL,
-											 true);
+					else if(2 == currOperand->getValueID()) {
+						IJ.injectTrace(it, callID + 1, currOperand->getName(), currOperand->getType(), NULL, isReg);
+						IJ.injectTrace(it, FORWARD_LINE, currArgName, currOperand->getType(), NULL, true);
 					}
 					else {
-						char operand_id[256];
-						strcpy(operand_id, curr_operand->getName().str().c_str());
-						print_line(itr, call_id + 1, -1, operand_id, NULL, NULL,
-											 curr_operand->getType()->getTypeID(),
-											 getMemSize(curr_operand->getType()),
-											 curr_operand,
-											 is_reg);
-						print_line(itr, FORWARD_LINE, -1, curr_arg_name, NULL, NULL,
-											 curr_operand->getType()->getTypeID(),
-											 getMemSize(curr_operand->getType()),
-											 curr_operand,
-											 true);
+						IJ.injectTrace(it, callID + 1, currOperand->getName(), currOperand->getType(), currOperand, isReg);
+						IJ.injectTrace(it, FORWARD_LINE, currArgName, currOperand->getType(), currOperand, true);
 					}
 				}
-				call_id++;
+
+				callID++;
 			}
 		}
-		/// If this instruction is not a Call instruction, then execute the following code.
-		else
-		{
-			print_line(itr, 0, line_number, funcName, bbid, instid, opcode);
-			if (num_of_operands > 0) {
-				for (i = num_of_operands - 1; i >= 0; i--) {
-					curr_operand = itr->getOperand(i);
-					is_reg = curr_operand->hasName();
-					//char arg_label_in_callee[256];
+		else {
+			IJ.injectTraceHeader(it, lineNumber, funcName, bbID, instID, opcode);
 
-					//for instructions using registers
-					if (Instruction *I = dyn_cast<Instruction>(curr_operand)) {
+			if(numOfOperands > 0) {
+				for(int i = numOfOperands - 1; i >= 0; i--) {
+					currOperand = it->getOperand(i);
+					isReg = currOperand->hasName();
+
+					// Input to phi is an instruction
+					if(Instruction *I = dyn_cast<Instruction>(currOperand)) {
 						int flag = 0;
-						is_reg = getInstId(I, NULL, operR, flag);
-						assert(flag == 0);
-						if (curr_operand->getType()->isVectorTy()) {
-							print_line(itr, i + 1, -1, operR, NULL, NULL,
-												 curr_operand->getType()->getTypeID(),
-												 getMemSize(curr_operand->getType()),
-												 NULL,
-												 is_reg);
-						}
-						else {
-							print_line(itr, i + 1, -1, operR, NULL, NULL,
-												 I->getType()->getTypeID(),
-												 getMemSize(I->getType()),
-												 curr_operand,
-												 is_reg);
-						}
-					} /// If this operand is not an instruction (maybe a label), then execute the following code
-					else {
-						if (curr_operand->getType()->isVectorTy()) {
-							char operand_id[256];
-							strcpy(operand_id, curr_operand->getName().str().c_str());
-							print_line(itr, i + 1, -1, operand_id, NULL, NULL,
-												 curr_operand->getType()->getTypeID(),
-												 getMemSize(curr_operand->getType()),
-												 NULL,
-												 is_reg);
-						}
+						isReg = getInstID(I, "", flag, operR);
+						assert(0 == flag && "Unnamed instruction with no local slot found");
 
-						else if (curr_operand->getType()->isLabelTy()) {
-							char label_id[256];
-							getBBId(curr_operand, label_id);
-							print_line(itr, i + 1, -1, label_id, NULL, NULL,
-												 curr_operand->getType()->getTypeID(),
-												 getMemSize(curr_operand->getType()),
-												 NULL,
-												 is_reg);
-						}
-						// is function
-						else if (curr_operand->getValueID() == 2) {
-							char func_id[256];
-							strcpy(func_id, curr_operand->getName().str().c_str());
-							print_line(itr, i + 1, -1, func_id, NULL, NULL,
-												 curr_operand->getType()->getTypeID(),
-												 getMemSize(curr_operand->getType()),
-												 NULL,
-												 is_reg);
-						}
-						else {
-							char operand_id[256];
-							strcpy(operand_id, curr_operand->getName().str().c_str());
-							print_line(itr, i + 1, -1, operand_id, NULL, NULL,
-												 curr_operand->getType()->getTypeID(),
-												 getMemSize(curr_operand->getType()),
-												 curr_operand,
-												 is_reg);
-						}
+						if(currOperand->getType()->isVectorTy())
+							IJ.injectTrace(it, i + 1, operR, currOperand->getType(), NULL, isReg);
+						else
+							IJ.injectTrace(it, i + 1, operR, I->getType(), currOperand, isReg);
+					}
+					else {
+						if(currOperand->getType()->isVectorTy())
+							IJ.injectTrace(it, i + 1, currOperand->getName(), currOperand->getType(), NULL, isReg);
+						else if(currOperand->getType()->isLabelTy())
+							IJ.injectTrace(it, i + 1, getBBID(currOperand), currOperand->getType(), NULL, isReg);
+						else if(2 == currOperand->getValueID())
+							IJ.injectTrace(it, i + 1, currOperand->getName(), currOperand->getType(), NULL, isReg);
+						else
+							IJ.injectTrace(it, i + 1, currOperand->getName(), currOperand->getType(), currOperand, isReg);
 					}
 				}
 			}
 		}
 
-		//for call instruction
-
-		//handle function result
-		if (!itr->getType()->isVoidTy()) {
-			is_reg = 1;
-			if (itr->getType()->isVectorTy()) {
-				print_line(nextitr, RESULT_LINE, -1, instid, NULL, NULL,
-									 itr->getType()->getTypeID(),
-									 getMemSize(itr->getType()),
-									 NULL, is_reg);
+		// Inject phi node result trace
+		if(!(it->getType()->isVoidTy())) {
+			isReg = true;
+			if(it->getType()->isVectorTy()) {
+				IJ.injectTrace(nextIt, RESULT_LINE, instID, it->getType(), NULL, isReg);
 			}
-			else if (itr->isTerminator()) {
-				DEBUG(dbgs() << "It is terminator...\n");
+			else if(it->isTerminator()) {
+				// TODO: put a silent warning or fail assert?
 			}
 			else {
-				print_line(nextitr, RESULT_LINE, -1, instid, NULL, NULL,
-									 itr->getType()->getTypeID(),
-									 getMemSize(itr->getType()),
-									 itr, is_reg);
+				IJ.injectTrace(nextIt, RESULT_LINE, instID, it->getType(), it, isReg);
 			}
 		}
 	}
 
 	return true;
-#endif
 }
 
 void InstrumentForDDDG::removeConfig(std::string kernelName, std::string inputPath) {

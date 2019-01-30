@@ -37,12 +37,8 @@
 #include "profile_h/auxiliary.h"
 #include "profile_h/generic_func.h"
 
-#define NUM_OF_INTRINSICS 35
-#define NUM_OF_LLVM_INTRINSICS 33
 #define RESULT_LINE 19134
 #define FORWARD_LINE 24601
-#define DMA_STORE 98
-#define DMA_LOAD 99
 
 namespace llvm {
 
@@ -60,13 +56,14 @@ class Injector {
 	Module *M;
 	TraceLogger *TL;
 
+	int getMemSizeInBits(Type *T);
 	Constant *createGlobalVariableAndGetGetElementPtr(std::string value);
 
 public:
 	void initialise(Module &M, TraceLogger &TL);
 
-	void injectPHINodeTrace(BasicBlock::iterator it, int lineNo, std::string funcID, std::string bbID, std::string instID, int opcode);
-	void injectPHINodeInputTrace(BasicBlock::iterator it, int operandNumber, std::string regID, int type, int dataSize, Value *value, bool isReg);
+	void injectTraceHeader(BasicBlock::iterator it, int lineNo, std::string funcID, std::string bbID, std::string instID, int opcode);
+	void injectTrace(BasicBlock::iterator it, int lineNo, std::string regOrFuncID, Type *T, Value *value, bool isReg);
 };
 
 class InstrumentForDDDG : public ModulePass {
@@ -75,21 +72,27 @@ class InstrumentForDDDG : public ModulePass {
 	Module *currModule;
 	Function *currFunction;
 	SlotTracker *ST;
+	enum {
+		NOT_TRACE = 0,
+		TRACE_INTRINSIC = 1,
+		TRACE_FUNCTION_OF_INTEREST = 2,
+		TRACE_DMA_STORE = 98,
+		TRACE_DMA_LOAD = 99
+	};
 
 	std::unordered_map<int, int> unrollingConfig;
 	std::vector<std::string> pipelineLoopLevelVec;
 
 	void extractMemoryTraceForAccessPattern();
+	int shouldTrace(std::string call);
 
 public:
 	static char ID;
+
 	InstrumentForDDDG();
 	void getAnalysisUsage(AnalysisUsage &AU) const;
 	bool doInitialization(Module &M);
 	bool runOnModule(Module &M);
-
-	int isTrace(char *func);
-	int getMemSize(Type *T);
 
 #if 0
 	/// Function used to instrument LLVM-IR

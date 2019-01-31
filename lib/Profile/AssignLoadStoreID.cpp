@@ -55,6 +55,10 @@ bool AssignLoadStoreID::runOnModule(Module &M) {
 		}
 	}
 
+#ifdef DBG_PRINT_ALL
+	printDatabase();
+#endif
+
 	// Scan through all instructions in the module and assign unique ID
 	visit(M);
 
@@ -116,6 +120,28 @@ MDNode *AssignLoadStoreID::assignID(Instruction *I, unsigned id) {
 		return MDNode::get(Context, MDString::get(Context, "assignID function was invoked for non-load/store instruction"));
 	}
 }
+
+#ifdef DBG_PRINT_ALL
+void AssignLoadStoreID::printDatabase(void) {
+	errs() << "-- Inst2IDMap\n";
+	for(auto const &x : Inst2IDMap) {
+		if(x.first->hasName())
+			errs() << "-- " << x.first->getName() << ": " << x.second << "\n";
+		else
+			errs() << "-- " << x.first->getOpcode() << ": " << x.second << "\n";
+	}
+	errs() << "-- ----------\n";
+
+	errs() << "-- ID2InstMap\n";
+	for(auto const &x : ID2InstMap) {
+		if(x.second->hasName())
+			errs() << "-- " << x.first << ": " << x.second->getName() << "\n";
+		else
+			errs() << "-- " << x.first << ": " << x.second->getOpcode() << "\n";
+	}
+	errs() << "-- ----------\n";
+}
+#endif
 
 char AssignLoadStoreID::ID = 0;
 

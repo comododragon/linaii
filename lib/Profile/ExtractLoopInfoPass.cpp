@@ -107,6 +107,10 @@ bool ExtractLoopInfo::doInitialization(Loop *L, LPPassManager &LPM) {
 					assert(sizeLSMDNode == LoadStoreIDMap.size() && "IR has changed, Load/Store ID mismatch!\n");
 			}
 		}
+
+#ifdef DBG_PRINT_ALL
+		printLineID2LSMapDatabase();
+#endif
 		// clear LineID2LSMap
 		LineID2LSMap.clear();
 		/// End checking
@@ -147,6 +151,10 @@ bool ExtractLoopInfo::doInitialization(Loop *L, LPPassManager &LPM) {
 		// Flag as checked
 		alreadyCheck = true; 
 	}
+
+#ifdef DBG_PRINT_ALL
+	printDoInitializationDatabase();
+#endif
 
 	/// We have changed IR
 	return true;
@@ -351,6 +359,10 @@ bool ExtractLoopInfo::runOnLoop(Loop *L, LPPassManager &LPM) {
 		}
 	}
 
+#ifdef DBG_PRINT_ALL
+	printRunOnLoopDatabase();
+#endif
+
 	DEBUG(dbgs() << "End ExtractLoopInfo Pass\n");
 	return true;
 }
@@ -417,6 +429,141 @@ bool ExtractLoopInfo::hasNoMemoryOps(BasicBlock *BB) {
 LoopID2LSInfoMapTy ExtractLoopInfo::getFunc2LoopInfoMap(std::string funcName) const {
 	return Func2LoopInfoMap.at(funcName);
 }
+
+#ifdef DBG_PRINT_ALL
+void ExtractLoopInfo::printLineID2LSMapDatabase(void) {
+	errs() << "-- LineID2LSMap\n";
+	for(auto const &x : LineID2LSMap) {
+		if(x.second->hasName())
+			errs() << "-- " << x.first << ": " << x.second->getName() << "\n";
+		else
+			errs() << "-- " << x.first << ": " << x.second->getOpcode() << "\n";
+	}
+	errs() << "-- ------------\n";
+}
+
+void ExtractLoopInfo::printDoInitializationDatabase(void) {
+	errs() << "-- funcName2loopNumMap\n";
+	for(auto const &x : funcName2loopNumMap)
+		errs() << "-- " << x.first << ": " << x.second << "\n";
+	errs() << "-- -------------------\n";
+
+	errs() << "-- LoadStoreIDMap\n";
+	for(auto const &x : LoadStoreIDMap) {
+		if(x.first->hasName())
+			errs() << "-- " << x.first->getName() << ": <" << x.second.first << ", " << x.second.second << ">\n";
+		else
+			errs() << "-- " << x.first->getOpcode() << ": <" << x.second.first << ", " << x.second.second << ">\n";
+	}
+	errs() << "-- --------------\n";
+
+	errs() << "-- BB2BBidMap\n";
+	for(auto const &x : BB2BBidMap) {
+		if(x.first->hasName()) {
+			errs() << "-- " << x.first->getName() << ": " << x.second << "\n";
+		}
+		else {
+			std::string name;
+			raw_string_ostream OS(name);
+			x.first->printAsOperand(OS, false);
+			errs() << "-- " << OS.str() << ": " << x.second << "\n";
+		}
+	}
+	errs() << "-- ----------\n";
+}
+
+void ExtractLoopInfo::printRunOnLoopDatabase(void) {
+	errs() << "-- wholeloopName2loopBoundMap\n";
+	for(auto const &x : wholeloopName2loopBoundMap)
+		errs() << "-- " << x.first << ": " << x.second << "\n";
+	errs() << "-- --------------------------\n";
+
+	errs() << "-- wholeloopName2perfectOrNotMap\n";
+	for(auto const &x : wholeloopName2perfectOrNotMap)
+		errs() << "-- " << x.first << ": " << x.second << "\n";
+	errs() << "-- -----------------------------\n";
+
+	errs() << "-- exitBBFuncnamePair2lpNameLevelPairMap\n";
+	for(auto const &x : exitBBFuncnamePair2lpNameLevelPairMap)
+		errs() << "-- <" << x.first.first << ", " << x.first.second << ">: <" << x.second.first << ", " << x.second.second << ">\n";
+	errs() << "-- -------------------------------------\n";
+
+	errs() << "-- lpNameLevelPair2exitingBBnameMap\n";
+	for(auto const &x : lpNameLevelPair2exitingBBnameMap)
+		errs() << "-- <" << x.first.first << ", " << x.first.second << ">: " << x.second << "\n";
+	errs() << "-- --------------------------------\n";
+
+	errs() << "-- BB2loopNameMap\n";
+	for(auto const &x : BB2loopNameMap) {
+		if(x.first->hasName()) {
+			errs() << "-- " << x.first->getName() << ": " << x.second << "\n";
+		}
+		else {
+			std::string name;
+			raw_string_ostream OS(name);
+			x.first->printAsOperand(OS, false);
+			errs() << "-- " << OS.str() << ": " << x.second << "\n";
+		}
+	}
+	errs() << "-- --------------\n";
+
+	errs() << "-- Func2LoopInfoMap(LoopID2LSInfoMap(LSID2BB2LoopLevelMap))\n";
+	for(auto const &x : Func2LoopInfoMap) {
+		errs() << "-- " << x.first << ": \n";
+		for(auto const &y : x.second) {
+			errs() << "-- -- " << y.first << ": \n";
+			for(auto const &z : y.second) {
+				if(z.second.first->hasName()) {
+					errs() << "-- -- -- " << z.first << ": <" << z.second.first->getName() << ", " << z.second.second << ">\n";
+				}
+				else {
+					std::string name;
+					raw_string_ostream OS(name);
+					z.second.first->printAsOperand(OS, false);
+					errs() << "-- -- -- " << z.first << ": <" << OS.str() << ", " << z.second.second << ">\n";
+				}
+			}
+		}
+	}
+	errs() << "-- --------------------------------------------------------\n";
+
+	errs() << "-- fnlpNamePair2BinaryOpBBidMap\n";
+	for(auto const &x : fnlpNamePair2BinaryOpBBidMap) {
+		errs() << "-- <" << x.first.first << ", " << x.first.second << ">: (";
+		if(x.second.size() > 0)
+			errs() << x.second[0];
+		bool skipFirst = true;
+		for(auto const &y : x.second) {
+			if(skipFirst)
+				skipFirst = false;
+			else
+				errs() << ", " << y;
+		}
+		errs() << ")\n";
+	}
+	errs() << "-- ----------------------------\n";
+
+	errs() << "-- lpNameLevelPair2headBBnameMap\n";
+	for(auto const &x : lpNameLevelPair2headBBnameMap)
+		errs() << "-- <" << x.first.first << ", " << x.first.second << ">: " << x.second << "\n";
+	errs() << "-- -----------------------------\n";
+
+	errs() << "-- headerBBFuncnamePair2lpNameLevelPairMap\n";
+	for(auto const &x : headerBBFuncnamePair2lpNameLevelPairMap)
+		errs() << "-- <" << x.first.first << ", " << x.first.second << ">: <" << x.second.first << "," << x.second.second << ">\n";
+	errs() << "-- ---------------------------------------\n";
+
+	errs() << "-- bbFuncNamePair2lpNameLevelPairMap\n";
+	for(auto const &x : bbFuncNamePair2lpNameLevelPairMap)
+		errs() << "-- <" << x.first.first << ", " << x.first.second << ">: <" << x.second.first << "," << x.second.second << ">\n";
+	errs() << "-- ---------------------------------\n";
+
+	errs() << "-- LpName2numLevelMap\n";
+	for(auto const &x : LpName2numLevelMap)
+		errs() << "-- " << x.first << ": " << x.second << "\n";
+	errs() << "-- ------------------\n";
+}
+#endif
 
 char ExtractLoopInfo::ID = 0;
 

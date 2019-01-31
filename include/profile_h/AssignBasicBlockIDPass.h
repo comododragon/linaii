@@ -14,11 +14,15 @@
 #include "profile_h/Passes.h"
 #include "profile_h/auxiliary.h"
 
-namespace llvm{
+namespace llvm {
 
 class AssignBasicBlockID : public ModulePass, public InstVisitor<AssignBasicBlockID> {
 	unsigned int counter;
 	MDNode *assignID(BasicBlock *BB, unsigned id);
+
+#ifdef DBG_PRINT_ALL
+	void printDatabase(void);
+#endif
 
 public:
 	static char ID;

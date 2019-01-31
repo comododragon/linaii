@@ -90,6 +90,10 @@ bool AssignBasicBlockID::runOnModule(Module &M) {
 		}
 	}
 
+#ifdef DBG_PRINT_ALL
+	printDatabase();
+#endif
+
 	// Check how many basic blocks
 	DEBUG(dbgs() << "\tBasic Block number: " << counter << "\n");
 
@@ -115,6 +119,20 @@ MDNode *AssignBasicBlockID::assignID(BasicBlock *BB, unsigned id) {
 
 	return MDNode::getWhenValsUnresolved(Context, ArrayRef<Value *>(ID, 3), false);
 }
+
+#ifdef DBG_PRINT_ALL
+void AssignBasicBlockID::printDatabase(void) {
+	errs() << "-- getElementPtrName2arrayNameMap\n";
+	for(auto const &x : getElementPtrName2arrayNameMap)
+		errs() << "-- " << x.first << ": " << x.second << "\n";
+	errs() << "-- ------------------------------\n";
+
+	errs() << "-- funcBBNmPair2numInstInBBMap\n";
+	for(auto const &x : funcBBNmPair2numInstInBBMap)
+		errs() << "-- <" << x.first.first << ", " << x.first.second << ">: " << x.second << "\n";
+	errs() << "-- ---------------------------\n";
+}
+#endif
 
 char AssignBasicBlockID::ID = 0;
 

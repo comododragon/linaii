@@ -57,6 +57,12 @@ class ExtractLoopInfo : public LoopPass {
 
 	std::vector<Loop *> exploredLoop;
 
+#ifdef DBG_PRINT_ALL
+	void printLineID2LSMapDatabase(void);
+	void printDoInitializationDatabase(void);
+	void printRunOnLoopDatabase(void);
+#endif
+
 public:
 	static char ID;
 

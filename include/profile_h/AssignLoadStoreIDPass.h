@@ -32,6 +32,10 @@ class AssignLoadStoreID : public ModulePass, public InstVisitor<AssignLoadStoreI
 
 	MDNode *assignID(Instruction *I, unsigned id);
 
+#ifdef DBG_PRINT_ALL
+	void printDatabase(void);
+#endif
+
 public:
 	static char ID;
 	AssignLoadStoreID();

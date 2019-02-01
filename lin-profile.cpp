@@ -128,7 +128,7 @@ int main(int argc, char **argv) {
 	Passes.add(createAssignLoadStoreIDPass());
 	// Extracting loops information, counting number of load/store instructions and arithmetic instructions inside specific loops
 	Passes.add(createExtractLoopInfoPass());
-	//Passes.add(createInstrumentForDDDGPass());
+	Passes.add(createInstrumentForDDDGPass());
 	Passes.add(createBitcodeWriterPass(Out->os()));
 
 	Passes.run(mod);

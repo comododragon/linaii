@@ -86,6 +86,10 @@ class InstrumentForDDDG : public ModulePass {
 	void extractMemoryTraceForAccessPattern();
 	int shouldTrace(std::string call);
 
+#ifdef DBG_PRINT_ALL
+	void printDatabase(void);
+#endif
+
 public:
 	static char ID;
 
@@ -140,7 +144,7 @@ struct ProfilingJITSingletonContext {
 	~ProfilingJITSingletonContext();
 };
 
-static ManagedStatic<ProfilingJITContext> GlobalContextDDDG;
+static ManagedStatic<ProfilingJITContext> gJITContext;
 
 } // End of llvm namespace
 

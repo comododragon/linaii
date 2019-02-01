@@ -249,7 +249,7 @@ bool ExtractLoopInfo::runOnLoop(Loop *L, LPPassManager &LPM) {
 	wholeloopName2perfectOrNotMap.insert(std::make_pair(loopName, isPerfectNest(L, LI)));
 
 	//exitBBFuncnamePair2lpNameLevelPairMap
-	assert(L->getExitingBlock() != NULL && "Could not find exiting basic block\n");
+	assert(L->getExitingBlock() != nullptr && "Could not find exiting basic block\n");
 	bbFuncNamePairTy bbFuncPair = std::make_pair(L->getExitingBlock()->getName(), funcName);
 	lpNameLevelPairTy lpNameLevelPair = std::make_pair(wholeLoopName, depth);
 	std::pair<std::string, std::string> lpNameLevelStrPair = std::make_pair(wholeLoopName, std::to_string(depth));

@@ -23,7 +23,7 @@ void TraceLogger::initialiseDefaults(Module &M) {
 			Type::getInt8PtrTy(C),
 			Type::getInt8PtrTy(C),
 			Type::getInt64Ty(C),
-			NULL
+			nullptr
 		)
 	);
 
@@ -36,7 +36,7 @@ void TraceLogger::initialiseDefaults(Module &M) {
 			Type::getInt64Ty(C),
 			Type::getInt64Ty(C),
 			Type::getInt8PtrTy(C),
-			NULL
+			nullptr
 		)
 	);
 
@@ -49,7 +49,7 @@ void TraceLogger::initialiseDefaults(Module &M) {
 			Type::getDoubleTy(C),
 			Type::getInt64Ty(C),
 			Type::getInt8PtrTy(C),
-			NULL
+			nullptr
 		)
 	);
 
@@ -61,7 +61,7 @@ void TraceLogger::initialiseDefaults(Module &M) {
 			Type::getInt64Ty(C),
 			Type::getInt64Ty(C),
 			Type::getInt64Ty(C),
-			NULL
+			nullptr
 		)
 	);
 
@@ -73,7 +73,7 @@ void TraceLogger::initialiseDefaults(Module &M) {
 			Type::getInt64Ty(C),
 			Type::getDoubleTy(C),
 			Type::getInt64Ty(C),
-			NULL
+			nullptr
 		)
 	);
 }
@@ -189,7 +189,7 @@ void Injector::injectTraceHeader(BasicBlock::iterator it, int lineNo, std::strin
 		bool foundHeader = itHeader != headerBBFuncnamePair2lpNameLevelPairMap.end();
 		bool foundLastInst = itLastInst != headerBBFuncNamePair2lastInstMap.end();
 
-			// If not found, update database
+		// If not found, update database
 		if(foundHeader && !foundLastInst)
 			headerBBFuncNamePair2lastInstMap.insert(std::make_pair(bbFnName, instID));
 
@@ -288,7 +288,7 @@ bool InstrumentForDDDG::doInitialization(Module &M) {
 	ST = createSlotTracker(&M);
 	ST->initialize();
 	currModule = &M;
-	currFunction = NULL;
+	currFunction = nullptr;
 
 	return false;
 }
@@ -498,7 +498,7 @@ std::string InstrumentForDDDG::getBBID(Value *BB) {
 	else if(id >= 0)
 		return std::to_string(id);
 	else
-		return NULL;
+		return nullptr;
 }
 
 void InstrumentForDDDG::extractMemoryTraceForAccessPattern() {
@@ -619,8 +619,6 @@ bool InstrumentForDDDG::runOnModule(Module &M) {
 		}
 	}
 
-	// TODO: parei aqui
-
 	if(args.MODE_TRACE_AND_ESTIMATE == args.mode || args.MODE_TRACE_ONLY == args.mode) {
 		VERBOSE_PRINT(errs() << "[instrumentForDDDG] Starting profiling engine\n");
 
@@ -651,6 +649,10 @@ bool InstrumentForDDDG::runOnModule(Module &M) {
 
 	VERBOSE_PRINT(errs() << "[instrumentForDDDG] Finished\n");
 
+#ifdef DBG_PRINT_ALL
+	printDatabase();
+#endif
+
 	return result;
 }
 
@@ -673,7 +675,7 @@ bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 	BasicBlock::iterator it = BB.begin();
 	if(dyn_cast<PHINode>(it)) {
 		for(; PHINode *N = dyn_cast<PHINode>(it); it++) {
-			Value *currOperand = NULL;
+			Value *currOperand = nullptr;
 			bool isReg = false;
 			int size = 0, opcode;
 			std::string bbID, instID, operR;
@@ -706,9 +708,9 @@ bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 
 					// Input to phi is of vector type
 					if(currOperand->getType()->isVectorTy())
-						IJ.injectTrace(insIt, i + 1, operR, currOperand->getType(), NULL, isReg);
+						IJ.injectTrace(insIt, i + 1, operR, currOperand->getType(), nullptr, isReg);
 					else
-						IJ.injectTrace(insIt, i + 1, operR, I->getType(), NULL, isReg);
+						IJ.injectTrace(insIt, i + 1, operR, I->getType(), nullptr, isReg);
 
 					//if(currOperand->getType()->isVectorTy())
 					//	printLine(insIt, i + 1, -1, operR, "phi", "", currOperand->getType()->getTypeID(), getMemSize(currOperand->getType()), NULL, isReg);
@@ -717,7 +719,7 @@ bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 				}
 				// Input to phi is of vector type
 				else if(currOperand->getType()->isVectorTy()) {
-					IJ.injectTrace(insIt, i + 1, currOperand->getName(), currOperand->getType(), NULL, isReg);
+					IJ.injectTrace(insIt, i + 1, currOperand->getName(), currOperand->getType(), nullptr, isReg);
 					//printLine(insIt, i + 1, -1, currOperand->getName(), "phi", "", currOperand->getType()->getTypeID(), getMemSize(currOperand->getType()), NULL, isReg);
 				}
 				// Input to phi is none of the above
@@ -731,7 +733,7 @@ bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 			if(!(it->getType()->isVoidTy())) {
 				isReg = true;
 				if(it->getType()->isVectorTy()) {
-					IJ.injectTrace(insIt, RESULT_LINE, instID, it->getType(), NULL, isReg);
+					IJ.injectTrace(insIt, RESULT_LINE, instID, it->getType(), nullptr, isReg);
 				}
 				else if(it->isTerminator()) {
 					// TODO: put a silent warning or fail assert?
@@ -746,7 +748,7 @@ bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 	// Deal with the rest (non-phi)
 	BasicBlock::iterator nextIt;
 	for(it = insIt; it != BB.end(); it = nextIt) {
-		Value *currOperand = NULL;
+		Value *currOperand = nullptr;
 		bool isReg = false;
 		int size = 0, opcode;
 		std::string bbID, instID, operR;
@@ -773,6 +775,7 @@ bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 
 		int numOfOperands = it->getNumOperands();
 
+		// This is a call instruction AND it is of our interest (i.e. function of interest or DMA load or store)
 		if(Instruction::Call == it->getOpcode() && (TRACE_FUNCTION_OF_INTEREST == stRes || TRACE_DMA_LOAD == stRes || TRACE_DMA_STORE == stRes)) {
 			CallInst *CI = dyn_cast<CallInst>(it);
 			operR = CI->getCalledFunction()->getName();
@@ -800,33 +803,34 @@ bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 				currOperand = it->getOperand(callID);
 				isReg = currOperand->hasName();
 
-				// Input to phi is an instruction
+				// Argument to call is an instruction
 				if(Instruction *I = dyn_cast<Instruction>(currOperand)) {
 					int flag = 0;
 					isReg = getInstID(I, "", flag, operR);
 					assert(0 == flag && "Unnamed instruction with no local slot found");
 
 					if(currOperand->getType()->isVectorTy()) {
-						IJ.injectTrace(it, callID + 1, operR, currOperand->getType(), NULL, isReg);
-						IJ.injectTrace(it, FORWARD_LINE, currArgName, currOperand->getType(), NULL, true);
+						IJ.injectTrace(it, callID + 1, operR, currOperand->getType(), nullptr, isReg);
+						IJ.injectTrace(it, FORWARD_LINE, currArgName, currOperand->getType(), nullptr, true);
 					}
 					else {
 						IJ.injectTrace(it, callID + 1, operR, I->getType(), currOperand, isReg);
 						IJ.injectTrace(it, FORWARD_LINE, currArgName, I->getType(), currOperand, true);
 					}
 				}
+				// Argument to call is not an instruction
 				else {
 					if(currOperand->getType()->isVectorTy()) {
-						IJ.injectTrace(it, callID + 1, currOperand->getName(), currOperand->getType(), NULL, isReg);
-						IJ.injectTrace(it, FORWARD_LINE, currArgName, currOperand->getType(), NULL, true);
+						IJ.injectTrace(it, callID + 1, currOperand->getName(), currOperand->getType(), nullptr, isReg);
+						IJ.injectTrace(it, FORWARD_LINE, currArgName, currOperand->getType(), nullptr, true);
 					}
 					else if(currOperand->getType()->isLabelTy()) {
-						IJ.injectTrace(it, callID + 1, getBBID(currOperand), currOperand->getType(), NULL, isReg);
-						IJ.injectTrace(it, FORWARD_LINE, currArgName, currOperand->getType(), NULL, true);
+						IJ.injectTrace(it, callID + 1, getBBID(currOperand), currOperand->getType(), nullptr, isReg);
+						IJ.injectTrace(it, FORWARD_LINE, currArgName, currOperand->getType(), nullptr, true);
 					}
 					else if(2 == currOperand->getValueID()) {
-						IJ.injectTrace(it, callID + 1, currOperand->getName(), currOperand->getType(), NULL, isReg);
-						IJ.injectTrace(it, FORWARD_LINE, currArgName, currOperand->getType(), NULL, true);
+						IJ.injectTrace(it, callID + 1, currOperand->getName(), currOperand->getType(), nullptr, isReg);
+						IJ.injectTrace(it, FORWARD_LINE, currArgName, currOperand->getType(), nullptr, true);
 					}
 					else {
 						IJ.injectTrace(it, callID + 1, currOperand->getName(), currOperand->getType(), currOperand, isReg);
@@ -837,32 +841,35 @@ bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 				callID++;
 			}
 		}
+		// This is not a call instruction
 		else {
+			// Insert trace (non-phi, non-call)
 			IJ.injectTraceHeader(it, lineNumber, funcName, bbID, instID, opcode);
 
+			// Inject operands of this instruction
 			if(numOfOperands > 0) {
 				for(int i = numOfOperands - 1; i >= 0; i--) {
 					currOperand = it->getOperand(i);
 					isReg = currOperand->hasName();
 
-					// Input to phi is an instruction
+					// Input is an instruction
 					if(Instruction *I = dyn_cast<Instruction>(currOperand)) {
 						int flag = 0;
 						isReg = getInstID(I, "", flag, operR);
 						assert(0 == flag && "Unnamed instruction with no local slot found");
 
 						if(currOperand->getType()->isVectorTy())
-							IJ.injectTrace(it, i + 1, operR, currOperand->getType(), NULL, isReg);
+							IJ.injectTrace(it, i + 1, operR, currOperand->getType(), nullptr, isReg);
 						else
 							IJ.injectTrace(it, i + 1, operR, I->getType(), currOperand, isReg);
 					}
 					else {
 						if(currOperand->getType()->isVectorTy())
-							IJ.injectTrace(it, i + 1, currOperand->getName(), currOperand->getType(), NULL, isReg);
+							IJ.injectTrace(it, i + 1, currOperand->getName(), currOperand->getType(), nullptr, isReg);
 						else if(currOperand->getType()->isLabelTy())
-							IJ.injectTrace(it, i + 1, getBBID(currOperand), currOperand->getType(), NULL, isReg);
+							IJ.injectTrace(it, i + 1, getBBID(currOperand), currOperand->getType(), nullptr, isReg);
 						else if(2 == currOperand->getValueID())
-							IJ.injectTrace(it, i + 1, currOperand->getName(), currOperand->getType(), NULL, isReg);
+							IJ.injectTrace(it, i + 1, currOperand->getName(), currOperand->getType(), nullptr, isReg);
 						else
 							IJ.injectTrace(it, i + 1, currOperand->getName(), currOperand->getType(), currOperand, isReg);
 					}
@@ -870,11 +877,11 @@ bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 			}
 		}
 
-		// Inject phi node result trace
+		// Inject instruction result trace
 		if(!(it->getType()->isVoidTy())) {
 			isReg = true;
 			if(it->getType()->isVectorTy()) {
-				IJ.injectTrace(nextIt, RESULT_LINE, instID, it->getType(), NULL, isReg);
+				IJ.injectTrace(nextIt, RESULT_LINE, instID, it->getType(), nullptr, isReg);
 			}
 			else if(it->isTerminator()) {
 				// TODO: put a silent warning or fail assert?
@@ -1402,95 +1409,92 @@ ProfilingEngine::ProfilingEngine(Module &M, TraceLogger &TL) : M(M), TL(TL) {
 }
 
 void ProfilingEngine::runOnProfiler() {
-#if 0
-	errs() << "DEBUG-INFO: [profiling_profiling-engine] Running on Profiler\n";
-	ProfilingJITSingletonContext JTSC(this);
-	//std::unique_ptr<Module> M(generateInstrumentedModule());
-	//ValueToValueMapTy V2VMap;
-	//Module* M = CloneModule(&Mod, V2VMap);
-	//std::unique_ptr<Module> M(newM);
-	Module *M = (&Mod);
+	VERBOSE_PRINT(errs() << "[][profilingEngine] Profiling engine started\n");
 
-	// TODO: Insert instrumental code to extract the trace.
-	EngineBuilder builder(M);
+	VERBOSE_PRINT(errs() << "[][profilingEngine] Creating context\n");
+	ProfilingJITSingletonContext JSC(this);
+	EngineBuilder builder(&M);
 	ExecutionEngine *EE = builder.setEngineKind(EngineKind::JIT).create();
-	// Where is getBBFreqInc()?
-	//EE->addGlobalMapping(getBBFreqInc(), reinterpret_cast<void*>(IncreaseBBCounter));
-	EE->addGlobalMapping(log0_Fn, reinterpret_cast<void*>(trace_logger_log0));
-	EE->addGlobalMapping(log_int_Fn, reinterpret_cast<void*>(trace_logger_log_int));
-	EE->addGlobalMapping(log_double_Fn, reinterpret_cast<void*>(trace_logger_log_double));
-	EE->addGlobalMapping(log_int_noreg_Fn, reinterpret_cast<void*>(trace_logger_log_int_noreg));
-	EE->addGlobalMapping(log_double_noreg_Fn, reinterpret_cast<void*>(trace_logger_log_double_noreg));
 
-	if (!EE) {
-		assert(false && "Error: Failed to construct ExecutionEngine\n");
-	}
+	assert(EE && "ExecutionEngine was not constructed");
 
-	Function *EntryFn = M->getFunction("main");
+	VERBOSE_PRINT(errs() << "[][profilingEngine] Mapping trace logger functions\n");
+	EE->addGlobalMapping(TL.log0, reinterpret_cast<void *>(trace_logger_log0));
+	EE->addGlobalMapping(TL.logInt, reinterpret_cast<void *>(trace_logger_log_int));
+	EE->addGlobalMapping(TL.logDouble, reinterpret_cast<void *>(trace_logger_log_double));
+	EE->addGlobalMapping(TL.logIntNoReg, reinterpret_cast<void *>(trace_logger_log_int_noreg));
+	EE->addGlobalMapping(TL.logDoubleNoReg, reinterpret_cast<void *>(trace_logger_log_double_noreg));
 
-	// Nothing we can do if we cannot find the entry function of the module.
-	if (EntryFn == nullptr){
-		assert(false && "Error: EntryFn is equal to nullptr!\n");
-	}
+	Function *entryF = M.getFunction("main");
 
+	assert(entryF && "Input code has no main() function, cannot trace");
 
-	// Here we go. Run the module.
+	VERBOSE_PRINT(errs() << "[][profilingEngine] Executing code\n");
+	errs() << "********************************************************\n";
+	errs() << "********************************************************\n";
+	errs() << "************** See ya in a minute or so! ***************\n";
+	errs() << "********************************************************\n";
+
 	EE->runStaticConstructorsDestructors(false);
+	EE->getPointerToFunction(entryF);
+	std::vector<std::string> argv;
+	argv.push_back(M.getModuleIdentifier());
+	int retc = EE->runFunctionAsMain(entryF, argv, nullptr);
 
-	// Trigger compilation separately so code regions that need to be
-	// invalidated will be known.
-	(void)EE->getPointerToFunction(EntryFn);
+	errs() << "********************************************************\n";
+	errs() << "********************* Hello back! **********************\n";
+	errs() << "********************************************************\n";
+	errs() << "********************************************************\n";
 
-	// TODO: Accept argv from user script?
-	// FIXME: Support passing arguments
-	std::vector<std::string> Argv;
-	Argv.push_back(M->getModuleIdentifier());
-	Argv.push_back(inputPath);
+	assert(0 == retc && "Code executed on profiler returned non-zero");
 
-	// Run main.
-	VERBOSE_PRINT(errs() << "DEBUG-INFO: [profiling_profiling-engine] Running main()\n");
-	int Result = EE->runFunctionAsMain(EntryFn, Argv, nullptr);
+	VERBOSE_PRINT(errs() << "[][profilingEngine] Code executed. It's good to be back\n");
+	VERBOSE_PRINT(errs() << "[][profilingEngine] Performing cleanup\n");
 
-	if (Result != 0) {
-		errs() << "DEBUG-INFO: [profiling_profiling-engine] Module return nonzero result during trace generation: "<< Result << '\n';
-		assert(false && "Error: Trace generation failed!\n");
-	}
-	
 	trace_logger_fin();
-
-	// Run static destructors.
 	EE->runStaticConstructorsDestructors(true);
-
-	//VerifyProfile();
-
-	//delete M
-	errs() << "DEBUG-INFO: [profiling_profiling-engine] Finished profiling: Status = " << Result << "\n";
-#endif
 }
 
 ProfilingJITContext::ProfilingJITContext() : P(nullptr) {
-#if 0
-	// If we have a native target, initialize it to ensure it is linked in and
-	// usable by the JIT.
 	InitializeNativeTarget();
 	InitializeNativeTargetAsmPrinter();
 	InitializeNativeTargetAsmParser();
-#endif
 }
 
 
 ProfilingJITSingletonContext::ProfilingJITSingletonContext(ProfilingEngine *P) {
-#if 0
-	GlobalContextDDDG->P = P;
-#endif
+	gJITContext->P = P;
 }
 
 ProfilingJITSingletonContext::~ProfilingJITSingletonContext() {
-#if 0
-	GlobalContextDDDG->P = nullptr;
-	//TODO: Other clearup?
-#endif
+	gJITContext->P = nullptr;
+
+	// TODO: Other cleanup?
 }
+
+#ifdef DBG_PRINT_ALL
+void InstrumentForDDDG::printDatabase(void) {
+	errs() << "-- staticInstID2OpcodeMap\n";
+	for(auto const &x : staticInstID2OpcodeMap)
+		errs() << "-- " << x.first << ": " << x.second << "\n";
+	errs() << "-- ----------------------\n";
+
+	errs() << "-- instName2bbNameMap\n";
+	for(auto const &x : instName2bbNameMap)
+		errs() << "-- " << x.first << ": " << x.second << "\n";
+	errs() << "-- ------------------\n";
+
+	errs() << "-- headerBBFuncNamePair2lastInstMap\n";
+	for(auto const &x : headerBBFuncNamePair2lastInstMap)
+		errs() << "-- <" << x.first.first << ", " << x.first.second << ">: " << x.second << "\n";
+	errs() << "-- --------------------------------\n";
+
+	errs() << "-- exitingBBFuncNamePair2lastInstMap\n";
+	for(auto const &x : exitingBBFuncNamePair2lastInstMap)
+		errs() << "-- <" << x.first.first << ", " << x.first.second << ">: " << x.second << "\n";
+	errs() << "-- ---------------------------------\n";
+}
+#endif
 
 char InstrumentForDDDG::ID = 0;
 

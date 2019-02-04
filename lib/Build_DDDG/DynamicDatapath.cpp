@@ -1,6 +1,6 @@
 #include "profile_h/DynamicDatapath.h"
 
-DynamicDatapath::DynamicDatapath(std::string kernel_name, std::string trace_file_name, std::string input_path, std::string lp_name, unsigned lp_level, unsigned lp_unroll_factor, bool enable_pipelining, unsigned IL_asap) : BaseDatapath(kernel_name, trace_file_name, "", input_path, lp_name, lp_level, lp_unroll_factor, IL_asap) {
+DynamicDatapath::DynamicDatapath(std::string kernel_name, std::string trace_file_name, ofstream *summary_file, std::string input_path, std::string lp_name, unsigned lp_level, unsigned lp_unroll_factor, bool enable_pipelining, unsigned IL_asap) : BaseDatapath(kernel_name, trace_file_name, "", summary_file, input_path, lp_name, lp_level, lp_unroll_factor, IL_asap) {
 	std::cout << "===========================\n";
 	std::cout << "DEBUG-INFO: [trace-analysis_dynamic-trace] Analyzing DDDG for loop " << lp_name << "\n";
 	std::cout << "===========================\n";

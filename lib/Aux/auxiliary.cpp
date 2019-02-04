@@ -27,3 +27,15 @@ bool verifyModuleAndPrintErrors(Module &M) {
 	return true;
 }
 
+std::string constructLoopName(std::string funcName, int loopNo, int depth) {
+	std::string loopName = funcName + "_loop" + std::to_string(loopNo);
+
+	if(-1 == depth)
+		return loopName;
+
+	return appendDepthToLoopName(loopName, depth);
+}
+
+std::string appendDepthToLoopName(std::string loopName, int depth) {
+	return loopName + "_" + std::to_string(depth);
+}

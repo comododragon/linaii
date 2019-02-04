@@ -9,7 +9,7 @@ void trace_logger_init() {
 	std::string traceFileName = args.workDir + "dynamic_trace.gz";
 	fullTraceFile = gzopen(traceFileName.c_str(), "w");
 
-	assert(fullTraceFile && "Could not open trace output file");
+	assert(fullTraceFile != Z_NULL && "Could not open trace output file");
 }
 
 void trace_logger_fin() {

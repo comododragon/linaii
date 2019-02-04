@@ -1,7 +1,7 @@
 #include "profile_h/xilinx_node_latency.h"
 
-#ifndef OPCODE_FUNC_H
-#define OPCODE_FUNC_H
+#ifndef OPCODES_H
+#define OPCODES_H
 
 #define LLVM_IR_Move               0
 #define LLVM_IR_Ret                1
@@ -67,29 +67,29 @@
 #define LLVM_IR_IndexSub						102
 #define LLVM_IR_SilentStore         101
 
-bool is_associative(unsigned microop);
-bool is_fassociative(unsigned microop);
-bool is_memory_op(unsigned microop);
-bool is_compute_op(unsigned microop);
-bool is_store_op(unsigned microop);
-bool is_bit_op(unsigned microop);
-bool is_add_op(unsigned microop);
-bool is_mul_op(unsigned microop);
-bool is_load_op(unsigned microop);
-bool is_call_op(unsigned microop);
-bool is_branch_op (unsigned microop);
-bool is_phi_op(unsigned microop);
-bool is_control_op (unsigned microop);
-bool is_index_op (unsigned microop);
-bool is_dma_load(unsigned microop);
-bool is_dma_store(unsigned microop);
-bool is_dma_op(unsigned microop);
-bool is_fadd_op(unsigned microop);
-bool is_fsub_op(unsigned microop);
-bool is_fmul_op(unsigned microop);
-bool is_fdiv_op(unsigned microop);
-bool is_fcmp_op(unsigned microop);
-bool is_float_op(unsigned microop);
-unsigned fpga_node_latency (unsigned  microop);
+bool isAssociative(unsigned microop);
+bool isFAssociative(unsigned microop);
+bool isMemoryOp(unsigned microop);
+bool isComputeOp(unsigned microop);
+bool isStoreOp(unsigned microop);
+bool isBitOp(unsigned microop);
+bool isAddOp(unsigned microop);
+bool isMulOp(unsigned microop);
+bool isLoadOp(unsigned microop);
+bool isCallOp(unsigned microop);
+bool isBranchOp (unsigned microop);
+bool isPhiOp(unsigned microop);
+bool isControlOp (unsigned microop);
+bool isIndexOp (unsigned microop);
+bool isDMALoad(unsigned microop);
+bool isDMAStore(unsigned microop);
+bool isDMAOp(unsigned microop);
+bool isFAddOp(unsigned microop);
+bool isFSubOp(unsigned microop);
+bool isFMulOp(unsigned microop);
+bool isFDivOp(unsigned microop);
+bool isFCmpOp(unsigned microop);
+bool isFloatOp(unsigned microop);
+unsigned fpgaNodeLatency(unsigned microop);
 
 #endif

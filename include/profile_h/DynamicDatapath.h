@@ -7,7 +7,7 @@
 
 class DynamicDatapath : public BaseDatapath {
 public:
-	DynamicDatapath(std::string kernel_name, std::string trace_file_name, std::string input_path, std::string lp_name, unsigned lp_level, unsigned lp_unroll_factor, bool enable_pipelining, unsigned IL_asap);
+	DynamicDatapath(std::string kernel_name, std::string trace_file_name, ofstream *summary_file, std::string input_path, std::string lp_name, unsigned lp_level, unsigned lp_unroll_factor, bool enable_pipelining, unsigned IL_asap);
 	~DynamicDatapath();
 
 	unsigned getIL_asap_ii() const;

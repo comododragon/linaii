@@ -33,7 +33,7 @@
 #include "profile_h/DDDG.h"
 #include "profile_h/Registers.h"
 #include "profile_h/file_func.h"
-#include "profile_h/opcode_func.h"
+#include "profile_h/opcodes.h"
 #include "profile_h/generic_func.h"
 #include "profile_h/auxiliary.h"
 #include "profile_h/color_macros.h"
@@ -385,7 +385,7 @@ private:
 class BaseDatapath
 {
 public:
-	BaseDatapath(std::string bench, string trace_file, string config_file, string input_path, std::string target_loop, unsigned lp_level, unsigned target_unroll_factor, unsigned IL_asap);
+	BaseDatapath(std::string bench, string trace_file, string config_file, ofstream *summary_file, string input_path, std::string target_loop, unsigned lp_level, unsigned target_unroll_factor, unsigned IL_asap);
   virtual ~BaseDatapath();
 
   //Change graph.
@@ -654,6 +654,7 @@ private:
 
 	std::string benchName;
 	std::string inputPath;
+	ofstream *summaryFile;
 
 	staticInstID2VertexListMapTy staticInstID2VertexListMap;
 	Vertex2TimestampMapTy Vertex2TimestampMap;
@@ -843,7 +844,7 @@ public:
 			std::string sub_str = loop_name.substr(pos + 1);
 			unsigned ith_loop = (unsigned)std::stoi(sub_str);
 			assert((node_opcodes.size()>node_id) && "Error: Size of node_opcodes is less than node_id!\n");
-			if (is_branch_op(node_opcodes.at(node_id))) {
+			if (isBranchOp(node_opcodes.at(node_id))) {
 				switch ((Color_enum)ith_loop) {
 				case RED: out << "[style=filled color=red label=\"{" << node_id << " | br}\"]";							break;
 				case GREEN: out << "[style=filled color=green label=\"{" << node_id << " | br}\"]";					break;
@@ -858,7 +859,7 @@ public:
 				default: out << "[style=filled color=black label=\"{" << node_id << " | br}\"]";							break;
 				}
 			}
-			else if (is_load_op(node_opcodes.at(node_id))) {
+			else if (isLoadOp(node_opcodes.at(node_id))) {
 				switch ((Color_enum)ith_loop) {
 				case RED: out << "[shape=polygon sides=5 peripheries=2 color=red label=\"{" << node_id << " | ld}\"]";							break;
 				case GREEN: out << "[shape=polygon sides=5 peripheries=2 color=green label=\"{" << node_id << " | ld}\"]";					break;
@@ -873,7 +874,7 @@ public:
 				default: out << "[shape=polygon sides=5 peripheries=2 color=black label=\"{" << node_id << " | ld}\"]";						break;
 				}
 			}
-			else if (is_store_op(node_opcodes.at(node_id))) {
+			else if (isStoreOp(node_opcodes.at(node_id))) {
 				switch ((Color_enum)ith_loop) {
 				case RED: out << "[shape=polygon sides=4 peripheries=2 color=red label=\"{" << node_id << " | st}\"]";							break;
 				case GREEN: out << "[shape=polygon sides=4 peripheries=2 color=green label=\"{" << node_id << " | st}\"]";					break;
@@ -888,7 +889,7 @@ public:
 				default: out << "[shape=polygon sides=4 peripheries=2 color=black label=\"{" << node_id << " | st}\"]";						break;
 				}
 			}
-			else if (is_add_op(node_opcodes.at(node_id))) {
+			else if (isAddOp(node_opcodes.at(node_id))) {
 				switch ((Color_enum)ith_loop) {
 				case RED: out << "[color=red label=\"{" << node_id << " | add}\"]";							break;
 				case GREEN: out << "[color=green label=\"{" << node_id << " | add}\"]";					break;
@@ -903,7 +904,7 @@ public:
 				default: out << "[color=black label=\"{" << node_id << " | add}\"]";						break;
 				}
 			}
-			else if (is_mul_op(node_opcodes.at(node_id))) {
+			else if (isMulOp(node_opcodes.at(node_id))) {
 				switch ((Color_enum)ith_loop) {
 				case RED: out << "[color=red label=\"{" << node_id << " | mul}\"]";							break;
 				case GREEN: out << "[color=green label=\"{" << node_id << " | mul}\"]";					break;
@@ -918,7 +919,7 @@ public:
 				default: out << "[color=black label=\"{" << node_id << " | mul}\"]";						break;
 				}
 			}
-			else if (is_index_op(node_opcodes.at(node_id))) {
+			else if (isIndexOp(node_opcodes.at(node_id))) {
 				switch ((Color_enum)ith_loop) {
 				case RED: out << "[color=red label=\"{" << node_id << " | index}\"]";							break;
 				case GREEN: out << "[color=green label=\"{" << node_id << " | index}\"]";					break;
@@ -933,8 +934,8 @@ public:
 				default: out << "[color=black label=\"{" << node_id << " | index}\"]";						break;
 				}
 			}
-			else if (is_float_op(node_opcodes.at(node_id))) {
-				if (is_fadd_op(node_opcodes.at(node_id))) {
+			else if (isFloatOp(node_opcodes.at(node_id))) {
+				if (isFAddOp(node_opcodes.at(node_id))) {
 					switch ((Color_enum)ith_loop) {
 					case RED: out << "[shape=diamond color=red label=\"{" << node_id << " | fadd}\"]";							break;
 					case GREEN: out << "[shape=diamond color=green label=\"{" << node_id << " | fadd}\"]";					break;
@@ -950,7 +951,7 @@ public:
 					}
 				}
 
-				if (is_fsub_op(node_opcodes.at(node_id))) {
+				if (isFSubOp(node_opcodes.at(node_id))) {
 					switch ((Color_enum)ith_loop) {
 					case RED: out << "[shape=diamond color=red label=\"{" << node_id << " | fsub}\"]";							break;
 					case GREEN: out << "[shape=diamond color=green label=\"{" << node_id << " | fsub}\"]";					break;
@@ -966,7 +967,7 @@ public:
 					}
 				}
 
-				if (is_fmul_op(node_opcodes.at(node_id))) {
+				if (isFMulOp(node_opcodes.at(node_id))) {
 					switch ((Color_enum)ith_loop) {
 					case RED: out << "[shape=diamond color=red label=\"{" << node_id << " | fmul}\"]";							break;
 					case GREEN: out << "[shape=diamond color=green label=\"{" << node_id << " | fmul}\"]";					break;
@@ -982,7 +983,7 @@ public:
 					}
 				}
 
-				if (is_fdiv_op(node_opcodes.at(node_id))) {
+				if (isFDivOp(node_opcodes.at(node_id))) {
 					switch ((Color_enum)ith_loop) {
 					case RED: out << "[shape=diamond color=red label=\"{" << node_id << " | fdiv}\"]";							break;
 					case GREEN: out << "[shape=diamond color=green label=\"{" << node_id << " | fdiv}\"]";					break;
@@ -998,7 +999,7 @@ public:
 					}
 				}
 
-				if (is_fcmp_op(node_opcodes.at(node_id))) {
+				if (isFCmpOp(node_opcodes.at(node_id))) {
 					switch ((Color_enum)ith_loop) {
 					case RED: out << "[shape=diamond color=red label=\"{" << node_id << " | fcmp}\"]";							break;
 					case GREEN: out << "[shape=diamond color=green label=\"{" << node_id << " | fcmp}\"]";					break;
@@ -1014,10 +1015,10 @@ public:
 					}
 				}
 			}
-			else if (is_phi_op(node_opcodes.at(node_id))) {
+			else if (isPhiOp(node_opcodes.at(node_id))) {
 				out << "[shape=polygon sides=4 style=filled color=gold label=\"{" << node_id << " | phi}\"]";
 			}
-			else if (is_bit_op(node_opcodes.at(node_id))) {
+			else if (isBitOp(node_opcodes.at(node_id))) {
 				switch ((Color_enum)ith_loop) {
 				case RED: out << "[color=red label=\"{" << node_id << " | bit}\"]";							break;
 				case GREEN: out << "[color=green label=\"{" << node_id << " | bit}\"]";					break;
@@ -1032,7 +1033,7 @@ public:
 				default: out << "[color=black label=\"{" << node_id << " | bit}\"]";						break;
 				}
 			}
-			else if (is_call_op(node_opcodes.at(node_id))) {
+			else if (isCallOp(node_opcodes.at(node_id))) {
 				switch ((Color_enum)ith_loop) {
 				case RED: out << "[color=red label=\"{" << node_id << " | call}\"]";							break;
 				case GREEN: out << "[color=green label=\"{" << node_id << " | call}\"]";					break;

@@ -7,7 +7,6 @@ instName2bbNameMapTy instName2bbNameMap;
 headerBBFuncNamePair2lastInstMapTy headerBBFuncNamePair2lastInstMap;
 headerBBFuncNamePair2lastInstMapTy exitingBBFuncNamePair2lastInstMap;
 loopName2levelUnrollVecMapTy loopName2levelUnrollVecMap;
-std::ofstream summary;
 
 using namespace llvm;
 
@@ -351,125 +350,6 @@ int InstrumentForDDDG::shouldTrace(std::string call) {
 	return NOT_TRACE;
 }
 
-#if 0
-/// Function used to instrument LLVM-IR
-void InstrumentForDDDG::printLine(
-	BasicBlock::iterator it, int line, int lineNo, std::string funcOrRegID,
-	std::string bbID, std::string instID, int opcodeOrType, int dataSize, Value *value, 
-	bool isReg
-) {
-	CallInst *tlCall;
-	IRBuilder<> IRB(it);
-
-	// Create LLVM values for the provided arguments
-	Value *vLine, *vOpcodeOrType, *vValue, *vLineNo;
-	vLine = ConstantInt::get(IRB.getInt64Ty(), line);
-	vOpcodeOrType = ConstantInt::get(IRB.getInt64Ty(), opcodeOrType);
-	vLineNo = ConstantInt::get(IRB.getInt64Ty(), lineNo);
-
-	// Print line 0
-	if(!line) {
-		// Create global variables with strings and getelementptr calls
-		Constant *vvFuncID = createGlobalVariableAndGetGetElementPtr(funcOrRegID);
-		Constant *vvBB = createGlobalVariableAndGetGetElementPtr(bbID);
-		Constant *vvInst = createGlobalVariableAndGetGetElementPtr(instID);
-
-		// TODO: entender o que realmente signfica uma call para trace_logger_log0
-		// Call trace_logger_log0 with the aforementioned values
-		tlCall = IRB.CreateCall5(TL.log0, vLineNo, vvFuncID, vvBB, vvInst, vOpcodeOrType);
-
-		// Update databases
-		insertInstID(instID, opcodeOrType);
-		insertInstid2bbName(instID, bbID);
-
-		// This instruction is a branch
-		if(LLVM_IR_Br == (unsigned) opcodeOrType) {
-			bbFuncNamePairTy bbFnName = std::make_pair(bbID, funcOrRegID);
-			bbFuncNamePair2lpNameLevelPairMapTy::iterator itHeader = headerBBFuncnamePair2lpNameLevelPairMap.find(bbFnName);
-			headerBBFuncNamePair2lastInstMapTy::iterator itLastInst = headerBBFuncNamePair2lastInstMap.find(bbFnName);
-			bool foundHeader = itHeader != headerBBFuncnamePair2lpNameLevelPairMap.end();
-			bool foundLastInst = itLastInst != headerBBFuncNamePair2lastInstMap.end();
-
-			// If not found, update database
-			if(foundHeader && !foundLastInst)
-				headerBBFuncNamePair2lastInstMap.insert(std::make_pair(bbFnName, instID));
-
-			bbFuncNamePair2lpNameLevelPairMapTy::iterator itExiting = exitBBFuncnamePair2lpNameLevelPairMap.find(bbFnName);
-			headerBBFuncNamePair2lastInstMapTy::iterator itLtItExiting = exitingBBFuncNamePair2lastInstMap.find(bbFnName);
-			bool foundExiting = itExiting != exitBBFuncnamePair2lpNameLevelPairMap.end();
-			bool foundLtItExiting = itLtItExiting != exitingBBFuncNamePair2lastInstMap.end();
-
-			// If not found, update database
-			if(foundExiting && !foundLtItExiting)
-				exitingBBFuncNamePair2lastInstMap.insert(std::make_pair(bbFnName, instID));
-		}
-	}
-	else {
-		Value *vSize = ConstantInt::get(IRB.getInt64Ty(), dataSize);
-		Value *vIsReg = ConstantInt::get(IRB.getInt64Ty(), isReg);
-
-		if(isReg) {
-			Constant *vvRegID = createGlobalVariableAndGetGetElementPtr(funcOrRegID);
-
-			if(value) {
-				if(llvm::Type::IntegerTyID == opcodeOrType) {
-					vValue = IRB.CreateZExt(value, IRB.getInt64Ty());
-					tlCall = IRB.CreateCall5(TL.logInt, vLine, vSize, vValue, vIsReg, vvRegID);
-				}
-				else if(opcodeOrType >= llvm::Type::HalfTyID && opcodeOrType <= llvm::Type::PPC_FP128TyID) {
-					vValue = IRB.CreateFPExt(value, IRB.getDoubleTy());
-					tlCall = IRB.CreateCall5(TL.logDouble, vLine, vSize, vValue, vIsReg, vvRegID);
-				}
-				else if(llvm::Type::PointerTyID == opcodeOrType) {
-					vValue = IRB.CreatePtrToInt(value, IRB.getInt64Ty());
-					tlCall = IRB.CreateCall5(TL.logInt, vLine, vSize, vValue, vIsReg, vvRegID);
-				}
-				else {
-					// TODO: assert mesmo ou apenas um silent error?
-					assert(false && "Invalid type provided for trace generation");
-				}
-			}
-			else {
-				vValue = ConstantInt::get(IRB.getInt64Ty(), 0);
-				tlCall = IRB.CreateCall5(TL.logInt, vLine, vSize, vValue, vIsReg, vvRegID);
-			}
-		}
-		else {
-			if(value) {
-				if(llvm::Type::IntegerTyID == opcodeOrType) {
-					vValue = IRB.CreateZExt(value, IRB.getInt64Ty());
-					tlCall = IRB.CreateCall4(TL.logIntNoReg, vLine, vSize, vValue, vIsReg);
-				}
-				else if(opcodeOrType >= llvm::Type::HalfTyID && opcodeOrType <= llvm::Type::PPC_FP128TyID) {
-					vValue = IRB.CreateFPExt(value, IRB.getDoubleTy());
-					tlCall = IRB.CreateCall4(TL.logDoubleNoReg, vLine, vSize, vValue, vIsReg);
-				}
-				else if(llvm::Type::PointerTyID == opcodeOrType) {
-					vValue = IRB.CreatePtrToInt(value, IRB.getInt64Ty());
-					tlCall = IRB.CreateCall4(TL.logIntNoReg, vLine, vSize, vValue, vIsReg);
-				}
-				else {
-					// TODO: assert mesmo ou apenas um silent error?
-					assert(false && "Invalid type provided for trace generation");
-				}
-			}
-			else {
-				vValue = ConstantInt::get(IRB.getInt64Ty(), 0);
-				tlCall = IRB.CreateCall4(TL.logIntNoReg, vLine, vSize, vValue, vIsReg);
-			}
-		}
-	}
-}
-
-void InstrumentForDDDG::insertInstID(std::string instID, unsigned opcode) {
-	staticInstID2OpcodeMap.insert(std::make_pair(instID, opcode));
-}
-
-void InstrumentForDDDG::insertInstid2bbName(std::string instID, std::string bbName) {
-	instName2bbNameMap.insert(std::make_pair(instID, bbName));
-}
-#endif
-
 bool InstrumentForDDDG::getInstID(Instruction *I, std::string bbID, int &instCnt, std::string &instID) {
 	int id = ST->getLocalSlot(I);
 
@@ -502,107 +382,86 @@ std::string InstrumentForDDDG::getBBID(Value *BB) {
 }
 
 void InstrumentForDDDG::extractMemoryTraceForAccessPattern() {
-#if 0
-	std::string file_name = inputPath + "mem_trace.txt";
-	std::ofstream mem_trace;
-	mem_trace.open(file_name);
-	if (mem_trace.is_open()) {
-		std::cout << "DEBUG-INFO: [Mem-trace] Start" << std::endl;
-	}
-	else {
-		assert(false && "Error: Cannot open mem_trace file!\n");
-	}
+	VERBOSE_PRINT(errs() << "[][memoryTrace] Memory trace started\n");
 
-	//FILE *tracefile;
-	gzFile tracefile;
-	//tracefile = fopen(trace_name.c_str(), "r");
-	std::string tracefile_name = inputPath + "dynamic_trace.gz";
-	tracefile = gzopen(tracefile_name.c_str(), "r");
-	if (tracefile == Z_NULL) {
-		std::string err_str = "Error! gzfile " + tracefile_name + " can not open!";
-		assert(false && err_str.c_str());
-	}
+	std::string fileName = args.workDir + "mem_trace.txt";
+	std::string traceFileName = args.workDir + "dynamic_trace.gz";
+	std::ofstream memTraceFile;
+	gzFile traceFile;
+	bool traceEntry = false;
+	int opcode = -1;
 
-	char buffer[256];
-	char curr_static_function[256];
-	char instid[256], bblockid[256];
-	int microop;
-	int line_num;
-	int count;
-	bool trace_entry = false;
-	while (!gzeof(tracefile)) {
-		if (gzgets(tracefile, buffer, sizeof(buffer)) == Z_NULL)
+	memTraceFile.open(fileName);
+	assert(memTraceFile.is_open() && "Could not open memory trace output file");
+
+	traceFile = gzopen(traceFileName.c_str(), "r");
+	assert(traceFile != Z_NULL && "Could not open trace input file");
+
+	while(!gzeof(traceFile)) {
+		char buffer[1024];
+		if(Z_NULL == gzgets(traceFile, buffer, sizeof(buffer)))
 			continue;
-		std::string wholeline(buffer);
-		size_t pos_end_tag = wholeline.find(",");
 
-		if (pos_end_tag == std::string::npos) {
+		std::string line(buffer);
+		size_t tagPos = line.find(",");
+
+		if(std::string::npos == tagPos)
 			continue;
-		}
 
-		std::string tag = wholeline.substr(0, pos_end_tag);
-		std::string line_left = wholeline.substr(pos_end_tag + 1);
-		if ((trace_entry == false) && (tag.compare("0") == 0)){
-			//parse_instruction_line(line_left);
-			sscanf(line_left.c_str(), "%d,%[^,],%[^,],%[^,],%d,%d\n", &line_num, curr_static_function, bblockid, instid, &microop, &count);
-			std::string func_name(curr_static_function);
-			std::string bb_name(bblockid);
-			std::string inst_name(instid);
-			// Get loop name
-			if (microop == 27 || microop == 28) {
-				// Only consider load and store
-				trace_entry = true;
-				bbFuncNamePair2lpNameLevelPairMapTy::iterator it_found = bbFuncNamePair2lpNameLevelPairMap.find(std::make_pair(bb_name, func_name));
-				if (it_found != bbFuncNamePair2lpNameLevelPairMap.end()) {
-					llvm::lpNameLevelPairTy lpNamelpLevelPair = it_found->second;
-					std::string loop_name = lpNamelpLevelPair.first;
-					std::string whole_loop_name = loop_name + "-" + to_string(lpNamelpLevelPair.second);
-					unsigned int num_levels = LpName2numLevelMap.at(loop_name);
-					mem_trace << whole_loop_name << "," << num_levels << "," << instid << ",";
-					if (microop == 27) {
-						// Load instruction
-						mem_trace << "load,";
-					}
-					else if (microop == 28) {
-						mem_trace << "store,";
-					}
-					else {
-						// Do nothing
-					}
-					mem_trace << count << ",";
+		std::string tag = line.substr(0, tagPos);
+		std::string rest = line.substr(tagPos + 1);
+
+		if(!traceEntry && !(tag.compare("0"))) {
+			int lineNo;
+			char buffer1[1024];
+			char buffer2[1024];
+			char buffer3[1024];
+			int count;
+			sscanf(rest.c_str(), "%d,%[^,],%[^,],%[^,],%d,%d\n", &lineNo, buffer1, buffer2, buffer3, &opcode, &count);
+			std::string funcName(buffer1);
+			std::string bbName(buffer2);
+			std::string instName(buffer3);
+
+			if(isStoreOp(opcode) || isLoadOp(opcode)) {
+				traceEntry = true;
+
+				bbFuncNamePair2lpNameLevelPairMapTy::iterator it = bbFuncNamePair2lpNameLevelPairMap.find(std::make_pair(bbName, funcName));
+				if(it != bbFuncNamePair2lpNameLevelPairMap.end()) {
+					lpNameLevelPairTy lpNameLevelPair = it->second;
+					std::string loopName = lpNameLevelPair.first;
+					std::string wholeLoopName = appendDepthToLoopName(loopName, lpNameLevelPair.second);
+					unsigned int numLevels = LpName2numLevelMap.at(loopName);
+
+					memTraceFile << wholeLoopName << "," << numLevels << "," << instName << ",";
+
+					if(isLoadOp(opcode))
+						memTraceFile << "load,";
+					else if(isStoreOp(opcode))
+						memTraceFile << "store,";
+
+					memTraceFile << count << ",";
 				}
 			}
+		}
+		else if(traceEntry && ((!(tag.compare("1")) && isLoadOp(opcode)) || (!(tag.compare("2")) && isStoreOp(opcode)))) {
+			unsigned long addr;
 
+			sscanf(rest.c_str(), "%*d,%ld,%*d,%*s\n", &addr);
+			memTraceFile << addr << ",";
 		}
-		else if ((trace_entry == true) && (((tag.compare("1") == 0) && microop == 27) || ((tag.compare("2") == 0) && microop == 28))) {
-			// Load instruction for obtaining load/store addresses
-			unsigned int tmp1_v = 0;
-			unsigned int tmp2_v = 0;
-			unsigned long int addr_v = 0;
-			char predecessor_name[256];
-			sscanf(line_left.c_str(), "%d,%ld,%d,%s\n", &tmp1_v, &addr_v, &tmp2_v, predecessor_name);
-			mem_trace << addr_v << ",";
-		}
-		else if ((trace_entry == true) && (((tag.compare("r") == 0) && microop == 27) || ((tag.compare("1") == 0) && microop == 28))) {
-			// Load instruction for obtaining load/store values
-			unsigned int tmp1_v = 0;
-			unsigned int tmp2_v = 0;
-			float its_value = 0.0f;
-			char its_name[256];
-			sscanf(line_left.c_str(), "%d,%f,%d,%s\n", &tmp1_v, &its_value, &tmp2_v, its_name);
-			mem_trace << its_value << std::endl;
-			trace_entry = false;
-		}
-		else {
-			// Do nothing here
-		}
+		else if(traceEntry && ((!(tag.compare("r")) && isLoadOp(opcode)) || (!(tag.compare("1")) && isStoreOp(opcode)))) {
+			float value;
 
+			sscanf(rest.c_str(), "%*d,%f,%*d,%*s\n", &value);
+			memTraceFile << value << "\n";
+			traceEntry = false;
+		}
 	}
 
-	gzclose(tracefile);
-	mem_trace.close();
-	std::cout << "DEBUG-INFO: [Mem-trace] Finished" << std::endl;
-#endif
+	gzclose(traceFile);
+	memTraceFile.close();
+
+	VERBOSE_PRINT(errs() << "[][memoryTrace] Memory trace finished\n");
 }
 
 bool InstrumentForDDDG::runOnModule(Module &M) {
@@ -630,6 +489,9 @@ bool InstrumentForDDDG::runOnModule(Module &M) {
 		VERBOSE_PRINT(errs() << "[instrumentForDDDG] Profiling finished\n");
 
 		if(args.memTrace) {
+			errs() << "========================================================\n";
+			errs() << "Starting memory trace extraction\n";
+
 			VERBOSE_PRINT(errs() << "[instrumentForDDDG] Starting memory trace extraction\n");
 			extractMemoryTraceForAccessPattern();
 			VERBOSE_PRINT(errs() << "[instrumentForDDDG] Memory trace extraction finished\n");
@@ -711,21 +573,14 @@ bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 						IJ.injectTrace(insIt, i + 1, operR, currOperand->getType(), nullptr, isReg);
 					else
 						IJ.injectTrace(insIt, i + 1, operR, I->getType(), nullptr, isReg);
-
-					//if(currOperand->getType()->isVectorTy())
-					//	printLine(insIt, i + 1, -1, operR, "phi", "", currOperand->getType()->getTypeID(), getMemSize(currOperand->getType()), NULL, isReg);
-					//else
-					//	printLine(insIt, i + 1, -1, operR, "phi", "", I->getType()->getTypeID(), getMemSize(I->getType()), NULL, isReg);
 				}
 				// Input to phi is of vector type
 				else if(currOperand->getType()->isVectorTy()) {
 					IJ.injectTrace(insIt, i + 1, currOperand->getName(), currOperand->getType(), nullptr, isReg);
-					//printLine(insIt, i + 1, -1, currOperand->getName(), "phi", "", currOperand->getType()->getTypeID(), getMemSize(currOperand->getType()), NULL, isReg);
 				}
 				// Input to phi is none of the above
 				else {
 					IJ.injectTrace(insIt, i + 1, currOperand->getName(), currOperand->getType(), currOperand, isReg);
-					//printLine(insIt, i + 1, -1, currOperand->getName(), "phi", "", currOperand->getType()->getTypeID(), getMemSize(currOperand->getType()), currOperand, isReg);
 				}
 			}
 
@@ -895,59 +750,46 @@ bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 	return true;
 }
 
-void InstrumentForDDDG::removeConfig(std::string kernelName, std::string inputPath) {
-#if 0
-	//std::string input_kernel = input_path + kernel_name;
-	std::string input_kernel = outputPath + kernel_name;
-	std::string pipelining(input_kernel + "_pipelining_config");
-	std::string unrolling(input_kernel + "_unrolling_config");
-	std::string array_info(input_kernel + "_array_info");
-	std::string partition(input_kernel + "_partition_config");
-	std::string comp_partition(input_kernel + "_complete_partition_config");
+void InstrumentForDDDG::removeConfig(std::string kernelName) {
+	std::string inputKernel = args.outWorkDir + kernelName;
 
-	ifstream pipe(pipelining);
-	if (pipe.is_open()) {
-		pipe.close();
-		if ( remove(pipelining.c_str()) != 0) {
-			assert(false && "Error: deleting loop pipelining configuration file!\n");
-		}
+	std::string pipelining(inputKernel + "_pipelining.cfg");
+	std::ifstream pipeliningFile(pipelining);
+	if(pipeliningFile.is_open()) {
+		pipeliningFile.close();
+		assert(!remove(pipelining.c_str()) && "Error removing pipelining config file");
 	}
 
-	ifstream unroll(unrolling);
-	if (unroll.is_open()) {
-		unroll.close();
-		if (remove(unrolling.c_str()) != 0) {
-			assert(false && "Error: deleting loop unrolling configuration file!\n");
-		}
+	std::string unrolling(inputKernel + "_unrolling.cfg");
+	std::ifstream unrollingFile(unrolling);
+	if(unrollingFile.is_open()) {
+		unrollingFile.close();
+		assert(!remove(unrolling.c_str()) && "Error removing unrolling config file");
 	}
 
-	ifstream arrayInfo(array_info);
-	if (arrayInfo.is_open()) {
-		arrayInfo.close();
-		if (remove(array_info.c_str()) != 0) {
-			assert(false && "Error: deleting array information file!\n");
-		}
+	std::string arrayInfo(inputKernel + "_arrayInfo.cfg");
+	std::ifstream arrayInfoFile(arrayInfo);
+	if(arrayInfoFile.is_open()) {
+		arrayInfoFile.close();
+		assert(!remove(arrayInfo.c_str()) && "Error removing array info config file");
 	}
 
-	ifstream part(partition);
-	if (part.is_open()) {
-		part.close();
-		if (remove(partition.c_str()) != 0) {
-			assert(false && "Error: deleting array partitioning configuration file!\n");
-		}
+	std::string partition(inputKernel + "_partition.cfg");
+	std::ifstream partitionFile(partition);
+	if(partitionFile.is_open()) {
+		partitionFile.close();
+		assert(!remove(partition.c_str()) && "Error removing partition config file");
 	}
 
-	ifstream comp_part(comp_partition);
-	if (comp_part.is_open()) {
-		comp_part.close();
-		if (remove(comp_partition.c_str()) != 0) {
-			assert(false && "Error: deleting completely array partitioning configuration file!\n");
-		}
+	std::string completePartition(inputKernel + "_completepartition.cfg");
+	std::ifstream completePartitionFile(completePartition);
+	if(completePartitionFile.is_open()) {
+		completePartitionFile.close();
+		assert(!remove(completePartition.c_str()) && "Error removing complete partition config file");
 	}
-#endif
 }
 
-void InstrumentForDDDG::parseConfig(std::string kernelName, std::string inputPath) {
+void InstrumentForDDDG::parseConfig(std::string kernelName) {
 #if 0
 	ifstream config_file;
 	//std::string input_kernel = input_path + kernel_name;
@@ -1266,6 +1108,21 @@ bool InstrumentForDDDG::readUnrollingConfig(loopName2levelUnrollVecMapTy &lpName
 }
 
 void InstrumentForDDDG::loopBasedTraceAnalysis() {
+	VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Loop-based trace analysis started\n");
+
+	std::string traceFileName = args.workDir + "dynamic_trace.gz";
+	std::string kernelName = args.kernelNames.at(0);
+
+	VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Writing header of summary file\n");
+	openSummaryFile(kernelName); 
+
+	VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Parsing configuration file\n");
+	removeConfig(kernelName);
+	parseConfig(kernelName);
+
+#if 0
+	VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Summary file closed\n");
+#endif
 #if 0
 	errs() << "DEBUG-INFO: [trace-analysis_loop-based-trace-analysis] Analysis loops' IL and II inside the kernel\n";
 	/// Create Dynamic Data Dependence Graph
@@ -1380,29 +1237,22 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 #endif
 }
 
-void InstrumentForDDDG::openSummaryFile(std::ofstream &summaryFile, std::string kernelKame) {
-#if 0
-	errs() << "DEBUG-INFO: [Lin-Analyzer summary] Writing summary into log file\n";
-	//std::string file_name(inputPath+kernel_name+"_summary.log");
-	std::string file_name(outputPath + kernel_name + "_summary.log");
-	summary_file.open(file_name);
-	if (summary_file.is_open()) {
-		summary_file << "==========================" << std::endl;
-		summary_file << "   Lin-analyzer summary" << std::endl;
-		summary_file << "==========================" << std::endl;
-		summary_file << "function name: " << kernel_name << std::endl;
-	}
-	else {
-		assert(false && "Error: Cannot open summary file!\n");
-	}
-#endif
+void InstrumentForDDDG::openSummaryFile(std::string kernelName) {
+	std::string fileName(args.outWorkDir + kernelName + "_summary.log");
+	if(summaryFile.is_open())
+		summaryFile.close();
+	summaryFile.open(fileName);
+
+	assert(summaryFile.is_open() && "Could not open memory trace output file");
+
+	summaryFile << "==========================\n";
+	summaryFile << "   Lin-analyzer summary\n";
+	summaryFile << "==========================\n";
+	summaryFile << "Function name: " << kernelName << "\n";
 }
 
-void InstrumentForDDDG::closeSummaryFile(std::ofstream &summaryFile) {
-#if 0
-	summary_file.close();
-	VERBOSE_PRINT(errs() << "DEBUG-INFO: [Lin-Analyzer summary] Summary file generated\n");
-#endif
+void InstrumentForDDDG::closeSummaryFile() {
+	summaryFile.close();
 }
 
 ProfilingEngine::ProfilingEngine(Module &M, TraceLogger &TL) : M(M), TL(TL) {

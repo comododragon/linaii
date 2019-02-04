@@ -8,7 +8,7 @@ add_llvm_library(BuildDDDGlib
 	TraceFunctions.cpp
 	file_func.cpp
 	Registers.cpp
-	opcode_func.cpp
+	opcodes.cpp
 	generic_func.cpp
 	fpga_resources.cpp
 	

@@ -12,7 +12,7 @@
 #include <fstream>
 
 #include "profile_h/file_func.h"
-#include "profile_h/opcode_func.h"
+#include "profile_h/opcodes.h"
 #include "profile_h/auxiliary.h"
 /*#define HANDLE_INST(num, opc, clas) case num: return opc;*/
 using namespace std;

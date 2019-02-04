@@ -33,6 +33,8 @@ extern const std::string extractLoopInfoMDKindName;
 
 bool isFunctionOfInterest(std::string key);
 bool verifyModuleAndPrintErrors(llvm::Module &M);
+std::string constructLoopName(std::string funcName, int loopNo, int depth=-1);
+std::string appendDepthToLoopName(std::string loopName, int depth);
 
 // TODO: REMOVER ISSO AQUI SOB DEMANDA
 extern std::string inputFileName;
@@ -61,7 +63,6 @@ extern bool enable_extra_scalar;
 extern bool enable_rw_rw_memory;
 extern bool target_vc707;
 extern std::vector<std::string> target_loops;
-extern std::ofstream summary;
 
 typedef std::map<std::string, std::string> getElementPtrName2arrayNameMapTy;
 extern getElementPtrName2arrayNameMapTy getElementPtrName2arrayNameMap;

@@ -2,7 +2,7 @@
 #include <fstream>
 #include <boost/tokenizer.hpp>
 
-#include "profile_h/opcode_func.h"
+#include "profile_h/opcodes.h"
 #include "profile_h/BaseDatapath.h"
 #include "llvm/Support/GraphWriter.h"
 //#include "profile_h/global_variables.h"
@@ -19,8 +19,9 @@ bool compare_arrayName2resII(const std::pair<std::string, double>& first, const 
 	return (first.second < second.second);
 }
 
-BaseDatapath::BaseDatapath(std::string bench, string trace_file, string config_file, string input_path, std::string target_loop, unsigned lp_level, unsigned target_unroll_factor, unsigned IL_asap)
+BaseDatapath::BaseDatapath(std::string bench, string trace_file, string config_file, ofstream *summary_file, string input_path, std::string target_loop, unsigned lp_level, unsigned target_unroll_factor, unsigned IL_asap)
 {
+	summaryFile = summary_file;
   benchName = bench;
 	inputPath = input_path;
 	//configure_fileName = inputPath + "config_example";
@@ -119,7 +120,7 @@ void BaseDatapath::memoryAmbiguation()
     unsigned node_id = vertexToName[*vi];
 
     int node_microop = microop.at(node_id);
-    if (!is_store_op(node_microop))
+    if (!isStoreOp(node_microop))
       continue;
     //iterate its children to find a load op
     out_edge_iter out_edge_it, out_edge_end;
@@ -127,7 +128,7 @@ void BaseDatapath::memoryAmbiguation()
     {
       int child_id = vertexToName[target(*out_edge_it, graph_)];
       int child_microop = microop.at(child_id);
-      if (!is_load_op(child_microop))
+      if (!isLoadOp(child_microop))
         continue;
       std::string node_dynamic_methodid = dynamic_methodid.at(node_id);
       std::string load_dynamic_methodid = dynamic_methodid.at(child_id);
@@ -167,10 +168,10 @@ void BaseDatapath::memoryAmbiguation()
   for (unsigned node_id = 0; node_id < numTotalNodes; node_id++)
   {
     int node_microop = microop.at(node_id);
-    if (!is_memory_op(node_microop))
+    if (!isMemoryOp(node_microop))
       continue;
     std::string unique_id (dynamic_methodid.at(node_id) + "-" + instid.at(node_id) + "-" + prev_basic_block.at(node_id));
-    if (is_store_op(node_microop))
+    if (isStoreOp(node_microop))
     {
       auto store_it = paired_store.find(unique_id);
       if (store_it == paired_store.end())
@@ -179,7 +180,7 @@ void BaseDatapath::memoryAmbiguation()
     }
     else
     {
-      assert(is_load_op(node_microop));
+      assert(isLoadOp(node_microop));
       auto load_range = pair_per_load.equal_range(unique_id);
       if (std::distance(load_range.first, load_range.second) == 1)
         continue;
@@ -284,9 +285,9 @@ void BaseDatapath::loopFlatten()
     auto it = flatten_config.find(node_linenum);
     if (it == flatten_config.end())
       continue;
-    if (is_compute_op(microop.at(node_id)))
+    if (isComputeOp(microop.at(node_id)))
       microop.at(node_id) = LLVM_IR_Move;
-    else if (is_branch_op(microop.at(node_id)))
+    else if (isBranchOp(microop.at(node_id)))
       to_remove_nodes.push_back(node_id);
   }
   updateGraphWithIsolatedNodes(to_remove_nodes);
@@ -315,7 +316,7 @@ void BaseDatapath::cleanLeafNodes()
       && node_microop != LLVM_IR_SilentStore
       && node_microop != LLVM_IR_Store
       && node_microop != LLVM_IR_Ret
-      && !is_branch_op(node_microop))
+      && !isBranchOp(node_microop))
     {
       to_remove_nodes.push_back(node_id);
       //iterate its parents
@@ -326,7 +327,7 @@ void BaseDatapath::cleanLeafNodes()
         num_of_children.at(parent_id)++;
       }
     }
-    else if (is_branch_op(node_microop))
+    else if (isBranchOp(node_microop))
     {
       //iterate its parents
       in_edge_iter in_edge_it, in_edge_end;
@@ -439,12 +440,12 @@ void BaseDatapath::loopPipelining()
   bound_it++;
   while ( (unsigned)node_id < numTotalNodes)
   {
-    assert(is_branch_op(microop.at(*bound_it)));
+    assert(isBranchOp(microop.at(*bound_it)));
     while (node_id < *bound_it &&  (unsigned) node_id < numTotalNodes)
     {
       if (nameToVertex.find(node_id) == nameToVertex.end()
           || boost::degree(nameToVertex[node_id], graph_) == 0
-          || is_branch_op(microop.at(node_id)) ) {
+          || isBranchOp(microop.at(node_id)) ) {
         node_id++;
         continue;
       }
@@ -466,7 +467,7 @@ void BaseDatapath::loopPipelining()
   {
     unsigned br_node = first_it->first;
     unsigned first_id = first_it->second;
-    if (is_call_op(microop.at(br_node))) {
+    if (isCallOp(microop.at(br_node))) {
       prev_branch = -1;
       continue;
     }
@@ -494,7 +495,7 @@ void BaseDatapath::loopPipelining()
     {
       Vertex parent_vertex = source(*in_edge_it, graph_);
       unsigned parent_id = vertexToName[parent_vertex];
-      if (is_branch_op(microop.at(parent_id)))
+      if (isBranchOp(microop.at(parent_id)))
         continue;
       to_remove_edges.insert(*in_edge_it);
       to_add_edges.push_back({parent_id, first_id, CONTROL_EDGE});
@@ -502,7 +503,7 @@ void BaseDatapath::loopPipelining()
     //remove control dependence between br node to its children
     out_edge_iter out_edge_it, out_edge_end;
     for (tie(out_edge_it, out_edge_end) = out_edges(nameToVertex[br_node], graph_); out_edge_it != out_edge_end; ++out_edge_it) {
-      if (is_call_op(microop.at(vertexToName[target(*out_edge_it, graph_)])))
+      if (isCallOp(microop.at(vertexToName[target(*out_edge_it, graph_)])))
         continue;
       if (edge_to_parid[*out_edge_it] != CONTROL_EDGE)
         continue;
@@ -549,7 +550,7 @@ void BaseDatapath::loopUnrolling()
       continue;
     Vertex node_vertex = nameToVertex[node_id];
     if (boost::degree(node_vertex, graph_) == 0
-       && !is_call_op(microop.at(node_id)))
+       && !isCallOp(microop.at(node_id)))
       continue;
     if (!first)
     {
@@ -559,15 +560,15 @@ void BaseDatapath::loopUnrolling()
     }
     assert(prev_branch != -1);
     if (prev_branch != node_id &&
-      !(is_dma_op(microop.at(prev_branch)) && is_dma_op(microop.at(node_id))) ) {
+      !(isDMAOp(microop.at(prev_branch)) && isDMAOp(microop.at(node_id))) ) {
       to_add_edges.push_back({(unsigned)prev_branch, node_id, CONTROL_EDGE});
     }
-    if (!is_branch_op(microop.at(node_id)))
+    if (!isBranchOp(microop.at(node_id)))
       nodes_between.push_back(node_id);
     else
     {
       //for the case that the first non-isolated node is also a call node;
-      if (is_call_op(microop.at(node_id)) && *loopBound.rbegin() != node_id)
+      if (isCallOp(microop.at(node_id)) && *loopBound.rbegin() != node_id)
       {
         loopBound.push_back(node_id);
         prev_branch = node_id;
@@ -578,7 +579,7 @@ void BaseDatapath::loopUnrolling()
       //not unrolling branch
       if (unroll_it == unrolling_config.end())
       {
-        if (!is_call_op(microop.at(node_id))) {
+        if (!isCallOp(microop.at(node_id))) {
           nodes_between.push_back(node_id);
           continue;
         }
@@ -586,15 +587,15 @@ void BaseDatapath::loopUnrolling()
         // Except for the case that both two branches are DMA operations.
         // (Two DMA operations can go in parallel.)
         if (!doesEdgeExist(prev_branch, node_id) &&
-              !( is_dma_op(microop.at(prev_branch)) &&
-                  is_dma_op(microop.at(node_id)) ) )
+              !( isDMAOp(microop.at(prev_branch)) &&
+                  isDMAOp(microop.at(node_id)) ) )
           to_add_edges.push_back({(unsigned)prev_branch, node_id, CONTROL_EDGE});
         for (auto prev_node_it = nodes_between.begin(), E = nodes_between.end();
                    prev_node_it != E; prev_node_it++)
         {
           if (!doesEdgeExist(*prev_node_it, node_id) &&
-              !( is_dma_op(microop.at(*prev_node_it)) &&
-                   is_dma_op(microop.at(node_id)) )  ) {
+              !( isDMAOp(microop.at(*prev_node_it)) &&
+                   isDMAOp(microop.at(node_id)) )  ) {
             to_add_edges.push_back({*prev_node_it, node_id, CONTROL_EDGE});
           }
         }
@@ -688,10 +689,10 @@ void BaseDatapath::removeSharedLoads() {
     int node_microop = microop.at(node_id);
     long long int node_address = address[node_id];
     auto addr_it = address_loaded.find(node_address);
-		if (is_store_op(node_microop) && addr_it != address_loaded.end()){
+		if (isStoreOp(node_microop) && addr_it != address_loaded.end()){
 			address_loaded.erase(addr_it);
 		}
-    else if (is_load_op(node_microop)) {
+    else if (isLoadOp(node_microop)) {
 			if (addr_it == address_loaded.end()){
 				address_loaded.insert(std::make_pair(node_address, node_id));
 			}
@@ -760,7 +761,7 @@ void BaseDatapath::storeBuffer() {
       continue;
     }
 
-    if (is_store_op(microop.at(node_id))) {
+    if (isStoreOp(microop.at(node_id))) {
       //remove this store
       std::string store_unique_id (dynamic_methodid.at(node_id) + "-" + instid.at(node_id) + "-" + prev_basic_block.at(node_id));
       //dynamic stores, cannot disambiguated in the static time, cannot remove
@@ -776,7 +777,7 @@ void BaseDatapath::storeBuffer() {
             out_edge_it != out_edge_end; ++out_edge_it) {
         Vertex child_vertex = target(*out_edge_it, graph_);
         int child_id = vertexToName[child_vertex];
-        if (is_load_op(microop.at(child_id))) {
+        if (isLoadOp(microop.at(child_id))) {
           std::string load_unique_id (dynamic_methodid.at(child_id) + "-"
                 + instid.at(child_id) + "-" + prev_basic_block.at(child_id));
           if (dynamicMemoryOps.find(load_unique_id) != dynamicMemoryOps.end())
@@ -852,7 +853,7 @@ void BaseDatapath::removeRepeatedStores() {
 
     if (nameToVertex.find(node_id) == nameToVertex.end()
         || boost::degree(nameToVertex[node_id], graph_) == 0
-        || !is_store_op(microop.at(node_id))) {
+        || !isStoreOp(microop.at(node_id))) {
       --node_id;
       continue;
     }
@@ -917,7 +918,7 @@ void BaseDatapath::treeHeightReduction_integer()
     if (nameToVertex.find(node_id) == nameToVertex.end()
        || boost::degree(nameToVertex[node_id], graph_) == 0
        || updated.at(node_id)
-       || !is_associative(microop.at(node_id)) )
+       || !isAssociative(microop.at(node_id)) )
       continue;
     updated.at(node_id) = 1;
     int node_region = bound_region.at(node_id);
@@ -932,7 +933,7 @@ void BaseDatapath::treeHeightReduction_integer()
     {
       int chain_node_id = associative_chain.at(chain_id);
       int chain_node_microop = microop.at(chain_node_id);
-      if (is_associative(chain_node_microop))
+      if (isAssociative(chain_node_microop))
       {
         updated.at(chain_node_id) = 1;
         int num_of_chain_parents = 0;
@@ -940,7 +941,7 @@ void BaseDatapath::treeHeightReduction_integer()
         for (tie(in_edge_it, in_edge_end) = in_edges(nameToVertex[chain_node_id] , graph_); in_edge_it != in_edge_end; ++in_edge_it)
         {
           int parent_id = vertexToName[source(*in_edge_it, graph_)];
-          if (is_branch_op(microop.at(parent_id)))
+          if (isBranchOp(microop.at(parent_id)))
             continue;
           num_of_chain_parents++;
         }
@@ -954,7 +955,7 @@ void BaseDatapath::treeHeightReduction_integer()
             assert(parent_id < chain_node_id);
             int parent_region = bound_region.at(parent_id);
             int parent_microop = microop.at(parent_id);
-            if (is_branch_op(parent_microop))
+            if (isBranchOp(parent_microop))
               continue;
             Edge curr_edge = *in_edge_it;
             tmp_remove_edges.push_back(curr_edge);
@@ -962,7 +963,7 @@ void BaseDatapath::treeHeightReduction_integer()
             if (parent_region == node_region)
             {
               updated.at(parent_id) = 1;
-              if (!is_associative(parent_microop))
+              if (!isAssociative(parent_microop))
                 leaves.push_back(make_pair(parent_id, 0));
               else
               {
@@ -1073,7 +1074,7 @@ void BaseDatapath::treeHeightReduction_float()
 		if (nameToVertex.find(node_id) == nameToVertex.end()
 			|| boost::degree(nameToVertex[node_id], graph_) == 0
 			|| updated.at(node_id)
-			|| !is_fassociative(microop.at(node_id)))
+			|| !isFAssociative(microop.at(node_id)))
 			continue;
 		updated.at(node_id) = 1;
 		int node_region = bound_region.at(node_id);
@@ -1088,7 +1089,7 @@ void BaseDatapath::treeHeightReduction_float()
 		{
 			int chain_node_id = associative_chain.at(chain_id);
 			int chain_node_microop = microop.at(chain_node_id);
-			if (is_fassociative(chain_node_microop))
+			if (isFAssociative(chain_node_microop))
 			{
 				updated.at(chain_node_id) = 1;
 				int num_of_chain_parents = 0;
@@ -1096,7 +1097,7 @@ void BaseDatapath::treeHeightReduction_float()
 				for (tie(in_edge_it, in_edge_end) = in_edges(nameToVertex[chain_node_id], graph_); in_edge_it != in_edge_end; ++in_edge_it)
 				{
 					int parent_id = vertexToName[source(*in_edge_it, graph_)];
-					if (is_branch_op(microop.at(parent_id)))
+					if (isBranchOp(microop.at(parent_id)))
 						continue;
 					num_of_chain_parents++;
 				}
@@ -1110,7 +1111,7 @@ void BaseDatapath::treeHeightReduction_float()
 						assert(parent_id < chain_node_id);
 						int parent_region = bound_region.at(parent_id);
 						int parent_microop = microop.at(parent_id);
-						if (is_branch_op(parent_microop))
+						if (isBranchOp(parent_microop))
 							continue;
 						Edge curr_edge = *in_edge_it;
 						tmp_remove_edges.push_back(curr_edge);
@@ -1118,7 +1119,7 @@ void BaseDatapath::treeHeightReduction_float()
 						if (parent_region == node_region)
 						{
 							updated.at(parent_id) = 1;
-							if (!is_fassociative(parent_microop))
+							if (!isFAssociative(parent_microop))
 								leaves.push_back(make_pair(parent_id, 0));
 							else
 							{
@@ -1357,22 +1358,22 @@ void BaseDatapath::updatePerCycleActivity(
     int node_level = newLevel.at(node_id);
     int node_microop = microop.at(node_id);
 
-    if (is_mul_op(node_microop))
+    if (isMulOp(node_microop))
       mul_activity[func_id].at(node_level) +=1;
-    else if (is_add_op(node_microop)) {
+    else if (isAddOp(node_microop)) {
       add_activity[func_id].at(node_level) +=1;
       num_adds_so_far +=1;
     }
-    else if (is_bit_op(node_microop)) {
+    else if (isBitOp(node_microop)) {
       bit_activity[func_id].at(node_level) +=1;
       num_bits_so_far +=1;
     }
-    else if (is_load_op(node_microop)) {
+    else if (isLoadOp(node_microop)) {
       std::string base_addr = baseAddress[node_id].first;
       if (ld_activity.find(base_addr) != ld_activity.end())
         ld_activity[base_addr].at(node_level) += 1;
     }
-    else if (is_store_op(node_microop)) {
+    else if (isStoreOp(node_microop)) {
       std::string base_addr = baseAddress[node_id].first;
       if (st_activity.find(base_addr) != st_activity.end())
         st_activity[base_addr].at(node_level) += 1;
@@ -1606,7 +1607,7 @@ void BaseDatapath::initBaseAddress()
 		Vertex curr_node = *vi;
 		unsigned node_id = vertexToName[curr_node];
 		int node_microop = microop.at(node_id);
-		if (!is_memory_op(node_microop))
+		if (!isMemoryOp(node_microop))
 			continue;
 		bool modified = 0;
 		//iterate its parents, until it finds the root parent
@@ -1750,7 +1751,7 @@ void BaseDatapath::scratchpadPartition() {
 	///FIXME: It seems that base address of a partition array is not updated
 	for (unsigned node_id = 0; node_id < numTotalNodes; node_id++)
 	{
-		if (!is_memory_op(microop.at(node_id)))
+		if (!isMemoryOp(microop.at(node_id)))
 			continue;
 
 		if (baseAddress.find(node_id) == baseAddress.end())
@@ -1970,7 +1971,7 @@ void BaseDatapath::setGraphForStepping()
 	for (unsigned node_id = 0; node_id < numTotalNodes; node_id++)
 	{
 		Vertex node = nameToVertex[node_id];
-		if (boost::degree(node, graph_) != 0 || is_dma_op(microop.at(node_id)))
+		if (boost::degree(node, graph_) != 0 || isDMAOp(microop.at(node_id)))
 		{
 			finalIsolated.at(node_id) = 0;
 			numParents.at(node_id) = boost::in_degree(node, graph_);
@@ -2022,7 +2023,7 @@ int BaseDatapath::clearGraph()
     if (finalIsolated.at(node_id))
       continue;
     unsigned node_microop = microop.at(node_id);
-    if (!is_memory_op(node_microop) && ! is_branch_op(node_microop))
+    if (!isMemoryOp(node_microop) && ! isBranchOp(node_microop))
       if ((earliest_child.at(node_id) - 1 ) > newLevel.at(node_id))
         newLevel.at(node_id) = earliest_child.at(node_id) - 1;
 
@@ -2045,8 +2046,8 @@ void BaseDatapath::updateRegStats()
   {
     if (finalIsolated.at(node_id))
       continue;
-    if (is_control_op(microop.at(node_id)) ||
-        is_index_op(microop.at(node_id)))
+    if (isControlOp(microop.at(node_id)) ||
+        isIndexOp(microop.at(node_id)))
       continue;
     int node_level = newLevel.at(node_id);
     int max_children_level 		= node_level;
@@ -2058,10 +2059,10 @@ void BaseDatapath::updateRegStats()
     {
       int child_id = vertexToName[target(*out_edge_it, graph_)];
       int child_microop = microop.at(child_id);
-      if (is_control_op(child_microop))
+      if (isControlOp(child_microop))
         continue;
 
-      if (is_load_op(child_microop))
+      if (isLoadOp(child_microop))
         continue;
 
       int child_level = newLevel.at(child_id);
@@ -2103,12 +2104,12 @@ void BaseDatapath::calculateInstructionDistribution() {
 	for (unsigned i = 0; i < numTotalNodes; i++) {
 		unsigned opcode = microop.at(i);
 
-		if (is_memory_op(opcode)) {
-			if (is_store_op(opcode)) {
+		if (isMemoryOp(opcode)) {
+			if (isStoreOp(opcode)) {
 				num_of_storeInst++;
 				subTraceInst.num_st_inst++;
 			}
-			else if (is_load_op(opcode)) {
+			else if (isLoadOp(opcode)) {
 				num_of_loadInst++;
 				subTraceInst.num_ld_inst++;
 			}
@@ -2117,28 +2118,28 @@ void BaseDatapath::calculateInstructionDistribution() {
 			}
 			num_of_memInst++;
 		}
-		else if (is_compute_op(opcode)) {
-			if (is_bit_op(opcode)) {
+		else if (isComputeOp(opcode)) {
+			if (isBitOp(opcode)) {
 				num_of_bitInst++;
 				subTraceInst.num_bitwise_inst++;
 			}
-			else if (is_fadd_op(opcode)) {
+			else if (isFAddOp(opcode)) {
 				num_of_faddInst++;
 				subTraceInst.num_fadd_inst++;
 			}
-			else if (is_fsub_op(opcode)) {
+			else if (isFSubOp(opcode)) {
 				num_of_fsubInst++;
 				subTraceInst.num_fsub_inst++;
 			}
-			else if (is_fmul_op(opcode)) {
+			else if (isFMulOp(opcode)) {
 				num_of_fmulInst++;
 				subTraceInst.num_fmul_inst++;
 			}
-			else if (is_fdiv_op(opcode)) {
+			else if (isFDivOp(opcode)) {
 				num_of_fdivInst++;
 				subTraceInst.num_fdiv_inst++;
 			}
-			else if (is_fcmp_op(opcode)) {
+			else if (isFCmpOp(opcode)) {
 				num_of_fcmpInst++;
 				subTraceInst.num_fcmp_inst++;
 			}
@@ -2148,22 +2149,22 @@ void BaseDatapath::calculateInstructionDistribution() {
 			}
 			num_of_computeInst++;
 		}
-		else if (is_branch_op(opcode)) {
+		else if (isBranchOp(opcode)) {
 			num_of_branchInst++;
 			subTraceInst.num_br_inst++;
 		}
 		else {
-			if (is_index_op(opcode)) {
+			if (isIndexOp(opcode)) {
 				num_of_indexOpInst++;
 				///FIXME: In the current implementation, we treat it as the control instruction.
 				subTraceInst.num_control_inst++;
 			}
-			if (is_control_op(opcode)){
+			if (isControlOp(opcode)){
 				// Phi instruction
 				num_of_controlInst++;
 				subTraceInst.num_control_inst++;
 			}
-			if (is_call_op(opcode)) {
+			if (isCallOp(opcode)) {
 				num_of_callInst++;
 			}
 			num_of_otherInst++;
@@ -3074,19 +3075,19 @@ void BaseDatapath::updateDelayForNodeID() {
 bool BaseDatapath::calculateConstraint(unsigned node_id, unsigned node_delay) {
 
 	unsigned opcode = microop.at(node_id);
-	unsigned op_latency = fpga_node_latency(opcode);
+	unsigned op_latency = fpgaNodeLatency(opcode);
 	if (op_latency != node_delay) {
 		// This node has been counted before, no need to consider constraint again
-		if (is_fadd_op(opcode)) {
+		if (isFAddOp(opcode)) {
 			fadd_engine.erase(node_id);
 		}
-		else if (is_fsub_op(opcode)) {
+		else if (isFSubOp(opcode)) {
 			fsub_engine.erase(node_id);
 		}
-		else if (is_fmul_op(opcode)) {
+		else if (isFMulOp(opcode)) {
 			fmul_engine.erase(node_id);
 		}
-		else if (is_fdiv_op(opcode)) {
+		else if (isFDivOp(opcode)) {
 			fdiv_engine.erase(node_id);
 		}
 		else {
@@ -3097,7 +3098,7 @@ bool BaseDatapath::calculateConstraint(unsigned node_id, unsigned node_delay) {
 
 	engineSlotTy::iterator it;
 	unsigned size = 0;
-	if (is_fadd_op(opcode)) {
+	if (isFAddOp(opcode)) {
 		size = fadd_engine.size();
 		if ( size < fpga_constraints.get_fadd_num() ) {
 			// No instruction uses fadd_engine, thus no constraint
@@ -3109,7 +3110,7 @@ bool BaseDatapath::calculateConstraint(unsigned node_id, unsigned node_delay) {
 			return true;
 		}
 	}
-	else if (is_fsub_op(opcode)) {
+	else if (isFSubOp(opcode)) {
 		size = fsub_engine.size();
 		if (size < fpga_constraints.get_fsub_num()) {
 			// No instruction uses fsub_engine, thus no constraint
@@ -3121,7 +3122,7 @@ bool BaseDatapath::calculateConstraint(unsigned node_id, unsigned node_delay) {
 			return true;
 		}
 	}
-	else if (is_fmul_op(opcode)) {
+	else if (isFMulOp(opcode)) {
 		size = fmul_engine.size();
 		if (size < fpga_constraints.get_fmul_num()) {
 			// No instruction uses fmul_engine, thus no constraint
@@ -3133,7 +3134,7 @@ bool BaseDatapath::calculateConstraint(unsigned node_id, unsigned node_delay) {
 			return true;
 		}
 	}
-	else if (is_fdiv_op(opcode)) {
+	else if (isFDivOp(opcode)) {
 		size = fdiv_engine.size();
 		if (size < fpga_constraints.get_fdiv_num()) {
 			// No instruction uses fdiv_engine, thus no constraint
@@ -3145,11 +3146,11 @@ bool BaseDatapath::calculateConstraint(unsigned node_id, unsigned node_delay) {
 			return true;
 		}
 	}
-	else if (is_load_op(opcode)) {
+	else if (isLoadOp(opcode)) {
 		std::string node_part = baseAddress[node_id].first;
 		return memoryBWconstraint(node_part, true);
 	}
-	else if (is_store_op(opcode)) {
+	else if (isStoreOp(opcode)) {
 		std::string node_part = baseAddress[node_id].first;
 		return memoryBWconstraint(node_part, false);
 	}
@@ -3168,26 +3169,26 @@ void BaseDatapath::removeConstraint(unsigned node_id) {
 	/*
 	// floating point unit constraints will be removed after executing 1 cycle.
   // This is because of its pipeline design.
-	if (is_fadd_op(opcode)) {
+	if (isFAddOp(opcode)) {
 		fadd_engine.erase(node_id);
 	}
-	else if (is_fsub_op(opcode)) {
+	else if (isFSubOp(opcode)) {
 		fsub_engine.erase(node_id);
 	}
-	else if (is_fmul_op(opcode)) {
+	else if (isFMulOp(opcode)) {
 		fmul_engine.erase(node_id);
 	}
-	else if (is_fdiv_op(opcode)) {
+	else if (isFDivOp(opcode)) {
 		fdiv_engine.erase(node_id);
 	}*/
 
-	if (is_load_op(opcode)) {
+	if (isLoadOp(opcode)) {
 		std::string node_part = baseAddress[node_id].first;
 		unsigned partition_id = findPartitionID(node_part);
 		assert( (occupiedMemPerPartition.at(partition_id).readPort_num != 0) && "Error: occupied read port num is 0 already, but report read port constraint!\n");
 		occupiedMemPerPartition.at(partition_id).readPort_num--;
 	}
-	else if (is_store_op(opcode)) {
+	else if (isStoreOp(opcode)) {
 		std::string node_part = baseAddress[node_id].first;
 		unsigned partition_id = findPartitionID(node_part);
 		assert((occupiedMemPerPartition.at(partition_id).writePort_num != 0) && "Error: occupied write port num is 0 already, but report write port constraint!\n");
@@ -3208,24 +3209,24 @@ void BaseDatapath::stepExecutingQueue() {
 		/*
 		/// After loopFlattening, all the compute operations will be replaced with LLVM_IR_Move microop,
 		/// This is a bug inside loopFlattening, we can not replace the opcodes.
-		if ( is_compute_op(microop.at(node_id)) ) {
+		if ( isComputeOp(microop.at(node_id)) ) {
 		cout << "This is a compute instruction: " << microop.at(node_id) << endl;
 		}*/
 		unsigned opcode = microop.at(node_id);
-		if (is_memory_op(opcode))
+		if (isMemoryOp(opcode))
 		{
 			std::string node_part = baseAddress[node_id].first;
 			//if (registers.has(node_part) || canServicePartition(node_part))
 			if (registers.has(node_part))
 			{
-				if (is_load_op(microop.at(node_id)))
+				if (isLoadOp(microop.at(node_id)))
 					registers.getRegister(node_part)->increment_loads();
 				else
 					registers.getRegister(node_part)->increment_stores();
 
 			}
 			else {
-				if (is_load_op(microop.at(node_id)))
+				if (isLoadOp(microop.at(node_id)))
 					increment_loads(node_part);
 				else
 					increment_stores(node_part);
@@ -3323,7 +3324,7 @@ void BaseDatapath::updateChildren(unsigned node_id)
     if (numParents[child_id] > 0)
     {
 			unsigned curr_microop = microop.at(node_id);
-			unsigned curr_op_latency = fpga_node_latency(curr_microop);
+			unsigned curr_op_latency = fpgaNodeLatency(curr_microop);
       numParents[child_id]--;
 			unsigned maxParentLatency = maxParentOpLatency.at(child_id);
 			if (curr_op_latency > maxParentLatency) {
@@ -3334,8 +3335,8 @@ void BaseDatapath::updateChildren(unsigned node_id)
 			if (numParents[child_id] == 0)
       {
         unsigned child_microop = microop.at(child_id);
-				unsigned op_latency = fpga_node_latency(child_microop);
-				//if ((op_latency == 0 || fpga_node_latency(curr_microop) == 0)
+				unsigned op_latency = fpgaNodeLatency(child_microop);
+				//if ((op_latency == 0 || fpgaNodeLatency(curr_microop) == 0)
 				//	&& edge_parid != CONTROL_EDGE) {
 				//if ( (op_latency == 0 && edge_parid != CONTROL_EDGE) || (child_microop == LLVM_IR_Br && edge_parid == CONTROL_EDGE) ) {
 				if ((maxParentLatency == 0) || (child_microop == LLVM_IR_Br && edge_parid == CONTROL_EDGE)) {
@@ -3352,7 +3353,7 @@ void BaseDatapath::updateChildren(unsigned node_id)
 					}
 					else
 					{
-						nodeID2delay.insert( std::make_pair(child_id, fpga_node_latency(child_microop)) );
+						nodeID2delay.insert( std::make_pair(child_id, fpgaNodeLatency(child_microop)) );
 					}*/
 					if (itDelay == nodeID2delay.end()) {
 						nodeID2delay.insert(std::make_pair(child_id, op_latency));
@@ -3464,7 +3465,7 @@ uint64_t BaseDatapath::fpga_estimation_one_more_subtrace_for_recII_calculation()
 			Vertex source_node = boost::source(*edge_it, graph_);
 			unsigned source_node_id = vertexToName[source_node];
 			unsigned source_opcode = microop.at(source_node_id);
-			unsigned fpga_latency = fpga_node_latency(source_opcode);
+			unsigned fpga_latency = fpgaNodeLatency(source_opcode);
 			boost::put(boost::edge_weight, graph_, *edge_it, fpga_latency);
 		}
 	}
@@ -3508,7 +3509,7 @@ uint64_t BaseDatapath::fpga_estimation() {
 			Vertex source_node = boost::source(*edge_it, graph_);
 			unsigned source_node_id = vertexToName[source_node];
 			unsigned source_opcode = microop.at(source_node_id);
-			unsigned fpga_latency = fpga_node_latency(source_opcode);
+			unsigned fpga_latency = fpgaNodeLatency(source_opcode);
 			boost::put(boost::edge_weight, graph_, *edge_it, fpga_latency);
 		}
 	}
@@ -3548,7 +3549,7 @@ uint64_t BaseDatapath::fpga_estimation() {
 	loopInfoTy loop_info = { target_loop_name, target_loop_level, target_lp_level_unroll_factor, enable_pipeline, num_cycles, IL_asap, rc_list_il, max_II, ResII_mem, limited_mem_name, ResII_op, limited_op_name, RecII };
 	resourceTy fpga_rs = { dsp_used, bram18k_used, ff_used, lut_used, fadd_used, fsub_used, fmul_used, fdiv_used };
 	sharedMemTy sharedMem = {shared_loads, repeated_stores};
-	dump_summary(summary, loop_info, fpga_rs, sharedMem, arrayName2memeff, limited_fop_unit_types, subTraceInst, ave_parallelism, arrayName2maxMemOpNum_subtrace, arrayName2aveLoadAccessPerBank_subtrace, arrayName2aveStoreAccessPerBank_subtrace);
+	dump_summary(*summaryFile, loop_info, fpga_rs, sharedMem, arrayName2memeff, limited_fop_unit_types, subTraceInst, ave_parallelism, arrayName2maxMemOpNum_subtrace, arrayName2aveLoadAccessPerBank_subtrace, arrayName2aveStoreAccessPerBank_subtrace);
 	std::cout << "DEBUG-INFO: [fpga_estimation] Finished" << std::endl;
 	return num_cycles;
 }
@@ -3609,7 +3610,7 @@ max_asapTy BaseDatapath::asap_scheduling(Graph& graph_tmp, schedTimeTy& schedTim
 	for (unsigned i = 0; i < maxLevel_nodesVec.size(); i++) {
 		unsigned node_id_at_maxLevel = maxLevel_nodesVec.at(i);
 		unsigned opcode = microop.at(node_id_at_maxLevel);
-		unsigned latency = fpga_node_latency(opcode);
+		unsigned latency = fpgaNodeLatency(opcode);
 		max_latency = (max_latency > latency) ? max_latency : latency;
 	}
 
@@ -3881,7 +3882,7 @@ unsigned BaseDatapath::getRecII(bool enable_lpPipelining, schedTimeTy& asap_time
 			for (int i = 0; i < cp_last_nodes.size(); i++) {
 				unsigned node_id = cp_last_nodes.at(i);
 				unsigned cpNode_opcode = microop.at(node_id);
-				if (is_memory_op(cpNode_opcode)) {
+				if (isMemoryOp(cpNode_opcode)) {
 					set_time_start_flag = true;
 					break;
 				}
@@ -3915,10 +3916,10 @@ unsigned BaseDatapath::getRecII(bool enable_lpPipelining, schedTimeTy& asap_time
 				for (unsigned i = 0; i < nodesVec.size(); i++) {
 					unsigned node_id = nodesVec.at(i);
 					unsigned opcode = microop.at(node_id);
-					if (!is_float_op(opcode)) {
+					if (!isFloatOp(opcode)) {
 						continue;
 					}
-					unsigned latency = fpga_node_latency(opcode);
+					unsigned latency = fpgaNodeLatency(opcode);
 					max_latency = (max_latency > latency) ? max_latency : latency;
 					count_flag = true;
 				}
@@ -4234,7 +4235,7 @@ void BaseDatapath::determineExecutingMap(Graph& graph_tmp, schedTimeTy& alapTime
 		while (selectedFaddList.size() != 0) {
 			unsigned st_node_id = selectedFaddList.front();
 			unsigned opcode = microop.at(st_node_id);
-			unsigned node_latency = fpga_node_latency(opcode);
+			unsigned node_latency = fpgaNodeLatency(opcode);
 			executingFaddMap.insert(std::make_pair(st_node_id, node_latency));
 			selectedFaddList.pop_front();
 			// Donot need to wait for this hardware unit to be released 
@@ -4247,7 +4248,7 @@ void BaseDatapath::determineExecutingMap(Graph& graph_tmp, schedTimeTy& alapTime
 		while (selectedFsubList.size() != 0) {
 			unsigned st_node_id = selectedFsubList.front();
 			unsigned opcode = microop.at(st_node_id);
-			unsigned node_latency = fpga_node_latency(opcode);
+			unsigned node_latency = fpgaNodeLatency(opcode);
 			executingFsubMap.insert(std::make_pair(st_node_id, node_latency));
 			selectedFsubList.pop_front();
 			// Donot need to wait for this hardware unit to be released 
@@ -4260,7 +4261,7 @@ void BaseDatapath::determineExecutingMap(Graph& graph_tmp, schedTimeTy& alapTime
 		while (selectedFmulList.size() != 0) {
 			unsigned st_node_id = selectedFmulList.front();
 			unsigned opcode = microop.at(st_node_id);
-			unsigned node_latency = fpga_node_latency(opcode);
+			unsigned node_latency = fpgaNodeLatency(opcode);
 			executingFmulMap.insert(std::make_pair(st_node_id, node_latency));
 			selectedFmulList.pop_front();
 			// Donot need to wait for this hardware unit to be released 
@@ -4273,7 +4274,7 @@ void BaseDatapath::determineExecutingMap(Graph& graph_tmp, schedTimeTy& alapTime
 		while (selectedFdivList.size() != 0) {
 			unsigned st_node_id = selectedFdivList.front();
 			unsigned opcode = microop.at(st_node_id);
-			unsigned node_latency = fpga_node_latency(opcode);
+			unsigned node_latency = fpgaNodeLatency(opcode);
 			executingFdivMap.insert(std::make_pair(st_node_id, node_latency));
 			selectedFdivList.pop_front();
 			// Donot need to wait for this hardware unit to be released 
@@ -4346,7 +4347,7 @@ void BaseDatapath::determineExecutingMap(Graph& graph_tmp, schedTimeTy& alapTime
 		while (selectedIntegerOpList.size() != 0) {
 			unsigned st_node_id = selectedIntegerOpList.front();
 			unsigned opcode = microop.at(st_node_id);
-			unsigned node_latency = fpga_node_latency(opcode);
+			unsigned node_latency = fpgaNodeLatency(opcode);
 			if (node_latency == 1) {
 				//rsListTime[st_node_id] = clock_tick;
 				scheduledCounter++;
@@ -4565,7 +4566,7 @@ void BaseDatapath::calculateFPGAResRequired(cStep2nodeIDMapTy& cStepMap, UsedFPG
 		for (unsigned i = 0; i < size; i++) {
 			unsigned node_id = it->second.at(i);
 			unsigned opcode = microop.at(node_id);
-			if (is_fadd_op(opcode) || is_fsub_op(opcode)) {
+			if (isFAddOp(opcode) || isFSubOp(opcode)) {
 				fadd_subCount++;
 				if (fadd_subCount > sizeFadd_subEngine) {
 					sizeFadd_subEngine++;
@@ -4584,7 +4585,7 @@ void BaseDatapath::calculateFPGAResRequired(cStep2nodeIDMapTy& cStepMap, UsedFPG
 				}
 			}
 
-			if (is_fmul_op(opcode)) {
+			if (isFMulOp(opcode)) {
 				fmulCount++;
 				if (fmulCount > sizeFmulEngine) {
 					sizeFmulEngine++;
@@ -4592,7 +4593,7 @@ void BaseDatapath::calculateFPGAResRequired(cStep2nodeIDMapTy& cStepMap, UsedFPG
 				}
 			}
 
-			if (is_fdiv_op(opcode)) {
+			if (isFDivOp(opcode)) {
 				fdivCount++;
 				if (fdivCount > sizeFdivEngine) {
 					sizeFdivEngine++;
@@ -4601,7 +4602,7 @@ void BaseDatapath::calculateFPGAResRequired(cStep2nodeIDMapTy& cStepMap, UsedFPG
 			}
 
 			// Calculate memory partition
-			if (is_load_op(opcode)) {
+			if (isLoadOp(opcode)) {
 				///FIXME: This part will be failed if we call scratchpadPartition() function before this function
 				std::string array_name = baseAddress[node_id].first;
 				arrayName2numReadPort[array_name]++;
@@ -4611,7 +4612,7 @@ void BaseDatapath::calculateFPGAResRequired(cStep2nodeIDMapTy& cStepMap, UsedFPG
 				}
 			}
 			
-			if (is_store_op(opcode)) {
+			if (isStoreOp(opcode)) {
 				///FIXME: This part will be failed if we call scratchpadPartition() function before this function
 				std::string array_name = baseAddress[node_id].first;
 				arrayName2numWritePort[array_name]++;
@@ -5453,7 +5454,7 @@ void BaseDatapath::setGraphForStepping(NameVecTy& curBBname)
 	for (unsigned node_id = 0; node_id < numTotalNodes; node_id++)
 	{
 		Vertex node = nameToVertex[node_id];
-		if (boost::degree(node, graph_) != 0 || is_dma_op(microop.at(node_id)))
+		if (boost::degree(node, graph_) != 0 || isDMAOp(microop.at(node_id)))
 		{
 			finalIsolated.at(node_id) = 0;
 			numParents.at(node_id) = boost::in_degree(node, graph_);
@@ -5515,7 +5516,7 @@ void BaseDatapath::initExecutingQueue(NameVecTy& curBBname) {
 					waitForLoopQueue.push_back(i);
 					/*
 					unsigned opcode = microop.at(i);
-					unsigned op_latency = fpga_node_latency(opcode);
+					unsigned op_latency = fpgaNodeLatency(opcode);
 					if ( op_latency == 0) {
 						readyToExecuteQueue.push_back(i);
 					}
@@ -5562,24 +5563,24 @@ void BaseDatapath::stepExecutingQueue(NameVecTy& bbnames) {
 		/*
 		/// After loopFlattening, all the compute operations will be replaced with LLVM_IR_Move microop,
 		/// This is a bug inside loopFlattening, we can not replace the opcodes.
-		if ( is_compute_op(microop.at(node_id)) ) {
+		if ( isComputeOp(microop.at(node_id)) ) {
 		cout << "This is a compute instruction: " << microop.at(node_id) << endl;
 		}*/
 		unsigned opcode = microop.at(node_id);
-		if (is_memory_op(opcode))
+		if (isMemoryOp(opcode))
 		{
 			std::string node_part = baseAddress[node_id].first;
 			//if (registers.has(node_part) || canServicePartition(node_part))
 			if ( registers.has(node_part) )
 			{
-				if (is_load_op(microop.at(node_id)))
+				if (isLoadOp(microop.at(node_id)))
 					registers.getRegister(node_part)->increment_loads();
 				else
 					registers.getRegister(node_part)->increment_stores();
 
 			}
 			else {
-				if (is_load_op(microop.at(node_id)))
+				if (isLoadOp(microop.at(node_id)))
 					increment_loads(node_part);
 				else
 					increment_stores(node_part);
@@ -5624,7 +5625,7 @@ void BaseDatapath::updateChildren(unsigned node_id, NameVecTy& bb_names)
 					if (loopExecutionTracer.at(ith_loop) == Loop_Status::EXECUTING) {
 						unsigned child_microop = microop.at(child_id);
 						unsigned curr_microop = microop.at(node_id);
-						unsigned op_latency = fpga_node_latency(child_microop);
+						unsigned op_latency = fpgaNodeLatency(child_microop);
 						/*
 						if ( op_latency == 0 && edge_parid != CONTROL_EDGE) {
 							executingQueue.push_back(child_id);
@@ -5805,7 +5806,7 @@ void BaseDatapath::updateWaitForLoopQueue(NameVecTy& bb_names) {
 				assert( (loopExecutionTracer.at(ith_loop) != Loop_Status::FINISHED) && "Error: There exists a node that belongs to a loop with FINISHED status!\n" );
 				if ( (int) ith_loop == executingLoop){
 					// Only push back node ids to executingQueue or nodeID2delay when ith_loop has status "EXECUTING"
-					unsigned op_latency = fpga_node_latency(microop.at(node_id));
+					unsigned op_latency = fpgaNodeLatency(microop.at(node_id));
 					if (op_latency == 0) {
 						executingQueue.push_back(node_id);
 					}

@@ -223,8 +223,8 @@ bool ExtractLoopInfo::runOnLoop(Loop *L, LPPassManager &LPM) {
 
 	// Add LoopiMetadataNode (i = 1,2,...,n) to LoopsMetadataNode. The first entry is the 
 	// innermost loop
-	std::string loopName = funcName + "_loop" + std::to_string(numLoopInAFunc - countNumLoopInAFunc - 1) + "_" + std::to_string(depth);
-	std::string wholeLoopName = funcName + "_loop" + std::to_string(numLoopInAFunc - countNumLoopInAFunc - 1);
+	std::string loopName = constructLoopName(funcName, numLoopInAFunc - countNumLoopInAFunc - 1, depth);
+	std::string wholeLoopName = constructLoopName(funcName, numLoopInAFunc - countNumLoopInAFunc - 1);
 	LoopsMetadataNode.push_back(MDString::get(Context, loopName));
 	LoopsMetadataNode.push_back(ConstantInt::get(Type::getInt32Ty(Context), depth));
 	// Detect loop bound of this loop level if available. Otherwise, we set 0 at his field
@@ -281,7 +281,7 @@ bool ExtractLoopInfo::runOnLoop(Loop *L, LPPassManager &LPM) {
 		}  // Now we have explored all load/store instructions inside a loop (whole loop) of a function
 
 		/// Insert the Load/Store information (LSID2BB2LoopLevelMap) into LoopID2LSInfoMap
-		std::string lpName = funcName + "_loop" + std::to_string(numLoopInAFunc - countNumLoopInAFunc);
+		std::string lpName = constructLoopName(funcName, numLoopInAFunc - countNumLoopInAFunc);
 		LoopID2LSInfoMap.insert(std::make_pair(lpName, LSID2BB2LoopLevelMap));
 		/// Clear LSID2BB2LoopLevelMap in order to store new load/store info of other loops in the same function
 		LSID2BB2LoopLevelMap.clear();

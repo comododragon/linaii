@@ -76,12 +76,13 @@ class InstrumentForDDDG : public ModulePass {
 		NOT_TRACE = 0,
 		TRACE_INTRINSIC = 1,
 		TRACE_FUNCTION_OF_INTEREST = 2,
-		TRACE_DMA_STORE = 98,
-		TRACE_DMA_LOAD = 99
+		TRACE_DMA_STORE = LLVM_IR_DMAStore,
+		TRACE_DMA_LOAD = LLVM_IR_DMALoad
 	};
 
 	std::unordered_map<int, int> unrollingConfig;
 	std::vector<std::string> pipelineLoopLevelVec;
+	std::ofstream summaryFile;
 
 	void extractMemoryTraceForAccessPattern();
 	int shouldTrace(std::string call);
@@ -98,30 +99,21 @@ public:
 	bool doInitialization(Module &M);
 	bool runOnModule(Module &M);
 
-#if 0
-	/// Function used to instrument LLVM-IR
-	void printLine(BasicBlock::iterator it, int line, int lineNo, std::string funcOrRegID,
-					std::string bbID, std::string instID, int opcodeOrType, int dataSize = 0, Value *value = NULL, 
-					bool isReg = false);
-	void insertInstID(std::string instID, unsigned opcode);
-	void insertInstid2bbName(std::string instID, std::string bbName);
-#endif
-
 	bool getInstID(Instruction *I, std::string bbID, int &instCnt, std::string &instID);
 
 	std::string getBBID(Value *BB);
 
 	bool performOnBasicBlock(BasicBlock &BB);
 
-	void removeConfig(std::string kernelName, std::string inputPath);
-	void parseConfig(std::string kernelName, std::string inputPath);
+	void removeConfig(std::string kernelName);
+	void parseConfig(std::string kernelName);
 	void getUnrollingConfiguration(lpNameLevelPair2headBBnameMapTy &lpNameLvPair2headerBBMap);
 	bool readUnrollingConfig(loopName2levelUnrollVecMapTy &lpName2levelUrPairVecMap, std::unordered_map<int, int> &unrollingConfig);
 
 	void loopBasedTraceAnalysis();
 
-	void openSummaryFile(std::ofstream &summaryFile, std::string kernelName);
-	void closeSummaryFile(std::ofstream &summaryFile);
+	void openSummaryFile(std::string kernelName);
+	void closeSummaryFile();
 };
 
 // Embedded Profiler Engine

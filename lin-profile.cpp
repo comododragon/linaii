@@ -106,7 +106,7 @@ int main(int argc, char **argv) {
 			const std::string &inputFilenameStr = InputFilename;
 			int len = inputFilenameStr.length();
 			// We are assuming that InputFilename ends with ".bc", a constraint detected when the arguments were collected
-			OutputFilename = std::string(inputFilenameStr.begin(), inputFilenameStr.end() - 3) + "_trace.bc";
+			OutputFilename = std::string(inputFilenameStr.begin(), inputFilenameStr.end() - 3) + FILE_TRACE_SUFFIX;
 		}
 	}
 
@@ -170,6 +170,7 @@ void parseInputArguments(int argc, char **argv) {
 	args.fNoFPUThresOpt = false;
 	args.fExtraScalar = false;
 	args.fRWRWMem = false;
+	args.fILL = false;
 
 	int c;
 	while(true) {

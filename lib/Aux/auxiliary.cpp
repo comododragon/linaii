@@ -39,3 +39,20 @@ std::string constructLoopName(std::string funcName, int loopNo, int depth) {
 std::string appendDepthToLoopName(std::string loopName, int depth) {
 	return loopName + "_" + std::to_string(depth);
 }
+
+std::tuple<std::string, int, int> parseLoopName(std::string loopName) {
+	const std::string mainLoopTag = "_loop";
+	const std::string depthTag = "_";
+	const size_t mainLoopTagSize = 5;
+	const size_t depthTagSize = 1;
+
+	size_t tagPos = loopName.find(mainLoopTag);
+	std::string funcName = loopName.substr(0, tagPos);
+
+	std::string rest = loopName.substr(tagPos + mainLoopTagSize);
+	tagPos = rest.find(depthTag);
+	int loopNo = std::stoi(rest.substr(0, tagPos));
+	int loopLevel = std::stoi(rest.substr(tagPos + depthTagSize));
+
+	return std::make_tuple(funcName, loopNo, loopLevel);
+}

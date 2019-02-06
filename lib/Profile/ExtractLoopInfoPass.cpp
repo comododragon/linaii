@@ -219,7 +219,10 @@ bool ExtractLoopInfo::runOnLoop(Loop *L, LPPassManager &LPM) {
 	unsigned numLoopInAFunc = funcName2loopNumMap.find(funcName)->second;
 
 	depth = L->getLoopDepth();
-	depthRecord++;
+
+	// XXX: This if did not exist, but I think it was wrong, as it was adding even though the loop depth didn't increase
+	if(depth > depthRecord)
+		depthRecord = depth;
 
 	// Add LoopiMetadataNode (i = 1,2,...,n) to LoopsMetadataNode. The first entry is the 
 	// innermost loop

@@ -175,7 +175,7 @@ unsigned fpgaNodeLatency (unsigned  microop)
 			//        for simplicity. But to further improving accuracy, it is better
 			//        to ONLY associate 2 load latency with partitioned arrays and use
 			//        1 load latency for normal arrays.
-			if (increase_load_latency == true) {
+			if (args.fILL) {
 				return LOAD_LATENCY;
 			}
 			else {

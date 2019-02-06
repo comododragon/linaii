@@ -384,8 +384,8 @@ std::string InstrumentForDDDG::getBBID(Value *BB) {
 void InstrumentForDDDG::extractMemoryTraceForAccessPattern() {
 	VERBOSE_PRINT(errs() << "[][memoryTrace] Memory trace started\n");
 
-	std::string fileName = args.workDir + "mem_trace.txt";
-	std::string traceFileName = args.workDir + "dynamic_trace.gz";
+	std::string fileName = args.workDir + FILE_MEM_TRACE;
+	std::string traceFileName = args.workDir + FILE_DYNAMIC_TRACE;
 	std::ofstream memTraceFile;
 	gzFile traceFile;
 	bool traceEntry = false;
@@ -398,7 +398,7 @@ void InstrumentForDDDG::extractMemoryTraceForAccessPattern() {
 	assert(traceFile != Z_NULL && "Could not open trace input file");
 
 	while(!gzeof(traceFile)) {
-		char buffer[1024];
+		char buffer[BUFF_STR_SZ];
 		if(Z_NULL == gzgets(traceFile, buffer, sizeof(buffer)))
 			continue;
 
@@ -413,9 +413,9 @@ void InstrumentForDDDG::extractMemoryTraceForAccessPattern() {
 
 		if(!traceEntry && !(tag.compare("0"))) {
 			int lineNo;
-			char buffer1[1024];
-			char buffer2[1024];
-			char buffer3[1024];
+			char buffer1[BUFF_STR_SZ];
+			char buffer2[BUFF_STR_SZ];
+			char buffer3[BUFF_STR_SZ];
 			int count;
 			sscanf(rest.c_str(), "%d,%[^,],%[^,],%[^,],%d,%d\n", &lineNo, buffer1, buffer2, buffer3, &opcode, &count);
 			std::string funcName(buffer1);
@@ -482,8 +482,8 @@ bool InstrumentForDDDG::runOnModule(Module &M) {
 		VERBOSE_PRINT(errs() << "[instrumentForDDDG] Starting profiling engine\n");
 
 		/// Integrate JIT profiling engine and run the embedded profiler
-		ProfilingEngine P(M, TL);
-		P.runOnProfiler();
+		//ProfilingEngine P(M, TL);
+		//P.runOnProfiler();
 
 		/// Finished Profiling
 		VERBOSE_PRINT(errs() << "[instrumentForDDDG] Profiling finished\n");
@@ -753,35 +753,35 @@ bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 void InstrumentForDDDG::removeConfig(std::string kernelName) {
 	std::string inputKernel = args.outWorkDir + kernelName;
 
-	std::string pipelining(inputKernel + "_pipelining.cfg");
+	std::string pipelining(inputKernel + FILE_PIPELINING_CFG_SUFFIX);
 	std::ifstream pipeliningFile(pipelining);
 	if(pipeliningFile.is_open()) {
 		pipeliningFile.close();
 		assert(!remove(pipelining.c_str()) && "Error removing pipelining config file");
 	}
 
-	std::string unrolling(inputKernel + "_unrolling.cfg");
+	std::string unrolling(inputKernel + FILE_UNROLLING_CFG_SUFFIX);
 	std::ifstream unrollingFile(unrolling);
 	if(unrollingFile.is_open()) {
 		unrollingFile.close();
 		assert(!remove(unrolling.c_str()) && "Error removing unrolling config file");
 	}
 
-	std::string arrayInfo(inputKernel + "_arrayInfo.cfg");
+	std::string arrayInfo(inputKernel + FILE_ARRAYINFO_CFG_SUFFIX);
 	std::ifstream arrayInfoFile(arrayInfo);
 	if(arrayInfoFile.is_open()) {
 		arrayInfoFile.close();
 		assert(!remove(arrayInfo.c_str()) && "Error removing array info config file");
 	}
 
-	std::string partition(inputKernel + "_partition.cfg");
+	std::string partition(inputKernel + FILE_PARTITION_CFG_SUFFIX);
 	std::ifstream partitionFile(partition);
 	if(partitionFile.is_open()) {
 		partitionFile.close();
 		assert(!remove(partition.c_str()) && "Error removing partition config file");
 	}
 
-	std::string completePartition(inputKernel + "_completepartition.cfg");
+	std::string completePartition(inputKernel + FILE_COMPLETEPARTITION_CFG_SUFFIX);
 	std::ifstream completePartitionFile(completePartition);
 	if(completePartitionFile.is_open()) {
 		completePartitionFile.close();
@@ -790,233 +790,205 @@ void InstrumentForDDDG::removeConfig(std::string kernelName) {
 }
 
 void InstrumentForDDDG::parseConfig(std::string kernelName) {
-#if 0
-	ifstream config_file;
-	//std::string input_kernel = input_path + kernel_name;
-	std::string input_kernel = outputPath + kernel_name;
-	//std::string config_file_name = input_kernel + "_configuration";
-	//std::string config_file_name = input_path + config_filename;
-	std::string config_file_name = config_filename;
-	config_file.open(config_file_name);
-	if (!config_file.is_open()) {
-		assert(false && "Error: missing configuration file!\n");
-	}
-	std::string wholeline;
+	std::string inputKernel = args.outWorkDir + kernelName;
+	std::ifstream configFile;
 
-	std::vector<std::string> pipelining_config;
-	std::vector<std::string> unrolling_config;
-	std::vector<std::string> partition_config;
-	std::vector<std::string> comp_partition_config;
-	std::vector<std::string> array_info;
+	configFile.open(args.configFileName);
+	assert(configFile.is_open() && "Error opening configuration file");
 
-	pipeline_loop_levelVec.clear();
+	std::string line;
+	std::vector<std::string> pipeliningCfg;
+	std::vector<std::string> unrollingCfg;
+	std::vector<std::string> partitionCfg;
+	std::vector<std::string> completePartitionCfg;
+	std::vector<std::string> arrayInfoCfg;
 
-	while (!config_file.eof())
-	{
-		wholeline.clear();
-		getline(config_file, wholeline);
-		if (wholeline.size() == 0)
+	pipelineLoopLevelVec.clear();
+
+	while(!configFile.eof()) {
+		// TODO: is it necessary to clean it?
+		// line.clear();
+		std::getline(configFile, line);
+
+		if(!line.size())
 			break;
-		string type, rest_line;
-		int pos_end_tag = wholeline.find(",");
-		if (pos_end_tag == -1)
-			break;
-		type = wholeline.substr(0, pos_end_tag);
-		//rest_line = wholeline.substr(pos_end_tag + 1);
+		if('#' == line[0])
+			continue;
 
-		if (!type.compare("pipeline")) {
-			pipelining_config.push_back(wholeline);
+		size_t tagPos = line.find(",");
+		if(std::string::npos == tagPos)
+			break;
+
+		std::string type = line.substr(0, tagPos);
+
+		if(!type.compare("pipeline")) {
+			pipeliningCfg.push_back(line);
 		}
-		else if (!type.compare("unrolling")) {
-			unrolling_config.push_back(wholeline);
+		else if(!type.compare("unrolling")) {
+			unrollingCfg.push_back(line);
 		}
-		else if (!type.compare("array")) {
-			array_info.push_back(wholeline);
+		else if(!type.compare("array")) {
+			arrayInfoCfg.push_back(line);
 		}
-		else if (!type.compare("partition")) {
-			if (wholeline.find("complete") == std::string::npos)
-				partition_config.push_back(wholeline);
+		else if(!type.compare("partition")) {
+			std::string rest = line.substr(tagPos + 1);
+
+			tagPos = line.find(",");
+			if(std::string::npos == tagPos)
+				break;
+
+			std::string partitionType = rest.substr(0, tagPos);
+
+			if(!type.compare("complete"))
+				completePartitionCfg.push_back(line);
 			else
-				comp_partition_config.push_back(wholeline);
-		}
-		else
-		{
-			// Can not detect type of this line, ignore it and do
-			// nothing here.
+				partitionCfg.push_back(line);
 		}
 	}
-	config_file.close();
-	//std::string test = "_test.txt";
-	std::map<std::string, unsigned> whole_lpName2comp_unroll_factorMap;
-	if (pipelining_config.size() != 0)
-	{
-		string pipelining(input_kernel);
-		pipelining += "_pipelining_config";
-		//pipelining += test;
-		ofstream pipe_config;
-		pipe_config.open(pipelining);
-		for (unsigned i = 0; i < pipelining_config.size(); ++i) {
-			std::string pipelining_conf = pipelining_config.at(i);
-			pipe_config << pipelining_conf << endl;
 
-			char type[256];
-			char funcName_char[256];
-			unsigned loop_num, loop_level;
-			sscanf(pipelining_conf.c_str(), "%[^,],%[^,],%d,%d\n", type, funcName_char, &loop_num, &loop_level);
-			std::string func_name(funcName_char);
-			std::string lp_name = func_name + "_loop-" + std::to_string(loop_num);
-			LpName2numLevelMapTy::iterator found_lpLev = LpName2numLevelMap.find(lp_name);
-			assert(found_lpLev != LpName2numLevelMap.end() && "Error: Cannot find loop name in LpName2numLevelMap!\n");
-			unsigned num_level = LpName2numLevelMap[lp_name];
-			std::string whole_loop_name = lp_name + "_" + std::to_string(loop_level);
-			pipeline_loop_levelVec.push_back(whole_loop_name);
+	configFile.close();
 
-			assert( (loop_level<=num_level) && "Error: loop_level is larger than num_level!\n" );
-			if (loop_level == num_level) {
-				// Apply loop pipelining to the innermost level loop
+	std::map<std::string, unsigned> wholeLoopName2CompUnrollFactorMap;
+
+	if(pipeliningCfg.size()) {
+		std::string pipeliningFileName(inputKernel + FILE_PIPELINING_CFG_SUFFIX);
+		std::ofstream pipeliningFile(pipeliningFileName);
+
+		for(std::string i : pipeliningCfg) {
+			pipeliningFile << i << "\n";
+
+			char buff[BUFF_STR_SZ];
+			int loopNo, loopLevel;
+			sscanf(i.c_str(), "%*[^,],%[^,],%d,%d\n", buff, &loopNo, &loopLevel);
+
+			std::string funcName(buff);
+			std::string loopName = constructLoopName(funcName, loopNo);
+
+			LpName2numLevelMapTy::iterator found = LpName2numLevelMap.find(loopName);
+			assert(found != LpName2numLevelMap.end() && "Cannot find loop name provided in configuration file");
+			unsigned numLevel = found->second;
+
+			std::string wholeLoopName = appendDepthToLoopName(loopName, loopLevel);
+			pipelineLoopLevelVec.push_back(wholeLoopName);
+
+			assert(loopLevel <= numLevel && "Loop level is larger than number of levels");
+
+			// TODO: This is assuming that loop pipelining is already performed at the innermost level. Is this correct?
+			if(loopLevel == numLevel)
 				continue;
-			}
-			for (unsigned i = loop_level+1; i < num_level+1; i++) {
-				std::string whole_lp_name = lp_name + "_" + std::to_string(i);
-				wholeloopName2loopBoundMapTy::iterator it_whole = wholeloopName2loopBoundMap.find(whole_lp_name);
-				assert((it_whole!=wholeloopName2loopBoundMap.end()) && "Error: Can not find loop name in wholeloopName2loopBoundMap!\n");
-				unsigned lp_bound = wholeloopName2loopBoundMap[whole_lp_name];
-				if (lp_bound == 0) {
-					VERBOSE_PRINT(std::cout << "DEBUG-INFO: [parsing_configuration-extraction] loop " << lp_name << " level " << i);
-					VERBOSE_PRINT(std::cout << " has a variable loop bound, can not support in current version!" << std::endl);
-				}
-				whole_lpName2comp_unroll_factorMap.insert(std::make_pair(whole_lp_name, lp_bound));
-			}
+
+			for(unsigned int j = loopLevel + 1; j < numLevel + 1; j++) {
+				std::string wholeLoopName2 = appendDepthToLoopName(loopName, j);
+				wholeloopName2loopBoundMapTy::iterator found2 = wholeloopName2loopBoundMap.find(wholeLoopName2);
+				assert(found2 != wholeloopName2loopBoundMap.end() && "Cannot find loop name provided in configuration file");
+				unsigned loopBound = found2->second;
+
+				// TODO: This is a silent error/warning. Is this correct (i.e. nothing should be performed apart from informing the user)?
+				if(!loopBound)
+					VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Variable loop bound found for \"" << wholeLoopName2 << "\", pipelining not supported in current version\n");
+
+				wholeLoopName2CompUnrollFactorMap.insert(std::make_pair(wholeLoopName2, loopBound));
+			}	
 		}
-		pipe_config.close();
+
+		pipeliningFile.close();
 	}
 
-	if (unrolling_config.size() != 0)
-	{
-		string file_name(input_kernel);
-		file_name += "_unrolling_config";
-		//file_name += test;
-		ofstream output;
-		output.open(file_name);
-		std::vector<std::string> unroll_wholelpName_str;
-		for (unsigned i = 0; i < unrolling_config.size(); ++i) {
-			std::string unrolling_conf = unrolling_config.at(i);
-			char type[256];
-			char funcName_char[256];
-			unsigned loop_num, loop_level;
-			unsigned line_num, unroll_factor;
-			sscanf(unrolling_conf.c_str(), "%[^,],%[^,],%d,%d,%d,%d\n", type, funcName_char, &loop_num, &loop_level, &line_num, &unroll_factor);
-			std::string func_name(funcName_char);
-			std::string lp_name = func_name + "_loop-" + std::to_string(loop_num);
-			std::string whole_lp_name = lp_name + "_" + std::to_string(loop_level);
-			unroll_wholelpName_str.push_back(whole_lp_name);
-			std::map<std::string, unsigned>::iterator it_whole = whole_lpName2comp_unroll_factorMap.find(whole_lp_name);
-			if (it_whole == whole_lpName2comp_unroll_factorMap.end()) {
-				output << unrolling_config.at(i) << endl;
+	if(unrollingCfg.size()) {
+		std::string unrollingFileName(inputKernel + FILE_UNROLLING_CFG_SUFFIX);
+		std::ofstream unrollingFile(unrollingFileName);
+		std::vector<std::string> unrollWholeLoopNameStr;
+
+		// TODO: IS lineNo REALLY NECESSARY?
+		for(std::string i : unrollingCfg) {
+			char buff[BUFF_STR_SZ];
+			int loopNo, loopLevel, lineNo, unrollFactor;
+			sscanf(i.c_str(), "%*[^,],%[^,],%d,%d,%d,%d\n", buff, &loopNo, &loopLevel, &lineNo, &unrollFactor);
+
+			std::string funcName(buff);
+			std::string wholeLoopName = constructLoopName(funcName, loopNo, loopLevel);
+			unrollWholeLoopNameStr.push_back(wholeLoopName);
+
+			std::map<std::string, unsigned>::iterator found = wholeLoopName2CompUnrollFactorMap.find(wholeLoopName);
+			if(wholeLoopName2CompUnrollFactorMap.end() == found) {
+				unrollingFile << i << "\n";
 			}
-			else{
-				unsigned static_bound = it_whole->second;
-				if (static_bound == 0) {
-					output << unrolling_config.at(i) << endl;
+			else {
+				unsigned staticBound = found->second;
+				if(staticBound) {
+					unrollingFile <<
+						"unrolling," << funcName << "," << std::to_string(loopNo) << "," <<
+						std::to_string(loopLevel) << "," << std::to_string(lineNo) << "," << std::to_string(staticBound) << "\n";
 				}
 				else {
-					std::string new_unroll_conf = "unrolling," + func_name + "," + std::to_string(loop_num) + ",";
-					new_unroll_conf += std::to_string(loop_level) + "," + std::to_string(line_num) + "," + std::to_string(static_bound);
-					output << new_unroll_conf << endl;
+					unrollingFile << i << "\n";
 				}
 			}
 		}
 
-		// If we apply loop pipelining at the upper loop level, but we donot specify completely unrolling pragma at the inner loop
-		// levels, we need to add it to unrolling configuration file.
-		std::map<std::string, unsigned>::iterator it_pipe = whole_lpName2comp_unroll_factorMap.begin();
-		std::map<std::string, unsigned>::iterator ie_pipe = whole_lpName2comp_unroll_factorMap.end();
-		for (; it_pipe != ie_pipe; ++it_pipe) {
-			std::string whole_lp_name = it_pipe->first;
-			unsigned lp_bound = it_pipe->second;
-			std::vector<std::string>::iterator it_unr = unroll_wholelpName_str.begin();
-			std::vector<std::string>::iterator ie_unr = unroll_wholelpName_str.end();
-			std::vector<std::string>::iterator not_found = std::find(it_unr, ie_unr, whole_lp_name);
-			if (not_found == unroll_wholelpName_str.end()) {
-				std::size_t pos = whole_lp_name.find("_loop-");
-				std::string func_name = whole_lp_name.substr(0, pos);
-				std::string rest_str = whole_lp_name.substr(pos+6);
-				pos = rest_str.find("_");
-				unsigned loop_num = std::stoi(rest_str.substr(0, pos));
-				unsigned loop_level = std::stoi(rest_str.substr(pos+1));
-				int line_num = -1;
-				
-				std::string new_unroll_conf = "unrolling," + func_name + "," + std::to_string(loop_num) + ",";
-				new_unroll_conf += std::to_string(loop_level) + "," + std::to_string(line_num) + "," + std::to_string(lp_bound);
-				output << new_unroll_conf << endl;
+		// If loop pipelining in a loop that have nested non-unrolled loops, these loops must be fully unrolled. Therefore such
+		// configurations are automatically added
+		for(std::pair<std::string, unsigned> it : wholeLoopName2CompUnrollFactorMap) {
+			std::string wholeLoopName = it.first;
+			unsigned loopBound = it.second;
+
+			std::vector<std::string>::iterator found = std::find(unrollWholeLoopNameStr.begin(), unrollWholeLoopNameStr.end(), wholeLoopName);
+			if(unrollWholeLoopNameStr.end() == found) {
+				std::tuple<std::string, int, int> parsed = parseLoopName(wholeLoopName);
+
+				unrollingFile << 
+					"unrolling," << std::get<0>(parsed) << "," << std::to_string(std::get<1>(parsed)) << "," <<
+					std::to_string(std::get<2>(parsed)) << ",-1," << std::to_string(loopBound) << "\n";
 			}
 		}
 
-		output.close();
+		unrollingFile.close();
 	}
 
-	if (array_info.size() != 0) {
-		string file_name(input_kernel);
-		file_name += "_array_info";
-		//file_name += test;
-		ofstream output;
-		output.open(file_name);
-		for (unsigned i = 0; i < array_info.size(); ++i)
-			output << array_info.at(i) << endl;
-		output.close();
+	if(arrayInfoCfg.size()) {
+		std::string arrayInfoFileName(inputKernel + FILE_ARRAYINFO_CFG_SUFFIX);
+		std::ofstream arrayInfoFile(arrayInfoFileName);
+
+		for(std::string i : arrayInfoCfg)
+			arrayInfoFile << i << "\n";
+
+		arrayInfoFile.close();
 	}
 	else {
-		assert(false && "Error: please provide array information for this kernel!\n");
+		assert(false && "Please provide array information for this kernel");
 	}
 
-	if (partition_config.size() != 0)
-	{
-		string partition(input_kernel);
-		partition += "_partition_config";
-		//partition += test;
-		ofstream part_config;
-		part_config.open(partition);
-		for (unsigned i = 0; i < partition_config.size(); ++i)
-			part_config << partition_config.at(i) << endl;
-		part_config.close();
+	if(partitionCfg.size()) {
+		std::string partitionFileName(inputKernel + FILE_PARTITION_CFG_SUFFIX);
+		std::ofstream partitionFile(partitionFileName);
+
+		for(std::string i : partitionCfg)
+			partitionFile << i << "\n";
+
+		partitionFile.close();
 	}
 
-	if (comp_partition_config.size() != 0)
-	{
-		string complete_partition(input_kernel);
-		complete_partition += "_complete_partition_config";
-		//complete_partition += test;
-		ofstream comp_config;
-		comp_config.open(complete_partition);
-		for (unsigned i = 0; i < comp_partition_config.size(); ++i)
-			comp_config << comp_partition_config.at(i) << endl;
-		comp_config.close();
+	if(completePartitionCfg.size()) {
+		std::string completePartitionFileName(inputKernel + FILE_COMPLETEPARTITION_CFG_SUFFIX);
+		std::ofstream completePartitionFile(completePartitionFileName);
+
+		for(std::string i : completePartitionCfg)
+			completePartitionFile << i << "\n";
+
+		completePartitionFile.close();
 	}
 
-	increase_load_latency = false;
-	if (pipelining_config.size() != 0) {
-		increase_load_latency = false;
-	}
-	else {
-		if (partition_config.size() != 0) {
-			for (int i = 0; i < partition_config.size(); i++) {
-				std::string  part_str = partition_config.at(i);
-				unsigned size, p_factor, wordsize;
-				char config_type[256];
-				char type[256];
-				char base_addr[256];
-				sscanf(part_str.c_str(), "%[^,],%[^,],%[^,],%d,%d,%d\n", config_type, type, base_addr, &size, &wordsize, &p_factor);
-				if (p_factor > 1) {
-					increase_load_latency = true;
-					break;
-				}
+	// TODO: Y dis?
+	if(!pipeliningCfg.size()) {
+		for(std::string i : partitionCfg) {
+			int pFactor;
+			sscanf(i.c_str(), "%*[^,],%*[^,],%*[^,],%*d,%*d,%d\n", &pFactor);
+			if(pFactor > 1) {
+				args.fILL = true;
+				break;
 			}
 		}
-		else {
-			increase_load_latency = false;
-		}
 	}
-#endif
 }
 
 void InstrumentForDDDG::getUnrollingConfiguration(lpNameLevelPair2headBBnameMapTy &lpNameLvPair2headerBBMap) {
@@ -1110,7 +1082,7 @@ bool InstrumentForDDDG::readUnrollingConfig(loopName2levelUnrollVecMapTy &lpName
 void InstrumentForDDDG::loopBasedTraceAnalysis() {
 	VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Loop-based trace analysis started\n");
 
-	std::string traceFileName = args.workDir + "dynamic_trace.gz";
+	std::string traceFileName = args.workDir + FILE_DYNAMIC_TRACE;
 	std::string kernelName = args.kernelNames.at(0);
 
 	VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Writing header of summary file\n");
@@ -1238,7 +1210,7 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 }
 
 void InstrumentForDDDG::openSummaryFile(std::string kernelName) {
-	std::string fileName(args.outWorkDir + kernelName + "_summary.log");
+	std::string fileName(args.outWorkDir + kernelName + FILE_SUMMARY_SUFFIX);
 	if(summaryFile.is_open())
 		summaryFile.close();
 	summaryFile.open(fileName);
@@ -1343,6 +1315,11 @@ void InstrumentForDDDG::printDatabase(void) {
 	for(auto const &x : exitingBBFuncNamePair2lastInstMap)
 		errs() << "-- <" << x.first.first << ", " << x.first.second << ">: " << x.second << "\n";
 	errs() << "-- ---------------------------------\n";
+
+	errs() << "-- pipelineLoopLevelVec\n";
+	for(auto const &x : pipelineLoopLevelVec)
+		errs() << "-- <" << x << "\n";
+	errs() << "-- --------------------\n";
 }
 #endif
 

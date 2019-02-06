@@ -6,7 +6,7 @@ bool initp = false;
 int instCount = 0;
 
 void trace_logger_init() {
-	std::string traceFileName = args.workDir + "dynamic_trace.gz";
+	std::string traceFileName = args.workDir + FILE_DYNAMIC_TRACE;
 	fullTraceFile = gzopen(traceFileName.c_str(), "w");
 
 	assert(fullTraceFile != Z_NULL && "Could not open trace output file");

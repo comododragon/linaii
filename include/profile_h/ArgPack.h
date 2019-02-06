@@ -37,6 +37,7 @@ typedef struct {
 	bool fNoFPUThresOpt;
 	bool fExtraScalar;
 	bool fRWRWMem;
+	bool fILL;
 
 	std::vector<std::string> targetLoops;
 } ArgPack;

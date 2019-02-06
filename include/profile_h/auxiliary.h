@@ -25,6 +25,18 @@
 
 #define INFINITE_HARDWARE 999999999
 
+#define BUFF_STR_SZ 1024
+
+#define FILE_TRACE_SUFFIX "_trace.bc"
+#define FILE_DYNAMIC_TRACE "dynamic_trace.gz"
+#define FILE_MEM_TRACE "mem_trace.txt"
+#define FILE_SUMMARY_SUFFIX "_summary.log"
+#define FILE_PIPELINING_CFG_SUFFIX "_pipelining.cfg"
+#define FILE_UNROLLING_CFG_SUFFIX "_unrolling.cfg"
+#define FILE_ARRAYINFO_CFG_SUFFIX "_arrayinfo.cfg"
+#define FILE_PARTITION_CFG_SUFFIX "_partition.cfg"
+#define FILE_COMPLETEPARTITION_CFG_SUFFIX "_completepartition.cfg"
+
 extern ArgPack args;
 extern const std::string loopNumberMDKindName;
 extern const std::string assignBasicBlockIDMDKindName;
@@ -35,6 +47,7 @@ bool isFunctionOfInterest(std::string key);
 bool verifyModuleAndPrintErrors(llvm::Module &M);
 std::string constructLoopName(std::string funcName, int loopNo, int depth=-1);
 std::string appendDepthToLoopName(std::string loopName, int depth);
+std::tuple<std::string, int, int> parseLoopName(std::string loopName);
 
 // TODO: REMOVER ISSO AQUI SOB DEMANDA
 extern std::string inputFileName;

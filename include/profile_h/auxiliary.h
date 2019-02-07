@@ -31,6 +31,7 @@
 #define FILE_DYNAMIC_TRACE "dynamic_trace.gz"
 #define FILE_MEM_TRACE "mem_trace.txt"
 #define FILE_SUMMARY_SUFFIX "_summary.log"
+// TODO THIS SHOULD BE REMOVED AT SOME POINT
 #define FILE_PIPELINING_CFG_SUFFIX "_pipelining.cfg"
 #define FILE_UNROLLING_CFG_SUFFIX "_unrolling.cfg"
 #define FILE_ARRAYINFO_CFG_SUFFIX "_arrayinfo.cfg"
@@ -86,6 +87,9 @@ extern getElementPtrName2arrayNameMapTy getElementPtrName2arrayNameMap;
 			X;\
 		} \
 	} while(false)
+
+typedef std::map<std::string, unsigned> wholeloopName2loopBoundMapTy;
+extern wholeloopName2loopBoundMapTy wholeloopName2loopBoundMap;
 
 namespace llvm {
 
@@ -158,6 +162,59 @@ extern bbFuncNamePair2lpNameLevelPairMapTy bbFuncNamePair2lpNameLevelPairMap;
 extern bbFuncNamePair2lpNameLevelPairMapTy headerBBFuncnamePair2lpNameLevelPairMap;
 extern bbFuncNamePair2lpNameLevelPairMapTy exitBBFuncnamePair2lpNameLevelPairMap;
 extern LpName2numLevelMapTy LpName2numLevelMap;
+
+class ConfigurationManager {
+public:
+	typedef struct {
+		std::string funcName;
+		int loopNo;
+		int loopLevel;
+	} pipeliningCfgTy;
+	typedef struct {
+		std::string funcName;
+		int loopNo;
+		int loopLevel;
+		int lineNo;
+		int unrollFactor;
+	} unrollingCfgTy;
+	// TODO: fix elements
+	typedef struct {
+		int pFactor;
+	} partitionCfgTy;
+	// TODO: fix elements
+	typedef struct {
+		std::string line;
+	} arrayInfoCfgTy;
+
+private:
+	std::string kernelName;
+
+	std::vector<pipeliningCfgTy> pipeliningCfg;
+	std::vector<unrollingCfgTy> unrollingCfg;
+	std::vector<partitionCfgTy> partitionCfg;
+	std::vector<partitionCfgTy> completePartitionCfg;
+	std::vector<arrayInfoCfgTy> arrayInfoCfg;
+
+	void appendToPipeliningCfg(std::string funcName, int loopNo, int loopLevel);
+	void appendToUnrollingCfg(std::string funcName, int loopNo, int loopLevel, int lineNo, int unrollFactor);
+	void appendToPartitionCfg(int pFactor);
+	void appendToCompletePartitionCfg(int pFactor);
+	void appendToArrayInfoCfg(std::string line);
+
+public:
+	ConfigurationManager(std::string kernelName);
+
+	void clear();
+	void parseAndPopulate(std::vector<std::string> &pipelineLoopLevelVec);
+	void parseToFiles();
+
+	std::string getCfgKernel() { return kernelName; }
+	const std::vector<pipeliningCfgTy> &getPipeliningCfg() const { return pipeliningCfg; }
+	const std::vector<unrollingCfgTy> &getUnrollingCfg() const { return unrollingCfg; }
+	const std::vector<partitionCfgTy> &getPartitionCfg() const { return partitionCfg; }
+	const std::vector<partitionCfgTy> &getCompletePartitionCfg() const { return completePartitionCfg; }
+	const std::vector<arrayInfoCfgTy> &getArrayInfoCfg() const { return arrayInfoCfg; }
+};
 
 }
 

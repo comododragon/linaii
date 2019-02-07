@@ -105,8 +105,6 @@ public:
 
 	bool performOnBasicBlock(BasicBlock &BB);
 
-	void removeConfig(std::string kernelName);
-	void parseConfig(std::string kernelName);
 	void getUnrollingConfiguration(lpNameLevelPair2headBBnameMapTy &lpNameLvPair2headerBBMap);
 	bool readUnrollingConfig(loopName2levelUnrollVecMapTy &lpName2levelUrPairVecMap, std::unordered_map<int, int> &unrollingConfig);
 

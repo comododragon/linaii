@@ -35,7 +35,6 @@ typedef std::map<std::pair<std::string, std::string>, unsigned> funcBBNmPair2num
 //typedef std::map<std::string, std::vector<uint64_t> > loopName2levelLpBoundVecMapTy;
 typedef std::map<std::string, std::vector<unsigned> > loopName2levelUnrollVecMapTy;
 typedef std::map<std::string, std::pair<std::string, unsigned> > headerBBlastInst2loopNameLevelPairMapTy;
-typedef std::map<std::string, unsigned> wholeloopName2loopBoundMapTy;
 typedef std::map<std::string, bool> wholeloopName2perfectOrNotMapTy;
 
 extern instName2bbNameMapTy instName2bbNameMap;
@@ -45,7 +44,6 @@ extern lpNameLevelPair2headBBnameMapTy lpNameLevelPair2headBBnameMap;
 extern lpNameLevelPair2headBBnameMapTy lpNameLevelPair2exitingBBnameMap;
 extern funcBBNmPair2numInstInBBMapTy funcBBNmPair2numInstInBBMap;
 extern loopName2levelUnrollVecMapTy loopName2levelUnrollVecMap;
-extern wholeloopName2loopBoundMapTy wholeloopName2loopBoundMap;
 extern wholeloopName2perfectOrNotMapTy wholeloopName2perfectOrNotMap;
 //extern loopName2levelLpBoundVecMapTy loopName2levelLpBoundVecMap;
 

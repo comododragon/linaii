@@ -27,20 +27,20 @@ bool verifyModuleAndPrintErrors(Module &M) {
 	return true;
 }
 
-std::string constructLoopName(std::string funcName, int loopNo, int depth) {
+std::string constructLoopName(std::string funcName, unsigned loopNo, unsigned depth) {
 	std::string loopName = funcName + "_loop" + std::to_string(loopNo);
 
-	if(-1 == depth)
+	if(((unsigned) -1) == depth)
 		return loopName;
 
 	return appendDepthToLoopName(loopName, depth);
 }
 
-std::string appendDepthToLoopName(std::string loopName, int depth) {
+std::string appendDepthToLoopName(std::string loopName, unsigned depth) {
 	return loopName + "_" + std::to_string(depth);
 }
 
-std::tuple<std::string, int, int> parseLoopName(std::string loopName) {
+std::tuple<std::string, unsigned, unsigned> parseLoopName(std::string loopName) {
 	const std::string mainLoopTag = "_loop";
 	const std::string depthTag = "_";
 	const size_t mainLoopTagSize = 5;
@@ -51,15 +51,15 @@ std::tuple<std::string, int, int> parseLoopName(std::string loopName) {
 
 	std::string rest = loopName.substr(tagPos + mainLoopTagSize);
 	tagPos = rest.find(depthTag);
-	int loopNo = std::stoi(rest.substr(0, tagPos));
-	int loopLevel = std::stoi(rest.substr(tagPos + depthTagSize));
+	unsigned loopNo = std::stoi(rest.substr(0, tagPos));
+	unsigned loopLevel = std::stoi(rest.substr(tagPos + depthTagSize));
 
 	return std::make_tuple(funcName, loopNo, loopLevel);
 }
 
 ConfigurationManager::ConfigurationManager(std::string kernelName) : kernelName(kernelName) { }
 
-void ConfigurationManager::appendToPipeliningCfg(std::string funcName, int loopNo, int loopLevel) {
+void ConfigurationManager::appendToPipeliningCfg(std::string funcName, unsigned loopNo, unsigned loopLevel) {
 	pipeliningCfgTy elem;
 
 	elem.funcName = funcName;
@@ -69,7 +69,7 @@ void ConfigurationManager::appendToPipeliningCfg(std::string funcName, int loopN
 	pipeliningCfg.push_back(elem);
 }
 
-void ConfigurationManager::appendToUnrollingCfg(std::string funcName, int loopNo, int loopLevel, int lineNo, int unrollFactor) {
+void ConfigurationManager::appendToUnrollingCfg(std::string funcName, unsigned loopNo, unsigned loopLevel, int lineNo, uint64_t unrollFactor) {
 	unrollingCfgTy elem;
 
 	elem.funcName = funcName;
@@ -81,7 +81,7 @@ void ConfigurationManager::appendToUnrollingCfg(std::string funcName, int loopNo
 	unrollingCfg.push_back(elem);
 }
 
-void ConfigurationManager::appendToPartitionCfg(int pFactor) {
+void ConfigurationManager::appendToPartitionCfg(uint64_t pFactor) {
 	partitionCfgTy elem;
 
 	elem.pFactor = pFactor;
@@ -89,7 +89,7 @@ void ConfigurationManager::appendToPartitionCfg(int pFactor) {
 	partitionCfg.push_back(elem);
 }
 
-void ConfigurationManager::appendToCompletePartitionCfg(int pFactor) {
+void ConfigurationManager::appendToCompletePartitionCfg(uint64_t pFactor) {
 	partitionCfgTy elem;
 
 	elem.pFactor = pFactor;
@@ -97,10 +97,12 @@ void ConfigurationManager::appendToCompletePartitionCfg(int pFactor) {
 	completePartitionCfg.push_back(elem);
 }
 
-void ConfigurationManager::appendToArrayInfoCfg(std::string line) {
+void ConfigurationManager::appendToArrayInfoCfg(std::string arrayName, uint64_t totalSize, size_t wordSize) {
 	arrayInfoCfgTy elem;
 
-	elem.line = line;
+	elem.arrayName = arrayName;
+	elem.totalSize = totalSize;
+	elem.wordSize = wordSize;
 
 	arrayInfoCfg.push_back(elem);
 }
@@ -171,13 +173,13 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 
 	configFile.close();
 
-	std::map<std::string, unsigned> wholeLoopName2CompUnrollFactorMap;
+	std::map<std::string, uint64_t> wholeLoopName2CompUnrollFactorMap;
 
 	if(pipeliningCfgStr.size()) {
 		for(std::string i : pipeliningCfgStr) {
 			char buff[BUFF_STR_SZ];
-			int loopNo, loopLevel;
-			sscanf(i.c_str(), "%*[^,],%[^,],%d,%d\n", buff, &loopNo, &loopLevel);
+			unsigned loopNo, loopLevel;
+			sscanf(i.c_str(), "%*[^,],%[^,],%u,%u\n", buff, &loopNo, &loopLevel);
 
 			std::string funcName(buff);
 			std::string loopName = constructLoopName(funcName, loopNo);
@@ -197,11 +199,11 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 			if(loopLevel == numLevel)
 				continue;
 
-			for(unsigned int j = loopLevel + 1; j < numLevel + 1; j++) {
+			for(unsigned j = loopLevel + 1; j < numLevel + 1; j++) {
 				std::string wholeLoopName2 = appendDepthToLoopName(loopName, j);
 				wholeloopName2loopBoundMapTy::iterator found2 = wholeloopName2loopBoundMap.find(wholeLoopName2);
 				assert(found2 != wholeloopName2loopBoundMap.end() && "Cannot find loop name provided in configuration file");
-				unsigned loopBound = found2->second;
+				uint64_t loopBound = found2->second;
 
 				// TODO: This is a silent error/warning. Is this correct (i.e. nothing should be performed apart from informing the user)?
 				if(!loopBound)
@@ -218,19 +220,21 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 		// TODO: IS lineNo REALLY NECESSARY?
 		for(std::string i : unrollingCfgStr) {
 			char buff[BUFF_STR_SZ];
-			int loopNo, loopLevel, lineNo, unrollFactor;
-			sscanf(i.c_str(), "%*[^,],%[^,],%d,%d,%d,%d\n", buff, &loopNo, &loopLevel, &lineNo, &unrollFactor);
+			unsigned loopNo, loopLevel;
+			int lineNo;
+			uint64_t unrollFactor;
+			sscanf(i.c_str(), "%*[^,],%[^,],%u,%u,%d,%lu\n", buff, &loopNo, &loopLevel, &lineNo, &unrollFactor);
 
 			std::string funcName(buff);
 			std::string wholeLoopName = constructLoopName(funcName, loopNo, loopLevel);
 			unrollWholeLoopNameStr.push_back(wholeLoopName);
 
-			std::map<std::string, unsigned>::iterator found = wholeLoopName2CompUnrollFactorMap.find(wholeLoopName);
+			std::map<std::string, uint64_t>::iterator found = wholeLoopName2CompUnrollFactorMap.find(wholeLoopName);
 			if(wholeLoopName2CompUnrollFactorMap.end() == found) {
 				appendToUnrollingCfg(funcName, loopNo, loopLevel, lineNo, unrollFactor);
 			}
 			else {
-				unsigned staticBound = found->second;
+				uint64_t staticBound = found->second;
 				if(staticBound)
 					appendToUnrollingCfg(funcName, loopNo, loopLevel, lineNo, staticBound);
 				else
@@ -240,22 +244,28 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 
 		// If loop pipelining in a loop that have nested non-unrolled loops, these loops must be fully unrolled. Therefore such
 		// configurations are automatically added
-		for(std::pair<std::string, unsigned> it : wholeLoopName2CompUnrollFactorMap) {
+		for(auto &it : wholeLoopName2CompUnrollFactorMap) {
 			std::string wholeLoopName = it.first;
-			unsigned loopBound = it.second;
+			uint64_t loopBound = it.second;
 
 			std::vector<std::string>::iterator found = std::find(unrollWholeLoopNameStr.begin(), unrollWholeLoopNameStr.end(), wholeLoopName);
 			if(unrollWholeLoopNameStr.end() == found) {
-				std::tuple<std::string, int, int> parsed = parseLoopName(wholeLoopName);
+				std::tuple<std::string, unsigned, unsigned> parsed = parseLoopName(wholeLoopName);
 				appendToUnrollingCfg(std::get<0>(parsed), std::get<1>(parsed), std::get<2>(parsed), -1, loopBound);
 			}
 		}
 	}
 
-	// TODO: consertar os elementos!
 	if(arrayInfoCfgStr.size()) {
-		for(std::string i : arrayInfoCfgStr)
-			appendToArrayInfoCfg(i);
+		for(std::string i : arrayInfoCfgStr) {
+			char buff[BUFF_STR_SZ];
+			uint64_t totalSize;
+			size_t wordSize;
+			sscanf(i.c_str(), "%*[^,],%[^,],%lu,%zu\n", buff, &totalSize, &wordSize);
+
+			std::string arrayName(buff);
+			appendToArrayInfoCfg(arrayName, totalSize, wordSize);
+		}
 	}
 	else {
 		assert(false && "Please provide array information for this kernel");
@@ -264,8 +274,8 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 	// TODO: consertar os elementos!
 	if(partitionCfgStr.size()) {
 		for(std::string i : partitionCfgStr) {
-			int pFactor;
-			sscanf(i.c_str(), "%*[^,],%*[^,],%*[^,],%*d,%*d,%d\n", &pFactor);
+			uint64_t pFactor;
+			sscanf(i.c_str(), "%*[^,],%*[^,],%*[^,],%*d,%*d,%lu\n", &pFactor);
 
 			appendToPartitionCfg(pFactor);
 		}
@@ -274,8 +284,8 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 	// TODO: consertar os elementos!
 	if(completePartitionCfgStr.size()) {
 		for(std::string i : completePartitionCfgStr) {
-			int pFactor;
-			sscanf(i.c_str(), "%*[^,],%*[^,],%*[^,],%*d,%*d,%d\n", &pFactor);
+			uint64_t pFactor;
+			sscanf(i.c_str(), "%*[^,],%*[^,],%*[^,],%*d,%*d,%lu\n", &pFactor);
 
 			appendToCompletePartitionCfg(pFactor);
 		}
@@ -293,4 +303,40 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 }
 
 void ConfigurationManager::parseToFiles() {
+	std::string pipeliningFileName = args.outWorkDir + kernelName + "_pipelining.cfg";
+	std::string unrollingFileName = args.outWorkDir + kernelName + "_unrolling.cfg";
+	std::string arrayInfoFileName = args.outWorkDir + kernelName + "_arrayinfo.cfg";
+	std::string partitionFileName = args.outWorkDir + kernelName + "_partition.cfg";
+	std::string completePartitionFileName = args.outWorkDir + kernelName + "_completepartition.cfg";
+	std::ofstream outFile;
+
+	outFile.open(pipeliningFileName);
+	for(auto &it : pipeliningCfg)
+		outFile << "pipeline," << it.funcName << "," << std::to_string(it.loopNo) << "," << std::to_string(it.loopLevel) << "\n";
+	outFile.close();
+
+	outFile.open(unrollingFileName);
+	for(auto &it : unrollingCfg) {
+		outFile << "unrolling," << it.funcName << "," <<
+			std::to_string(it.loopNo) << "," << std::to_string(it.loopLevel) << "," <<
+			std::to_string(it.lineNo) << "," << std::to_string(it.unrollFactor) << "\n";
+	}
+	outFile.close();
+
+	// TODO: fix elements
+	outFile.open(partitionFileName);
+	for(auto &it : partitionCfg)
+		outFile << "partition,XXXX," << std::to_string(it.pFactor) << "\n";
+	outFile.close();
+
+	// TODO: fix elements
+	outFile.open(completePartitionFileName);
+	for(auto &it : completePartitionCfg)
+		outFile << "partition,complete," << std::to_string(it.pFactor) << "\n";
+	outFile.close();
+
+	outFile.open(arrayInfoFileName);
+	for(auto &it : arrayInfoCfg)
+		outFile << "array," << it.arrayName << "," << std::to_string(it.totalSize) << "," << std::to_string(it.wordSize) << "\n";
+	outFile.close();
 }

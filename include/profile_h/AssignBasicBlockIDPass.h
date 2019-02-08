@@ -17,7 +17,7 @@
 namespace llvm {
 
 class AssignBasicBlockID : public ModulePass, public InstVisitor<AssignBasicBlockID> {
-	unsigned int counter;
+	unsigned counter;
 	MDNode *assignID(BasicBlock *BB, unsigned id);
 
 #ifdef DBG_PRINT_ALL

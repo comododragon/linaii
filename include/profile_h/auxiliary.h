@@ -31,12 +31,6 @@
 #define FILE_DYNAMIC_TRACE "dynamic_trace.gz"
 #define FILE_MEM_TRACE "mem_trace.txt"
 #define FILE_SUMMARY_SUFFIX "_summary.log"
-// TODO THIS SHOULD BE REMOVED AT SOME POINT
-#define FILE_PIPELINING_CFG_SUFFIX "_pipelining.cfg"
-#define FILE_UNROLLING_CFG_SUFFIX "_unrolling.cfg"
-#define FILE_ARRAYINFO_CFG_SUFFIX "_arrayinfo.cfg"
-#define FILE_PARTITION_CFG_SUFFIX "_partition.cfg"
-#define FILE_COMPLETEPARTITION_CFG_SUFFIX "_completepartition.cfg"
 
 extern ArgPack args;
 extern const std::string loopNumberMDKindName;
@@ -46,9 +40,9 @@ extern const std::string extractLoopInfoMDKindName;
 
 bool isFunctionOfInterest(std::string key);
 bool verifyModuleAndPrintErrors(llvm::Module &M);
-std::string constructLoopName(std::string funcName, int loopNo, int depth=-1);
-std::string appendDepthToLoopName(std::string loopName, int depth);
-std::tuple<std::string, int, int> parseLoopName(std::string loopName);
+std::string constructLoopName(std::string funcName, unsigned loopNo, unsigned depth = ((unsigned) -1));
+std::string appendDepthToLoopName(std::string loopName, unsigned depth);
+std::tuple<std::string, unsigned, unsigned> parseLoopName(std::string loopName);
 
 // TODO: REMOVER ISSO AQUI SOB DEMANDA
 extern std::string inputFileName;
@@ -88,7 +82,7 @@ extern getElementPtrName2arrayNameMapTy getElementPtrName2arrayNameMap;
 		} \
 	} while(false)
 
-typedef std::map<std::string, unsigned> wholeloopName2loopBoundMapTy;
+typedef std::map<std::string, uint64_t> wholeloopName2loopBoundMapTy;
 extern wholeloopName2loopBoundMapTy wholeloopName2loopBoundMap;
 
 namespace llvm {
@@ -167,23 +161,24 @@ class ConfigurationManager {
 public:
 	typedef struct {
 		std::string funcName;
-		int loopNo;
-		int loopLevel;
+		unsigned loopNo;
+		unsigned loopLevel;
 	} pipeliningCfgTy;
 	typedef struct {
 		std::string funcName;
-		int loopNo;
-		int loopLevel;
+		unsigned loopNo;
+		unsigned loopLevel;
 		int lineNo;
-		int unrollFactor;
+		uint64_t unrollFactor;
 	} unrollingCfgTy;
 	// TODO: fix elements
 	typedef struct {
-		int pFactor;
+		uint64_t pFactor;
 	} partitionCfgTy;
-	// TODO: fix elements
 	typedef struct {
-		std::string line;
+		std::string arrayName;
+		uint64_t totalSize;
+		size_t wordSize;
 	} arrayInfoCfgTy;
 
 private:
@@ -195,11 +190,11 @@ private:
 	std::vector<partitionCfgTy> completePartitionCfg;
 	std::vector<arrayInfoCfgTy> arrayInfoCfg;
 
-	void appendToPipeliningCfg(std::string funcName, int loopNo, int loopLevel);
-	void appendToUnrollingCfg(std::string funcName, int loopNo, int loopLevel, int lineNo, int unrollFactor);
-	void appendToPartitionCfg(int pFactor);
-	void appendToCompletePartitionCfg(int pFactor);
-	void appendToArrayInfoCfg(std::string line);
+	void appendToPipeliningCfg(std::string funcName, unsigned loopNo, unsigned loopLevel);
+	void appendToUnrollingCfg(std::string funcName, unsigned loopNo, unsigned loopLevel, int lineNo, uint64_t unrollFactor);
+	void appendToPartitionCfg(uint64_t pFactor);
+	void appendToCompletePartitionCfg(uint64_t pFactor);
+	void appendToArrayInfoCfg(std::string arrayName, uint64_t totalSize, size_t wordSize);
 
 public:
 	ConfigurationManager(std::string kernelName);

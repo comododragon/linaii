@@ -3,7 +3,15 @@
 
 #define BUILD_DDDG_H
 
+// If using GCC, these pragmas will stop GCC from outputting the annoying misleading indentation warning for this include
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmisleading-indentation"
+#endif
 #include "llvm/Support/CommandLine.h"
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif
 
 #include "profile_h/ArgPack.h"
 #include "profile_h/AssignBasicBlockIDPass.h"

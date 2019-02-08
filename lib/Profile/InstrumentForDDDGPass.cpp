@@ -77,7 +77,7 @@ void TraceLogger::initialiseDefaults(Module &M) {
 	);
 }
 
-int Injector::getMemSizeInBits(Type *T) {
+int64_t Injector::getMemSizeInBits(Type *T) {
 	if(T->isPointerTy()) {
 		return 8 * 8;
 	}
@@ -91,7 +91,7 @@ int Injector::getMemSizeInBits(Type *T) {
 		int size = 0;
 		StructType *S = dyn_cast<StructType>(T);
 
-		for(int i = 0; i < S->getNumElements(); i++)
+		for(unsigned i = 0; i < S->getNumElements(); i++)
 			size += getMemSizeInBits(S->getElementType(i));
 
 		return size;
@@ -122,7 +122,7 @@ int Injector::getMemSizeInBits(Type *T) {
 	}
 	else if(T->isArrayTy()) {
 		ArrayType *A = dyn_cast<ArrayType>(T);
-		return (int) A->getNumElements() * A->getElementType()->getPrimitiveSizeInBits();
+		return (int64_t) A->getNumElements() * A->getElementType()->getPrimitiveSizeInBits();
 	}
 	else {
 		assert(false && "Requested size of unknown data type");
@@ -159,8 +159,8 @@ void Injector::initialise(Module &M, TraceLogger &TL) {
 }
 
 void Injector::injectTraceHeader(BasicBlock::iterator it, int lineNo, std::string funcID, std::string bbID, std::string instID, int opcode) {
-	LLVMContext &C = M->getContext();
-	CallInst *tlCall;
+	//LLVMContext &C = M->getContext();
+	//CallInst *tlCall;
 	IRBuilder<> IRB(it);
 
 	// Create LLVM values for the provided arguments
@@ -174,7 +174,8 @@ void Injector::injectTraceHeader(BasicBlock::iterator it, int lineNo, std::strin
 
 	// TODO: entender o que realmente signfica uma call para trace_logger_log0
 	// Call trace_logger_log0 with the aforementioned values
-	tlCall = IRB.CreateCall5(TL->log0, vLineNo, vvFuncID, vvBB, vvInst, vOpcode);
+	//tlCall = IRB.CreateCall5(TL->log0, vLineNo, vvFuncID, vvBB, vvInst, vOpcode);
+	IRB.CreateCall5(TL->log0, vLineNo, vvFuncID, vvBB, vvInst, vOpcode);
 
 	// Update databases
 	staticInstID2OpcodeMap.insert(std::make_pair(instID, opcode));
@@ -204,14 +205,14 @@ void Injector::injectTraceHeader(BasicBlock::iterator it, int lineNo, std::strin
 }
 
 void Injector::injectTrace(BasicBlock::iterator it, int lineNo, std::string regOrFuncID, Type *T, Value *value, bool isReg) {
-	LLVMContext &C = M->getContext();
-	CallInst *tlCall;
+	//LLVMContext &C = M->getContext();
+	//CallInst *tlCall;
 	IRBuilder<> IRB(it);
 	int type = T->getTypeID();
 
 	// Create LLVM values for the provided arguments
 	Value *vLineNo = ConstantInt::get(IRB.getInt64Ty(), lineNo);
-	Value *vType = ConstantInt::get(IRB.getInt64Ty(), type);
+	//Value *vType = ConstantInt::get(IRB.getInt64Ty(), type);
 	Value *vDataSize = ConstantInt::get(IRB.getInt64Ty(), getMemSizeInBits(T));
 	Value *vIsReg = ConstantInt::get(IRB.getInt64Ty(), isReg);
 	Value *vValue;
@@ -222,15 +223,18 @@ void Injector::injectTrace(BasicBlock::iterator it, int lineNo, std::string regO
 		if(value) {
 			if(llvm::Type::IntegerTyID == type) {
 				vValue = IRB.CreateZExt(value, IRB.getInt64Ty());
-				tlCall = IRB.CreateCall5(TL->logInt, vLineNo, vDataSize, vValue, vIsReg, vvRegOrFuncID);
+				//tlCall = IRB.CreateCall5(TL->logInt, vLineNo, vDataSize, vValue, vIsReg, vvRegOrFuncID);
+				IRB.CreateCall5(TL->logInt, vLineNo, vDataSize, vValue, vIsReg, vvRegOrFuncID);
 			}
 			else if(type >= llvm::Type::HalfTyID && type <= llvm::Type::PPC_FP128TyID) {
 				vValue = IRB.CreateFPExt(value, IRB.getDoubleTy());
-				tlCall = IRB.CreateCall5(TL->logDouble, vLineNo, vDataSize, vValue, vIsReg, vvRegOrFuncID);
+				//tlCall = IRB.CreateCall5(TL->logDouble, vLineNo, vDataSize, vValue, vIsReg, vvRegOrFuncID);
+				IRB.CreateCall5(TL->logDouble, vLineNo, vDataSize, vValue, vIsReg, vvRegOrFuncID);
 			}
 			else if(llvm::Type::PointerTyID == type) {
 				vValue = IRB.CreatePtrToInt(value, IRB.getInt64Ty());
-				tlCall = IRB.CreateCall5(TL->logInt, vLineNo, vDataSize, vValue, vIsReg, vvRegOrFuncID);
+				//tlCall = IRB.CreateCall5(TL->logInt, vLineNo, vDataSize, vValue, vIsReg, vvRegOrFuncID);
+				IRB.CreateCall5(TL->logInt, vLineNo, vDataSize, vValue, vIsReg, vvRegOrFuncID);
 			}
 			else {
 				// TODO: assert mesmo ou apenas um silent error?
@@ -239,22 +243,26 @@ void Injector::injectTrace(BasicBlock::iterator it, int lineNo, std::string regO
 		}
 		else {
 			vValue = ConstantInt::get(IRB.getInt64Ty(), 0);
-			tlCall = IRB.CreateCall5(TL->logInt, vLineNo, vDataSize, vValue, vIsReg, vvRegOrFuncID);
+			//tlCall = IRB.CreateCall5(TL->logInt, vLineNo, vDataSize, vValue, vIsReg, vvRegOrFuncID);
+			IRB.CreateCall5(TL->logInt, vLineNo, vDataSize, vValue, vIsReg, vvRegOrFuncID);
 		}
 	}
 	else {
 		if(value) {
 			if(llvm::Type::IntegerTyID == type) {
 				vValue = IRB.CreateZExt(value, IRB.getInt64Ty());
-				tlCall = IRB.CreateCall4(TL->logIntNoReg, vLineNo, vDataSize, vValue, vIsReg);
+				//tlCall = IRB.CreateCall4(TL->logIntNoReg, vLineNo, vDataSize, vValue, vIsReg);
+				IRB.CreateCall4(TL->logIntNoReg, vLineNo, vDataSize, vValue, vIsReg);
 			}
 			else if(type >= llvm::Type::HalfTyID && type <= llvm::Type::PPC_FP128TyID) {
 				vValue = IRB.CreateFPExt(value, IRB.getDoubleTy());
-				tlCall = IRB.CreateCall4(TL->logDoubleNoReg, vLineNo, vDataSize, vValue, vIsReg);
+				//tlCall = IRB.CreateCall4(TL->logDoubleNoReg, vLineNo, vDataSize, vValue, vIsReg);
+				IRB.CreateCall4(TL->logDoubleNoReg, vLineNo, vDataSize, vValue, vIsReg);
 			}
 			else if(llvm::Type::PointerTyID == type) {
 				vValue = IRB.CreatePtrToInt(value, IRB.getInt64Ty());
-				tlCall = IRB.CreateCall4(TL->logIntNoReg, vLineNo, vDataSize, vValue, vIsReg);
+				//tlCall = IRB.CreateCall4(TL->logIntNoReg, vLineNo, vDataSize, vValue, vIsReg);
+				IRB.CreateCall4(TL->logIntNoReg, vLineNo, vDataSize, vValue, vIsReg);
 			}
 			else {
 				// TODO: assert mesmo ou apenas um silent error?
@@ -263,7 +271,8 @@ void Injector::injectTrace(BasicBlock::iterator it, int lineNo, std::string regO
 		}
 		else {
 			vValue = ConstantInt::get(IRB.getInt64Ty(), 0);
-			tlCall = IRB.CreateCall4(TL->logIntNoReg, vLineNo, vDataSize, vValue, vIsReg);
+			//tlCall = IRB.CreateCall4(TL->logIntNoReg, vLineNo, vDataSize, vValue, vIsReg);
+			IRB.CreateCall4(TL->logIntNoReg, vLineNo, vDataSize, vValue, vIsReg);
 		}
 	}
 }
@@ -350,7 +359,7 @@ int InstrumentForDDDG::shouldTrace(std::string call) {
 	return NOT_TRACE;
 }
 
-bool InstrumentForDDDG::getInstID(Instruction *I, std::string bbID, int &instCnt, std::string &instID) {
+bool InstrumentForDDDG::getInstID(Instruction *I, std::string bbID, unsigned &instCnt, std::string &instID) {
 	int id = ST->getLocalSlot(I);
 
 	if(I->hasName()) {
@@ -397,6 +406,7 @@ void InstrumentForDDDG::extractMemoryTraceForAccessPattern() {
 	traceFile = gzopen(traceFileName.c_str(), "r");
 	assert(traceFile != Z_NULL && "Could not open trace input file");
 
+	// Walk through the dynamic trace
 	while(!gzeof(traceFile)) {
 		char buffer[BUFF_STR_SZ];
 		if(Z_NULL == gzgets(traceFile, buffer, sizeof(buffer)))
@@ -411,6 +421,7 @@ void InstrumentForDDDG::extractMemoryTraceForAccessPattern() {
 		std::string tag = line.substr(0, tagPos);
 		std::string rest = line.substr(tagPos + 1);
 
+		// If no load or store is in process and this is a log0 line
 		if(!traceEntry && !(tag.compare("0"))) {
 			int lineNo;
 			char buffer1[BUFF_STR_SZ];
@@ -422,15 +433,17 @@ void InstrumentForDDDG::extractMemoryTraceForAccessPattern() {
 			std::string bbName(buffer2);
 			std::string instName(buffer3);
 
+			// Trace is a load or store
 			if(isStoreOp(opcode) || isLoadOp(opcode)) {
 				traceEntry = true;
 
+				// Load or store is inside a known loop, print this information
 				bbFuncNamePair2lpNameLevelPairMapTy::iterator it = bbFuncNamePair2lpNameLevelPairMap.find(std::make_pair(bbName, funcName));
 				if(it != bbFuncNamePair2lpNameLevelPairMap.end()) {
 					lpNameLevelPairTy lpNameLevelPair = it->second;
 					std::string loopName = lpNameLevelPair.first;
 					std::string wholeLoopName = appendDepthToLoopName(loopName, lpNameLevelPair.second);
-					unsigned int numLevels = LpName2numLevelMap.at(loopName);
+					unsigned numLevels = LpName2numLevelMap.at(loopName);
 
 					memTraceFile << wholeLoopName << "," << numLevels << "," << instName << ",";
 
@@ -443,12 +456,14 @@ void InstrumentForDDDG::extractMemoryTraceForAccessPattern() {
 				}
 			}
 		}
+		// Print operands of this load/store
 		else if(traceEntry && ((!(tag.compare("1")) && isLoadOp(opcode)) || (!(tag.compare("2")) && isStoreOp(opcode)))) {
-			unsigned long addr;
+			uint64_t addr;
 
-			sscanf(rest.c_str(), "%*d,%ld,%*d,%*s\n", &addr);
+			sscanf(rest.c_str(), "%*d,%lu,%*d,%*s\n", &addr);
 			memTraceFile << addr << ",";
 		}
+		// Print result value of this load/store
 		else if(traceEntry && ((!(tag.compare("r")) && isLoadOp(opcode)) || (!(tag.compare("1")) && isStoreOp(opcode)))) {
 			float value;
 
@@ -507,6 +522,7 @@ bool InstrumentForDDDG::runOnModule(Module &M) {
 	// Verify the module
 	assert(verifyModuleAndPrintErrors(M) && "Errors found in module\n");
 
+	// Perform the cycle estimation
 	loopBasedTraceAnalysis();
 
 	VERBOSE_PRINT(errs() << "[instrumentForDDDG] Finished\n");
@@ -520,7 +536,7 @@ bool InstrumentForDDDG::runOnModule(Module &M) {
 
 bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 	Function *F = BB.getParent();
-	int instCnt = 0;
+	unsigned instCnt = 0;
 	std::string funcName = F->getName();
 
 	if(currFunction != F) {
@@ -536,10 +552,10 @@ bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 	BasicBlock::iterator insIt = BB.getFirstInsertionPt();
 	BasicBlock::iterator it = BB.begin();
 	if(dyn_cast<PHINode>(it)) {
-		for(; PHINode *N = dyn_cast<PHINode>(it); it++) {
+		for(; dyn_cast<PHINode>(it); it++) {
 			Value *currOperand = nullptr;
 			bool isReg = false;
-			int size = 0, opcode;
+			int opcode;
 			std::string bbID, instID, operR;
 			int lineNumber = -1;
 
@@ -564,7 +580,7 @@ bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 
 				// Input to phi is an instruction
 				if(Instruction *I = dyn_cast<Instruction>(currOperand)) {
-					int flag = 0;
+					unsigned flag = 0;
 					isReg = getInstID(I, "", flag, operR);
 					assert(0 == flag && "Unnamed instruction with no local slot found");
 
@@ -605,7 +621,7 @@ bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 	for(it = insIt; it != BB.end(); it = nextIt) {
 		Value *currOperand = nullptr;
 		bool isReg = false;
-		int size = 0, opcode;
+		int opcode;
 		std::string bbID, instID, operR;
 		int lineNumber = -1;
 
@@ -649,7 +665,7 @@ bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 			IJ.injectTrace(it, numOfOperands, operR, currOperand->getType(), currOperand, isReg);
 
 			const Function::ArgumentListType &AL(CI->getCalledFunction()->getArgumentList());
-			int numOfCallOperands = CI->getNumArgOperands();
+			//int numOfCallOperands = CI->getNumArgOperands();
 			int callID = 0;
 
 			for(Function::ArgumentListType::const_iterator argIt = AL.begin(); argIt != AL.end(); argIt++) {
@@ -660,7 +676,7 @@ bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 
 				// Argument to call is an instruction
 				if(Instruction *I = dyn_cast<Instruction>(currOperand)) {
-					int flag = 0;
+					unsigned flag = 0;
 					isReg = getInstID(I, "", flag, operR);
 					assert(0 == flag && "Unnamed instruction with no local slot found");
 
@@ -709,7 +725,7 @@ bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 
 					// Input is an instruction
 					if(Instruction *I = dyn_cast<Instruction>(currOperand)) {
-						int flag = 0;
+						unsigned flag = 0;
 						isReg = getInstID(I, "", flag, operR);
 						assert(0 == flag && "Unnamed instruction with no local slot found");
 
@@ -750,8 +766,52 @@ bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 	return true;
 }
 
-void InstrumentForDDDG::getUnrollingConfiguration(lpNameLevelPair2headBBnameMapTy &lpNameLvPair2headerBBMap) {
+void InstrumentForDDDG::updateUnrollingDatabase(const std::vector<ConfigurationManager::unrollingCfgTy> &unrollingCfg) {
+	loopName2levelUnrollVecMap.clear();
+	//unrollingConfig.clear();
+
+	// Check how many levels inside a loop was asked to be unrolled, and also initialise unrolling factors vector
+	for(auto &it : lpNameLevelPair2headBBnameMap) {
+		std::string loopName = it.first.first;
+
+		loopName2levelUnrollVecMapTy::iterator found = loopName2levelUnrollVecMap.find(loopName);
+		if(found != loopName2levelUnrollVecMap.end()) {
+			found->second.push_back(1);
+		}
+		else {
+			std::vector<unsigned> levelUnrollPairVec;
+			levelUnrollPairVec.push_back(1);
+			loopName2levelUnrollVecMap.insert(std::make_pair(loopName, levelUnrollPairVec));
+		}
+	}
+
+	// Update unroll factors
+	for(const ConfigurationManager::unrollingCfgTy &cfg : unrollingCfg) {
+		assert(cfg.loopLevel > 0 && "Invalid loop level passed, it must be > 0");
+
+		std::string loopName = constructLoopName(cfg.funcName, cfg.loopNo);
+		loopName2levelUnrollVecMapTy::iterator found2 = loopName2levelUnrollVecMap.find(loopName);
+		if(found2 != loopName2levelUnrollVecMap.end()) {
+			unsigned innermostLevel = found2->second.size();
+
+			if(cfg.loopLevel != innermostLevel && cfg.unrollFactor > 1) {
+				assert(cfg.loopLevel <= innermostLevel && "Loop level is larger than number of levels");
+				found2->second[cfg.loopLevel - 1] = cfg.unrollFactor;
+			}
+			else {
+				std::string wholeLoopName = appendDepthToLoopName(loopName, cfg.loopLevel);
+				uint64_t loopBound = wholeloopName2loopBoundMap.at(wholeLoopName);
+				found2->second.at(cfg.loopLevel - 1) = (loopBound && cfg.unrollFactor > loopBound)? loopBound : cfg.unrollFactor;
+			}
+		}
+		else {
+			assert(false && "Loop was not found inside internal databases, please check configuration file");
+		}
+	}
+}
+
 #if 0
+void InstrumentForDDDG::getUnrollingConfiguration(lpNameLevelPair2headBBnameMapTy &lpNameLvPair2headerBBMap) {
 	// Initialize loopName2levelUnrollPairListMap, all unrolling factors are set to 1 as default.
 	loopName2levelUnrollVecMap.clear();
 	lpNameLevelPair2headBBnameMapTy::iterator it = lpNameLvPair2headerBBMap.begin();
@@ -773,11 +833,9 @@ void InstrumentForDDDG::getUnrollingConfiguration(lpNameLevelPair2headBBnameMapT
 	// Read unrolling configuration and update loopName2levelUnrollPairListMap and 
 	unrollingConfig.clear();
 	bool succeed_or_not = readUnrollingConfig(loopName2levelUnrollVecMap, unrollingConfig);
-#endif
 }
 
 bool InstrumentForDDDG::readUnrollingConfig(loopName2levelUnrollVecMapTy &lpName2levelUrPairVecMap, std::unordered_map<int, int> &unrollingConfig) {
-#if 0
 	//loopName2levelUnrollPairListMapTy vector is better
 	std::string kernel_name = kernel_names.at(0);
 	ifstream config_file;
@@ -835,8 +893,8 @@ bool InstrumentForDDDG::readUnrollingConfig(loopName2levelUnrollVecMapTy &lpName
 	}
 	config_file.close();
 	return 1;
-#endif
 }
+#endif
 
 void InstrumentForDDDG::loopBasedTraceAnalysis() {
 	VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Loop-based trace analysis started\n");
@@ -850,8 +908,13 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 	VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Parsing configuration file\n");
 	ConfigurationManager CM(kernelName);
 	CM.parseAndPopulate(pipelineLoopLevelVec);
+	updateUnrollingDatabase(CM.getUnrollingCfg());
 	//removeConfig(kernelName);
 	//parseConfig(kernelName);
+
+#ifdef DBG_PRINT_ALL
+	CM.parseToFiles();
+#endif
 
 #if 0
 	VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Summary file closed\n");
@@ -1079,8 +1142,24 @@ void InstrumentForDDDG::printDatabase(void) {
 
 	errs() << "-- pipelineLoopLevelVec\n";
 	for(auto const &x : pipelineLoopLevelVec)
-		errs() << "-- <" << x << "\n";
+		errs() << "-- " << x << "\n";
 	errs() << "-- --------------------\n";
+
+	errs() << "-- loopName2levelUnrollVecMap\n";
+	for(auto const &x : loopName2levelUnrollVecMap) {
+		errs() << "-- " << x.first << ": (";
+		if(x.second.size() > 0)
+			errs() << x.second[0];
+		bool skipFirst = true;
+		for(auto const &y : x.second) {
+			if(skipFirst)
+				skipFirst = false;
+			else
+				errs() << ", " << y;
+		}
+		errs() << ")\n";
+	}
+	errs() << "-- --------------------------\n";
 }
 #endif
 

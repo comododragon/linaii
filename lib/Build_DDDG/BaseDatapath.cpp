@@ -1,6 +1,5 @@
 #include <sstream>
 #include <fstream>
-#include <boost/tokenizer.hpp>
 
 #include "profile_h/opcodes.h"
 #include "profile_h/BaseDatapath.h"

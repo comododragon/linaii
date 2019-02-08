@@ -79,7 +79,7 @@ bool LoopNumber::runOnLoop(Loop *L, LPPassManager &LPM) {
 
 	unsigned depth = L->getLoopDepth();
 	/// Trace the top-level loop of a loop
-	if(depth == 1) {
+	if(1 == depth) {
 		MDString *funcName = MDString::get(Context, F->getName());
 		LoopsMetadataNode.push_back(funcName);
 		std::string loopName = "loop" + std::to_string(loopCounter++);

@@ -56,7 +56,7 @@ class Injector {
 	Module *M;
 	TraceLogger *TL;
 
-	int getMemSizeInBits(Type *T);
+	int64_t getMemSizeInBits(Type *T);
 	Constant *createGlobalVariableAndGetGetElementPtr(std::string value);
 
 public:
@@ -80,7 +80,7 @@ class InstrumentForDDDG : public ModulePass {
 		TRACE_DMA_LOAD = LLVM_IR_DMALoad
 	};
 
-	std::unordered_map<int, int> unrollingConfig;
+	//std::unordered_map<int, int> unrollingConfig;
 	std::vector<std::string> pipelineLoopLevelVec;
 	std::ofstream summaryFile;
 
@@ -99,14 +99,17 @@ public:
 	bool doInitialization(Module &M);
 	bool runOnModule(Module &M);
 
-	bool getInstID(Instruction *I, std::string bbID, int &instCnt, std::string &instID);
+	bool getInstID(Instruction *I, std::string bbID, unsigned &instCnt, std::string &instID);
 
 	std::string getBBID(Value *BB);
 
 	bool performOnBasicBlock(BasicBlock &BB);
 
+#if 0
 	void getUnrollingConfiguration(lpNameLevelPair2headBBnameMapTy &lpNameLvPair2headerBBMap);
 	bool readUnrollingConfig(loopName2levelUnrollVecMapTy &lpName2levelUrPairVecMap, std::unordered_map<int, int> &unrollingConfig);
+#endif
+	void updateUnrollingDatabase(const std::vector<ConfigurationManager::unrollingCfgTy> &unrollingCfg);
 
 	void loopBasedTraceAnalysis();
 

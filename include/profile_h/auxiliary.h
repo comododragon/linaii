@@ -7,7 +7,7 @@
 
 #define ENABLE_TIMER
 
-#define DBG_PRINT_ALL
+//#define DBG_PRINT_ALL
 
 #include <fstream>
 #include <list>

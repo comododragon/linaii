@@ -202,7 +202,9 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 			for(unsigned j = loopLevel + 1; j < numLevel + 1; j++) {
 				std::string wholeLoopName2 = appendDepthToLoopName(loopName, j);
 				wholeloopName2loopBoundMapTy::iterator found2 = wholeloopName2loopBoundMap.find(wholeLoopName2);
+
 				assert(found2 != wholeloopName2loopBoundMap.end() && "Cannot find loop name provided in configuration file");
+
 				uint64_t loopBound = found2->second;
 
 				// TODO: This is a silent error/warning. Is this correct (i.e. nothing should be performed apart from informing the user)?

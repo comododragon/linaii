@@ -791,110 +791,22 @@ void InstrumentForDDDG::updateUnrollingDatabase(const std::vector<ConfigurationM
 
 		std::string loopName = constructLoopName(cfg.funcName, cfg.loopNo);
 		loopName2levelUnrollVecMapTy::iterator found2 = loopName2levelUnrollVecMap.find(loopName);
-		if(found2 != loopName2levelUnrollVecMap.end()) {
-			unsigned innermostLevel = found2->second.size();
 
-			if(cfg.loopLevel != innermostLevel && cfg.unrollFactor > 1) {
-				assert(cfg.loopLevel <= innermostLevel && "Loop level is larger than number of levels");
-				found2->second[cfg.loopLevel - 1] = cfg.unrollFactor;
-			}
-			else {
-				std::string wholeLoopName = appendDepthToLoopName(loopName, cfg.loopLevel);
-				uint64_t loopBound = wholeloopName2loopBoundMap.at(wholeLoopName);
-				found2->second.at(cfg.loopLevel - 1) = (loopBound && cfg.unrollFactor > loopBound)? loopBound : cfg.unrollFactor;
-			}
+		assert(found2 != loopName2levelUnrollVecMap.end() && "Loop was not found inside internal databases, please check configuration file");
+
+		unsigned innermostLevel = found2->second.size();
+
+		if(cfg.loopLevel != innermostLevel && cfg.unrollFactor > 1) {
+			assert(cfg.loopLevel <= innermostLevel && "Loop level is larger than number of levels");
+			found2->second[cfg.loopLevel - 1] = cfg.unrollFactor;
 		}
 		else {
-			assert(false && "Loop was not found inside internal databases, please check configuration file");
+			std::string wholeLoopName = appendDepthToLoopName(loopName, cfg.loopLevel);
+			uint64_t loopBound = wholeloopName2loopBoundMap.at(wholeLoopName);
+			found2->second.at(cfg.loopLevel - 1) = (loopBound && cfg.unrollFactor > loopBound)? loopBound : cfg.unrollFactor;
 		}
 	}
 }
-
-#if 0
-void InstrumentForDDDG::getUnrollingConfiguration(lpNameLevelPair2headBBnameMapTy &lpNameLvPair2headerBBMap) {
-	// Initialize loopName2levelUnrollPairListMap, all unrolling factors are set to 1 as default.
-	loopName2levelUnrollVecMap.clear();
-	lpNameLevelPair2headBBnameMapTy::iterator it = lpNameLvPair2headerBBMap.begin();
-	lpNameLevelPair2headBBnameMapTy::iterator ie = lpNameLvPair2headerBBMap.end();
-	for (; it != ie; ++it) {
-		std::string loopName = it->first.first;
-		unsigned loop_level = std::stoul(it->first.second);
-		loopName2levelUnrollVecMapTy::iterator itVec = loopName2levelUnrollVecMap.find(loopName);
-		if (itVec != loopName2levelUnrollVecMap.end()) {
-			itVec->second.push_back(1);
-		}
-		else {
-			std::vector<unsigned> levelUnrollPairVec;
-			levelUnrollPairVec.push_back(1);
-			loopName2levelUnrollVecMap.insert(std::make_pair(loopName, levelUnrollPairVec));
-		}
-	}
-
-	// Read unrolling configuration and update loopName2levelUnrollPairListMap and 
-	unrollingConfig.clear();
-	bool succeed_or_not = readUnrollingConfig(loopName2levelUnrollVecMap, unrollingConfig);
-}
-
-bool InstrumentForDDDG::readUnrollingConfig(loopName2levelUnrollVecMapTy &lpName2levelUrPairVecMap, std::unordered_map<int, int> &unrollingConfig) {
-	//loopName2levelUnrollPairListMapTy vector is better
-	std::string kernel_name = kernel_names.at(0);
-	ifstream config_file;
-	//std::string file_name(inputPath + kernel_name);
-	std::string file_name(outputPath + kernel_name);
-	file_name += "_unrolling_config";
-	config_file.open(file_name.c_str());
-	if (!config_file.is_open())
-		return 0;
-	while (!config_file.eof())
-	{
-		std::string wholeline;
-		getline(config_file, wholeline);
-		if (wholeline.size() == 0)
-			break;
-		char func[256];
-		char config_type[256];
-		unsigned ith_loop;
-		unsigned loop_level;
-		int line_num, factor;
-		sscanf(wholeline.c_str(), "%[^,],%[^,],%d, %d, %d,%d\n", config_type, func, &ith_loop, &loop_level, &line_num, &factor);
-		unrolling_config[line_num] = factor;
-		std::string loop_name = std::string(func) + "_loop-" + std::to_string(ith_loop);
-		loopName2levelUnrollVecMapTy::iterator it = lpName2levelUrPairVecMap.find(loop_name);
-		if (it != lpName2levelUrPairVecMap.end()) {
-			unsigned innermost_level = it->second.size();
-			if ((loop_level != innermost_level) && factor > 1) {
-				//std::cout << "DEBUG-INFO: [parsing_read-unrolling-configuration] For FPGA implementation, the unrolling for the innermost loop level is more interesting, we only consider this level loop." << std::endl;
-				assert(loop_level<=innermost_level && "Error: Loop level information inside the unrolling_config file exceeds number of levels in this loop!\n");
-				it->second[loop_level-1] = factor;
-			}
-			else {
-				std::string whole_loop_name = loop_name + "_" + std::to_string(loop_level);
-				unsigned lp_bound = wholeloopName2loopBoundMap.at(whole_loop_name);
-				if (lp_bound == 0) {
-					// Need to get loop bound at runtime
-					it->second.at(loop_level - 1) = factor;
-				}
-				else {
-					if ((unsigned)factor > lp_bound) {
-						it->second.at(loop_level - 1) = lp_bound;
-						//assert((factor<lp_bound) && "Error: Loop unrolling factor is larger than loop bound! Please use smaller loop bound\n");
-					}
-					else {
-						it->second.at(loop_level - 1) = factor;
-					}
-				}
-
-			}
-		}
-		else {
-			std::cout << "DEBUG-INFO: [parsing_read-unrolling-configuration] Warning: Can not find the loop name inside configuration files" << std::endl;
-			assert(false && "Please check whether configuration file is written in a correct way!\n");
-		}
-	}
-	config_file.close();
-	return 1;
-}
-#endif
 
 void InstrumentForDDDG::loopBasedTraceAnalysis() {
 	VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Loop-based trace analysis started\n");
@@ -912,13 +824,75 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 	//removeConfig(kernelName);
 	//parseConfig(kernelName);
 
+	for(auto &it : loopName2levelUnrollVecMap) {
+		std::string loopName = it.first;
+		std::string loopIndex = std::to_string(std::get<1>(parseLoopName(loopName)));
+
+		std::vector<std::string>::iterator found = std::find(args.targetLoops.begin(), args.targetLoops.end(), loopIndex);
+		if(args.targetLoops.end() == found)
+			continue;
+
+		// Skip loop if it is not of interest
+		std::vector<unsigned> &levelUnrollVec = it.second;
+		int targetLoopLevel = 1;
+		unsigned targetUnrollFactor = 1;
+		unsigned targetLoopBound;
+		std::string targetWholeLoopName = appendDepthToLoopName(loopName, targetLoopLevel);
+		bool enablePipelining = false;
+
+		// TODO: THIS MAY BE A SOURCE FOR BUGS
+		// TODO: THIS MAY BE A SOURCE FOR BUGS
+		// TODO: THIS MAY BE A SOURCE FOR BUGS
+		// TODO: THIS MAY BE A SOURCE FOR BUGS
+		// TODO: THIS MAY BE A SOURCE FOR BUGS
+		// TODO: THIS MAY BE A SOURCE FOR BUGS
+		// Acquire target unroll factors, loop bound and pipelining flag
+		// XXX: this is very confusing. I just simplified from original code but it is still very confusing
+		for(int i = (int) (levelUnrollVec.size() - 1); i >= 0 && 1 == targetLoopLevel; i--) {
+			targetUnrollFactor = levelUnrollVec.at(i);
+			std::string wholeLoopName = appendDepthToLoopName(loopName, i + 1);
+
+			wholeloopName2loopBoundMapTy::iterator found2 = wholeloopName2loopBoundMap.find(wholeLoopName);
+
+			assert(found2 != wholeloopName2loopBoundMap.end() && "Could not find loop in wholeloopName2loopBoundMap");
+
+			targetLoopBound = found2->second;
+
+			if(targetUnrollFactor != targetLoopBound) {
+				targetLoopLevel = i + 1;
+				targetWholeLoopName = wholeLoopName;
+			}
+
+			std::vector<std::string>::iterator found3 = std::find(pipelineLoopLevelVec.begin(), pipelineLoopLevelVec.end(), wholeLoopName);
+			enablePipelining = found3 != pipelineLoopLevelVec.end();
+		}
+
+		VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Target loop: " << targetWholeLoopName << "\n");
+		VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Target unroll factor: " << targetUnrollFactor << "\n");
+		VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Target loop bound: " << targetLoopBound << "\n");
+		VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Pipelining: " << (enablePipelining? "enabled" : "disabled") << "\n");
+
+		unsigned actualUnrollFactor = 1;
+		unsigned recII = 0;
+
+		// Get recurrence-constrained II
+		if(enablePipelining) {
+			actualUnrollFactor = (targetLoopBound < (targetUnrollFactor << 1) && targetLoopBound)? targetLoopBound : (targetUnrollFactor << 1);
+			//DynamicDatapath DD(kernelName, traceFileName, &summaryFile, args.workDir, loopName, targetLoopLevel, actualUnrollFactor, enablePipelining, 0);
+			// TODO: This may be a place to insert a new scheduling?
+			//recII = DD.getASAPII();
+
+			VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Recurrence-constrained II: " << recII << "\n");
+		}
+	}
+
+	VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Summary file closed\n");
+	VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Finished\n");
+
 #ifdef DBG_PRINT_ALL
 	CM.parseToFiles();
 #endif
 
-#if 0
-	VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Summary file closed\n");
-#endif
 #if 0
 	errs() << "DEBUG-INFO: [trace-analysis_loop-based-trace-analysis] Analysis loops' IL and II inside the kernel\n";
 	/// Create Dynamic Data Dependence Graph

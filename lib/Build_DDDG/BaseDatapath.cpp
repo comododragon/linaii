@@ -2002,7 +2002,7 @@ void BaseDatapath::dumpGraph()
 	}
 
   //write_graphviz(out, graph_);
-	write_graphviz(out, graph_, color_writer(graph_, vertexToName, cur_basic_block, funcNamesVec, microop, bbFuncNamePair2lpNameLevelPairMap), edge_color_writer(graph_, edge_to_parid));
+	write_graphviz(out, graph_, ColorWriter(graph_, vertexToName, cur_basic_block, funcNamesVec, microop, bbFuncNamePair2lpNameLevelPairMap), EdgeColorWriter(graph_, edge_to_parid));
 
 	// Display the graph
 	GraphProgram::Name Program = GraphProgram::DOT;

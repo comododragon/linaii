@@ -18,37 +18,36 @@
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #pragma GCC diagnostic ignored "-Wparentheses"
 #endif
-#include <boost/graph/graphviz.hpp>
 #include <boost/config.hpp>
+#include <boost/tokenizer.hpp>
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/graph_traits.hpp>
+#include <boost/graph/graphviz.hpp>
+#include <boost/graph/iteration_macros.hpp>
 #include <boost/graph/properties.hpp>
 #include <boost/graph/topological_sort.hpp>
-#include <boost/graph/iteration_macros.hpp>
-#include <boost/tokenizer.hpp>
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
 #endif
 
-#include <iostream>
-#include <fstream>
+#include <algorithm>
 #include <assert.h>
+#include <fstream>
+#include <iostream>
+#include <list>
+#include <map>
 #include <unordered_map>
 #include <unordered_set>
-#include <algorithm>
-#include <map>
-#include <list>
 #include <set>
 #include <stdint.h>
 
+#include "profile_h/auxiliary.h"
+#include "profile_h/file_func.h"
+#include "profile_h/fpga_resources.h"
+#include "profile_h/generic_func.h"
+#include "profile_h/opcodes.h"
 #include "profile_h/DDDG.h"
 #include "profile_h/Registers.h"
-#include "profile_h/file_func.h"
-#include "profile_h/opcodes.h"
-#include "profile_h/generic_func.h"
-#include "profile_h/auxiliary.h"
-#include "profile_h/color_macros.h"
-#include "profile_h/fpga_resources.h"
 
 //#include "Scratchpad.h"
 
@@ -833,277 +832,35 @@ private:
 	arrayName2memEfficiencyTy arrayName2memeff;
 };
 
-/// Node color writer: to color nodes
-class color_writer{
+class ColorWriter {
+	Graph &graph;
+	VertexNameMap &vertexNameMap;
+	NameVecTy &bbNames;
+	NameVecTy &funcNames;
+	std::vector<int> &opcodes;
+	llvm::bbFuncNamePair2lpNameLevelPairMapTy &bbFuncNamePair2lpNameLevelPairMap;
+
 public:
-	color_writer(Graph& graph_tmp, VertexNameMap& ver2nameMap, NameVecTy& bbNames, NameVecTy& funcNames, std::vector<int>& opcode, llvm::bbFuncNamePair2lpNameLevelPairMapTy& bbFnPair2lpNameLvPairMap)
-		: graph_var(graph_tmp), vertex2nameMap(ver2nameMap), bbNameVec(bbNames), funcNameVec(funcNames), node_opcodes(opcode), bbFnNameP2lpNameLevelPMap(bbFnPair2lpNameLvPairMap) {}
-	template <class VertexOrEdge>
-	void operator()(std::ostream& out, const VertexOrEdge& v) const {
+	ColorWriter(
+		Graph &graph,
+		VertexNameMap &vertexNameMap,
+		NameVecTy &bbNames,
+		NameVecTy &funcNames,
+		std::vector<int> &opcodes,
+		llvm::bbFuncNamePair2lpNameLevelPairMapTy &bbFuncNamePair2lpNameLevelPairMap
+	);
 
-		unsigned node_id = vertex2nameMap[v];
-		assert((bbNameVec.size()>node_id) && "Error: Size of bbNameVec is less than node_id!\n");
-		std::string bb_name = bbNameVec.at(node_id);
-		assert((funcNameVec.size()>node_id) && "Error: Size of bbNameVec is less than node_id!\n");
-		std::string func_name = funcNameVec.at(node_id);
-		llvm::bbFuncNamePairTy bb_func_pair = std::make_pair(bb_name, func_name);
-		//assert((bbFnNameP2lpNameLevelPMap.find(bb_func_pair) != bbFnNameP2lpNameLevelPMap.end()) && "Error: No instance inside bbFnNameP2lpNameLevelPMap!\n");
-		/// Only consider basic blocks inside loops
-		if (bbFnNameP2lpNameLevelPMap.find(bb_func_pair) != bbFnNameP2lpNameLevelPMap.end()) {
-			std::string loop_name = bbFnNameP2lpNameLevelPMap[bb_func_pair].first;
-			std::size_t pos = loop_name.find("-");
-			std::string sub_str = loop_name.substr(pos + 1);
-			unsigned ith_loop = (unsigned)std::stoi(sub_str);
-			assert((node_opcodes.size()>node_id) && "Error: Size of node_opcodes is less than node_id!\n");
-			if (isBranchOp(node_opcodes.at(node_id))) {
-				switch ((Color_enum)ith_loop) {
-				case RED: out << "[style=filled color=red label=\"{" << node_id << " | br}\"]";							break;
-				case GREEN: out << "[style=filled color=green label=\"{" << node_id << " | br}\"]";					break;
-				case BLUE: out << "[style=filled color=blue label=\"{" << node_id << " | br}\"]";						break;
-				case CYAN: out << "[style=filled color=cyan label=\"{" << node_id << " | br}\"]";						break;
-				case GOLD: out << "[style=filled color=gold label=\"{" << node_id << " | br}\"]";						break;
-				case HOTPINK: out << "[style=filled color=hotpink label=\"{" << node_id << " | br}\"]";			break;
-				case NAVY: out << "[style=filled color=navy label=\"{" << node_id << " | br}\"]";						break;
-				case ORANGE: out << "[style=filled color=orange label=\"{" << node_id << " | br}\"]";				break;
-				case OLIVEDRAB: out << "[style=filled color=olivedrab label=\"{" << node_id << " | br}\"]";	break;
-				case MAGENTA: out << "[style=filled color=magenta label=\"{" << node_id << " | br}\"]";			break;
-				default: out << "[style=filled color=black label=\"{" << node_id << " | br}\"]";							break;
-				}
-			}
-			else if (isLoadOp(node_opcodes.at(node_id))) {
-				switch ((Color_enum)ith_loop) {
-				case RED: out << "[shape=polygon sides=5 peripheries=2 color=red label=\"{" << node_id << " | ld}\"]";							break;
-				case GREEN: out << "[shape=polygon sides=5 peripheries=2 color=green label=\"{" << node_id << " | ld}\"]";					break;
-				case BLUE: out << "[shape=polygon sides=5 peripheries=2 color=blue label=\"{" << node_id << " | ld}\"]";						break;
-				case CYAN: out << "[shape=polygon sides=5 peripheries=2 color=cyan label=\"{" << node_id << " | ld}\"]";						break;
-				case GOLD: out << "[shape=polygon sides=5 peripheries=2 color=gold label=\"{" << node_id << " | ld}\"]";						break;
-				case HOTPINK: out << "[shape=polygon sides=5 peripheries=2 color=hotpink label=\"{" << node_id << " | ld}\"]";			break;
-				case NAVY: out << "[shape=polygon sides=5 peripheries=2 color=navy label=\"{" << node_id << " | ld}\"]";						break;
-				case ORANGE: out << "[shape=polygon sides=5 peripheries=2 color=orange label=\"{" << node_id << " | ld}\"]";				break;
-				case OLIVEDRAB: out << "[shape=polygon sides=5 peripheries=2 color=olivedrab label=\"{" << node_id << " | ld}\"]";	break;
-				case MAGENTA: out << "[shape=polygon sides=5 peripheries=2 color=magenta label=\"{" << node_id << " | ld}\"]";			break;
-				default: out << "[shape=polygon sides=5 peripheries=2 color=black label=\"{" << node_id << " | ld}\"]";						break;
-				}
-			}
-			else if (isStoreOp(node_opcodes.at(node_id))) {
-				switch ((Color_enum)ith_loop) {
-				case RED: out << "[shape=polygon sides=4 peripheries=2 color=red label=\"{" << node_id << " | st}\"]";							break;
-				case GREEN: out << "[shape=polygon sides=4 peripheries=2 color=green label=\"{" << node_id << " | st}\"]";					break;
-				case BLUE: out << "[shape=polygon sides=4 peripheries=2 color=blue label=\"{" << node_id << " | st}\"]";						break;
-				case CYAN: out << "[shape=polygon sides=4 peripheries=2 color=cyan label=\"{" << node_id << " | st}\"]";						break;
-				case GOLD: out << "[shape=polygon sides=4 peripheries=2 color=gold label=\"{" << node_id << " | st}\"]";						break;
-				case HOTPINK: out << "[shape=polygon sides=4 peripheries=2 color=hotpink label=\"{" << node_id << " | st}\"]";			break;
-				case NAVY: out << "[shape=polygon sides=4 peripheries=2 color=navy label=\"{" << node_id << " | st}\"]";						break;
-				case ORANGE: out << "[shape=polygon sides=4 peripheries=2 color=orange label=\"{" << node_id << " | st}\"]";				break;
-				case OLIVEDRAB: out << "[shape=polygon sides=4 peripheries=2 color=olivedrab label=\"{" << node_id << " | st}\"]";	break;
-				case MAGENTA: out << "[shape=polygon sides=4 peripheries=2 color=magenta label=\"{" << node_id << " | st}\"]";			break;
-				default: out << "[shape=polygon sides=4 peripheries=2 color=black label=\"{" << node_id << " | st}\"]";						break;
-				}
-			}
-			else if (isAddOp(node_opcodes.at(node_id))) {
-				switch ((Color_enum)ith_loop) {
-				case RED: out << "[color=red label=\"{" << node_id << " | add}\"]";							break;
-				case GREEN: out << "[color=green label=\"{" << node_id << " | add}\"]";					break;
-				case BLUE: out << "[color=blue label=\"{" << node_id << " | add}\"]";						break;
-				case CYAN: out << "[color=cyan label=\"{" << node_id << " | add}\"]";						break;
-				case GOLD: out << "[color=gold label=\"{" << node_id << " | add}\"]";						break;
-				case HOTPINK: out << "[color=hotpink label=\"{" << node_id << " | add}\"]";			break;
-				case NAVY: out << "[color=navy label=\"{" << node_id << " | add}\"]";						break;
-				case ORANGE: out << "[color=orange label=\"{" << node_id << " | add}\"]";				break;
-				case OLIVEDRAB: out << "[color=olivedrab label=\"{" << node_id << " | add}\"]"; break;
-				case MAGENTA: out << "[color=magenta label=\"{" << node_id << " | add}\"]";			break;
-				default: out << "[color=black label=\"{" << node_id << " | add}\"]";						break;
-				}
-			}
-			else if (isMulOp(node_opcodes.at(node_id))) {
-				switch ((Color_enum)ith_loop) {
-				case RED: out << "[color=red label=\"{" << node_id << " | mul}\"]";							break;
-				case GREEN: out << "[color=green label=\"{" << node_id << " | mul}\"]";					break;
-				case BLUE: out << "[color=blue label=\"{" << node_id << " | mul}\"]";						break;
-				case CYAN: out << "[color=cyan label=\"{" << node_id << " | mul}\"]";						break;
-				case GOLD: out << "[color=gold label=\"{" << node_id << " | mul}\"]";						break;
-				case HOTPINK: out << "[color=hotpink label=\"{" << node_id << " | mul}\"]";			break;
-				case NAVY: out << "[color=navy label=\"{" << node_id << " | mul}\"]";						break;
-				case ORANGE: out << "[color=orange label=\"{" << node_id << " | mul}\"]";				break;
-				case OLIVEDRAB: out << "[color=olivedrab label=\"{" << node_id << " | mul}\"]"; break;
-				case MAGENTA: out << "[color=magenta label=\"{" << node_id << " | mul}\"]";			break;
-				default: out << "[color=black label=\"{" << node_id << " | mul}\"]";						break;
-				}
-			}
-			else if (isIndexOp(node_opcodes.at(node_id))) {
-				switch ((Color_enum)ith_loop) {
-				case RED: out << "[color=red label=\"{" << node_id << " | index}\"]";							break;
-				case GREEN: out << "[color=green label=\"{" << node_id << " | index}\"]";					break;
-				case BLUE: out << "[color=blue label=\"{" << node_id << " | index}\"]";						break;
-				case CYAN: out << "[color=cyan label=\"{" << node_id << " | index}\"]";						break;
-				case GOLD: out << "[color=gold label=\"{" << node_id << " | index}\"]";						break;
-				case HOTPINK: out << "[color=hotpink label=\"{" << node_id << " | index}\"]";			break;
-				case NAVY: out << "[color=navy label=\"{" << node_id << " | index}\"]";						break;
-				case ORANGE: out << "[color=orange label=\"{" << node_id << " | index}\"]";				break;
-				case OLIVEDRAB: out << "[color=olivedrab label=\"{" << node_id << " | index}\"]"; break;
-				case MAGENTA: out << "[color=magenta label=\"{" << node_id << " | index}\"]";			break;
-				default: out << "[color=black label=\"{" << node_id << " | index}\"]";						break;
-				}
-			}
-			else if (isFloatOp(node_opcodes.at(node_id))) {
-				if (isFAddOp(node_opcodes.at(node_id))) {
-					switch ((Color_enum)ith_loop) {
-					case RED: out << "[shape=diamond color=red label=\"{" << node_id << " | fadd}\"]";							break;
-					case GREEN: out << "[shape=diamond color=green label=\"{" << node_id << " | fadd}\"]";					break;
-					case BLUE: out << "[shape=diamond color=blue label=\"{" << node_id << " | fadd}\"]";						break;
-					case CYAN: out << "[shape=diamond color=cyan label=\"{" << node_id << " | fadd}\"]";						break;
-					case GOLD: out << "[shape=diamond color=gold label=\"{" << node_id << " | fadd}\"]";						break;
-					case HOTPINK: out << "[shape=diamond color=hotpink label=\"{" << node_id << " | fadd}\"]";			break;
-					case NAVY: out << "[shape=diamond color=navy label=\"{" << node_id << " | fadd}\"]";						break;
-					case ORANGE: out << "[shape=diamond color=orange label=\"{" << node_id << " | fadd}\"]";				break;
-					case OLIVEDRAB: out << "[shape=diamond color=olivedrab label=\"{" << node_id << " | fadd}\"]";	break;
-					case MAGENTA: out << "[shape=diamond color=magenta label=\"{" << node_id << " | fadd}\"]";			break;
-					default: out << "[shape=diamond color=black label=\"{" << node_id << " | fadd}\"]";							break;
-					}
-				}
-
-				if (isFSubOp(node_opcodes.at(node_id))) {
-					switch ((Color_enum)ith_loop) {
-					case RED: out << "[shape=diamond color=red label=\"{" << node_id << " | fsub}\"]";							break;
-					case GREEN: out << "[shape=diamond color=green label=\"{" << node_id << " | fsub}\"]";					break;
-					case BLUE: out << "[shape=diamond color=blue label=\"{" << node_id << " | fsub}\"]";						break;
-					case CYAN: out << "[shape=diamond color=cyan label=\"{" << node_id << " | fsub}\"]";						break;
-					case GOLD: out << "[shape=diamond color=gold label=\"{" << node_id << " | fsub}\"]";						break;
-					case HOTPINK: out << "[shape=diamond color=hotpink label=\"{" << node_id << " | fsub}\"]";			break;
-					case NAVY: out << "[shape=diamond color=navy label=\"{" << node_id << " | fsub}\"]";						break;
-					case ORANGE: out << "[shape=diamond color=orange label=\"{" << node_id << " | fsub}\"]";				break;
-					case OLIVEDRAB: out << "[shape=diamond color=olivedrab label=\"{" << node_id << " | fsub}\"]";	break;
-					case MAGENTA: out << "[shape=diamond color=magenta label=\"{" << node_id << " | fsub}\"]";			break;
-					default: out << "[shape=diamond color=black label=\"{" << node_id << " | fsub}\"]";							break;
-					}
-				}
-
-				if (isFMulOp(node_opcodes.at(node_id))) {
-					switch ((Color_enum)ith_loop) {
-					case RED: out << "[shape=diamond color=red label=\"{" << node_id << " | fmul}\"]";							break;
-					case GREEN: out << "[shape=diamond color=green label=\"{" << node_id << " | fmul}\"]";					break;
-					case BLUE: out << "[shape=diamond color=blue label=\"{" << node_id << " | fmul}\"]";						break;
-					case CYAN: out << "[shape=diamond color=cyan label=\"{" << node_id << " | fmul}\"]";						break;
-					case GOLD: out << "[shape=diamond color=gold label=\"{" << node_id << " | fmul}\"]";						break;
-					case HOTPINK: out << "[shape=diamond color=hotpink label=\"{" << node_id << " | fmul}\"]";			break;
-					case NAVY: out << "[shape=diamond color=navy label=\"{" << node_id << " | fmul}\"]";						break;
-					case ORANGE: out << "[shape=diamond color=orange label=\"{" << node_id << " | fmul}\"]";				break;
-					case OLIVEDRAB: out << "[shape=diamond color=olivedrab label=\"{" << node_id << " | fmul}\"]";	break;
-					case MAGENTA: out << "[shape=diamond color=magenta label=\"{" << node_id << " | fmul}\"]";			break;
-					default: out << "[shape=diamond color=black label=\"{" << node_id << " | fmul}\"]";							break;
-					}
-				}
-
-				if (isFDivOp(node_opcodes.at(node_id))) {
-					switch ((Color_enum)ith_loop) {
-					case RED: out << "[shape=diamond color=red label=\"{" << node_id << " | fdiv}\"]";							break;
-					case GREEN: out << "[shape=diamond color=green label=\"{" << node_id << " | fdiv}\"]";					break;
-					case BLUE: out << "[shape=diamond color=blue label=\"{" << node_id << " | fdiv}\"]";						break;
-					case CYAN: out << "[shape=diamond color=cyan label=\"{" << node_id << " | fdiv}\"]";						break;
-					case GOLD: out << "[shape=diamond color=gold label=\"{" << node_id << " | fdiv}\"]";						break;
-					case HOTPINK: out << "[shape=diamond color=hotpink label=\"{" << node_id << " | fdiv}\"]";			break;
-					case NAVY: out << "[shape=diamond color=navy label=\"{" << node_id << " | fdiv}\"]";						break;
-					case ORANGE: out << "[shape=diamond color=orange label=\"{" << node_id << " | fdiv}\"]";				break;
-					case OLIVEDRAB: out << "[shape=diamond color=olivedrab label=\"{" << node_id << " | fdiv}\"]";	break;
-					case MAGENTA: out << "[shape=diamond color=magenta label=\"{" << node_id << " | fdiv}\"]";			break;
-					default: out << "[shape=diamond color=black label=\"{" << node_id << " | fdiv}\"]";							break;
-					}
-				}
-
-				if (isFCmpOp(node_opcodes.at(node_id))) {
-					switch ((Color_enum)ith_loop) {
-					case RED: out << "[shape=diamond color=red label=\"{" << node_id << " | fcmp}\"]";							break;
-					case GREEN: out << "[shape=diamond color=green label=\"{" << node_id << " | fcmp}\"]";					break;
-					case BLUE: out << "[shape=diamond color=blue label=\"{" << node_id << " | fcmp}\"]";						break;
-					case CYAN: out << "[shape=diamond color=cyan label=\"{" << node_id << " | fcmp}\"]";						break;
-					case GOLD: out << "[shape=diamond color=gold label=\"{" << node_id << " | fcmp}\"]";						break;
-					case HOTPINK: out << "[shape=diamond color=hotpink label=\"{" << node_id << " | fcmp}\"]";			break;
-					case NAVY: out << "[shape=diamond color=navy label=\"{" << node_id << " | fcmp}\"]";						break;
-					case ORANGE: out << "[shape=diamond color=orange label=\"{" << node_id << " | fcmp}\"]";				break;
-					case OLIVEDRAB: out << "[shape=diamond color=olivedrab label=\"{" << node_id << " | fcmp}\"]";	break;
-					case MAGENTA: out << "[shape=diamond color=magenta label=\"{" << node_id << " | fcmp}\"]";			break;
-					default: out << "[shape=diamond color=black label=\"{" << node_id << " | fcmp}\"]";							break;
-					}
-				}
-			}
-			else if (isPhiOp(node_opcodes.at(node_id))) {
-				out << "[shape=polygon sides=4 style=filled color=gold label=\"{" << node_id << " | phi}\"]";
-			}
-			else if (isBitOp(node_opcodes.at(node_id))) {
-				switch ((Color_enum)ith_loop) {
-				case RED: out << "[color=red label=\"{" << node_id << " | bit}\"]";							break;
-				case GREEN: out << "[color=green label=\"{" << node_id << " | bit}\"]";					break;
-				case BLUE: out << "[color=blue label=\"{" << node_id << " | bit}\"]";						break;
-				case CYAN: out << "[color=cyan label=\"{" << node_id << " | bit}\"]";						break;
-				case GOLD: out << "[color=gold label=\"{" << node_id << " | bit}\"]";						break;
-				case HOTPINK: out << "[color=hotpink label=\"{" << node_id << " | bit}\"]";			break;
-				case NAVY: out << "[color=navy label=\"{" << node_id << " | bit}\"]";						break;
-				case ORANGE: out << "[color=orange label=\"{" << node_id << " | bit}\"]";				break;
-				case OLIVEDRAB: out << "[color=olivedrab label=\"{" << node_id << " | bit}\"]"; break;
-				case MAGENTA: out << "[color=magenta label=\"{" << node_id << " | bit}\"]";			break;
-				default: out << "[color=black label=\"{" << node_id << " | bit}\"]";						break;
-				}
-			}
-			else if (isCallOp(node_opcodes.at(node_id))) {
-				switch ((Color_enum)ith_loop) {
-				case RED: out << "[color=red label=\"{" << node_id << " | call}\"]";							break;
-				case GREEN: out << "[color=green label=\"{" << node_id << " | call}\"]";					break;
-				case BLUE: out << "[color=blue label=\"{" << node_id << " | call}\"]";						break;
-				case CYAN: out << "[color=cyan label=\"{" << node_id << " | call}\"]";						break;
-				case GOLD: out << "[color=gold label=\"{" << node_id << " | call}\"]";						break;
-				case HOTPINK: out << "[color=hotpink label=\"{" << node_id << " | call}\"]";			break;
-				case NAVY: out << "[color=navy label=\"{" << node_id << " | call}\"]";						break;
-				case ORANGE: out << "[color=orange label=\"{" << node_id << " | call}\"]";				break;
-				case OLIVEDRAB: out << "[color=olivedrab label=\"{" << node_id << " | call}\"]"; break;
-				case MAGENTA: out << "[color=magenta label=\"{" << node_id << " | call}\"]";			break;
-				default: out << "[color=black label=\"{" << node_id << " | call}\"]";						break;
-				}
-			}
-			else {
-				switch ((Color_enum)ith_loop) {
-				case RED: out << "[color=red]";							break;
-				case GREEN: out << "[color=green]";					break;
-				case BLUE: out << "[color=blue]";						break;
-				case CYAN: out << "[color=cyan]";						break;
-				case GOLD: out << "[color=gold]";						break;
-				case HOTPINK: out << "[color=hotpink]";			break;
-				case NAVY: out << "[color=navy]";						break;
-				case ORANGE: out << "[color=orange]";				break;
-				case OLIVEDRAB: out << "[color=olivedrab]"; break;
-				case MAGENTA: out << "[color=magenta]";			break;
-				default: out << "[color=black]";						break;
-				}
-			}
-		}
-
-	}
-private:
-	Graph& graph_var;
-	VertexNameMap& vertex2nameMap;
-	NameVecTy& bbNameVec;
-	NameVecTy& funcNameVec;
-	std::vector<int>& node_opcodes;
-	llvm::bbFuncNamePair2lpNameLevelPairMapTy& bbFnNameP2lpNameLevelPMap;
+	template <class VE> void operator()(std::ostream &out, const VE &v) const;
 };
 
-/// Edge color writer: to color edges
-class edge_color_writer{
+class EdgeColorWriter {
+	Graph &graph;
+	EdgeWeightMap &edgeWeightMap;
+
 public:
-	edge_color_writer(Graph& graph_tmp, EdgeWeightMap& edge2weight)
-		: graph_var(graph_tmp), edge2weightMap(edge2weight) {}
-	template <class VertexOrEdge>
-	void operator()(std::ostream& out, const VertexOrEdge& e) const {
-		unsigned weight = edge2weightMap[e];
-		if ( weight == CONTROL_EDGE) {
-				out << "[color=red label=" << weight << "]";
-		}
-		else {
-			out << "[color=black label=" << weight << "]";
-		}
-	}
-private:
-	Graph& graph_var;
-	EdgeWeightMap& edge2weightMap;
+	EdgeColorWriter(Graph &graph, EdgeWeightMap &edgeWeightMap);
+
+	template<class VE> void operator()(std::ostream &out, const VE &e) const;
 };
 
 void dump_summary(ofstream& summary_file, loopInfoTy loop_info, resourceTy fpga_rs, sharedMemTy sharedMem, arrayName2memEfficiencyTy& Memefficiency, std::vector<std::string>& limited_op_types, subTraceInstTy& sub_traceInst, float aveParallelism, arrayName2maxMemOpNumTy& arrayN2maxMemOpNum, arrayName2MemBankStatisTy arrayN2aveLdPerBank, arrayName2MemBankStatisTy arrayN2aveStPerBank);

@@ -48,6 +48,7 @@ const std::string helpMessage =
 	"                                           ZC702: Xilinx Zynq-7000 SoC (DEFAULT)\n"
 	"                                           VC707: Xilinx Virtex-7 FPGA\n"
 	"        -v       , --verbose         : be verbose, print a lot of information\n"
+	"        -x       , --compressed      : use compressed files to reduce memory footprint\n"
 	"        -l LOOPS , --loops=LOOPS     : specify loops to be analysed comma-separated (e.g.\n"
 	"                                       --loops=2,3 only analyse loops 2 and 3)\n"
 	"                   --mem-trace       : obtain memory trace for access pattern analysis.\n"
@@ -153,6 +154,7 @@ void parseInputArguments(int argc, char **argv) {
 	args.configFileName = "config.cfg";
 	args.mode = args.MODE_TRACE_AND_ESTIMATE;
 	args.target = args.TARGET_XILINX_ZC702;
+	args.compressed = false;
 	args.verbose = false;
 	args.memTrace = false;
 	args.showCFG = false;
@@ -201,7 +203,7 @@ void parseInputArguments(int argc, char **argv) {
 		};
 		int optionIndex = 0;
 
-		c = getopt_long(argc, argv, "+hi:o:c:m:t:vl:", longOptions, &optionIndex);
+		c = getopt_long(argc, argv, "+hi:o:c:m:t:vxl:", longOptions, &optionIndex);
 		if(-1 == c)
 			break;
 
@@ -233,6 +235,9 @@ void parseInputArguments(int argc, char **argv) {
 				break;
 			case 'v':
 				args.verbose = true;
+				break;
+			case 'x':
+				args.compressed = true;
 				break;
 			case 'l':
 				optargStr = optarg;

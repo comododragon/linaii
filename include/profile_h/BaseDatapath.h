@@ -41,15 +41,22 @@
 #include <set>
 #include <stdint.h>
 
+// TODO: ENABLE THOSE HEADERS ON DEMAND
+// TODO: ENABLE THOSE HEADERS ON DEMAND
+// TODO: ENABLE THOSE HEADERS ON DEMAND
+// TODO: ENABLE THOSE HEADERS ON DEMAND
+// TODO: ENABLE THOSE HEADERS ON DEMAND
+// TODO: ENABLE THOSE HEADERS ON DEMAND
+// TODO: ENABLE THOSE HEADERS ON DEMAND
 #include "profile_h/auxiliary.h"
-#include "profile_h/file_func.h"
-#include "profile_h/fpga_resources.h"
-#include "profile_h/generic_func.h"
+//#include "profile_h/file_func.h"
+//#include "profile_h/fpga_resources.h"
+//#include "profile_h/generic_func.h"
 #include "profile_h/opcodes.h"
-#include "profile_h/DDDG.h"
-#include "profile_h/Registers.h"
+#include "profile_h/DDDGBuilder.h"
+//#include "profile_h/Registers.h"
 
-//#include "Scratchpad.h"
+using namespace llvm;
 
 #define CONTROL_EDGE 200
 #define PIPE_EDGE 201
@@ -68,37 +75,29 @@
 // of BaseDatapath.cpp
 #define CHECK_INST_IN_EACH_LEVEL
 
-//#define __BEGIN__ 7
-//#define __END__ 57
-//#define __END__ 108
-//#define __END__ 414
-//#define __END__ 822
-
-using namespace std;
-typedef boost::property < boost::vertex_index_t, unsigned> VertexProperty;
-typedef boost::property < boost::edge_weight_t, uint8_t> EdgeProperty;
-typedef boost::adjacency_list < boost::listS, boost::vecS, boost::bidirectionalS, VertexProperty, EdgeProperty> Graph;
+typedef boost::property<boost::vertex_index_t, unsigned> VertexProperty;
+typedef boost::property<boost::edge_weight_t, uint8_t> EdgeProperty;
+typedef boost::adjacency_list<boost::listS, boost::vecS, boost::bidirectionalS, VertexProperty, EdgeProperty> Graph;
 typedef boost::graph_traits<Graph>::vertex_descriptor Vertex;
 typedef boost::graph_traits<Graph>::edge_descriptor Edge;
-typedef boost::graph_traits<Graph>::vertex_iterator vertex_iter;
-typedef boost::graph_traits<Graph>::edge_iterator edge_iter;
-typedef boost::graph_traits<Graph>::in_edge_iterator in_edge_iter;
-typedef boost::graph_traits<Graph>::out_edge_iterator out_edge_iter;
+typedef boost::graph_traits<Graph>::vertex_iterator VertexIterator;
+typedef boost::graph_traits<Graph>::edge_iterator EdgeIterator;
+typedef boost::graph_traits<Graph>::in_edge_iterator InEdgeIterator;
+typedef boost::graph_traits<Graph>::out_edge_iterator OutEdgeIterator;
 typedef boost::property_map<Graph, boost::edge_weight_t>::type EdgeWeightMap;
 typedef boost::property_map<Graph, boost::vertex_index_t>::type VertexNameMap;
 
-typedef boost::graph_traits<Graph>::in_edge_iterator in_edge_itr_ty;
-typedef boost::graph_traits<Graph>::out_edge_iterator out_edge_itr_ty;
-
 typedef std::vector<std::string> NameVecTy;
 
-// Used heavily in reporting cycle-level statistics.
-typedef std::unordered_map< std::string, std::vector<int> > activity_map;
-typedef std::unordered_map< std::string, int> max_activity_map;
-
-typedef std::unordered_map<std::string, unsigned> instID2TimestampMapTy;
 typedef std::unordered_map<std::string, unsigned> staticInstID2OpcodeMapTy;
 extern staticInstID2OpcodeMapTy staticInstID2OpcodeMap;
+
+#if 0
+// Used heavily in reporting cycle-level statistics.
+typedef std::unordered_map<std::string, std::vector<int>> ActivityMap;
+typedef std::unordered_map<std::string, int> MaxActivityMap;
+
+typedef std::unordered_map<std::string, unsigned> instID2TimestampMapTy;
 
 // Instruction ID (string type) --> Vertices List Map
 typedef std::unordered_map<std::string, std::list<Vertex> > staticInstID2VertexListMapTy;
@@ -391,13 +390,43 @@ private:
 	unsigned readPt_num_perBram;
 	unsigned writePt_num_perBram;
 };
+#endif
 
-class BaseDatapath
-{
+class BaseDatapath {
+	std::string kernelName;
+	ConfigurationManager &CM;
+	std::ostream *summaryFile;
+	std::string loopName;
+	unsigned loopLevel;
+	uint64_t loopUnrollFactor;
+	DDDGBuilder *builder;
+	ParsedTraceContainer *container;
+
 public:
-	BaseDatapath(std::string bench, string trace_file, string config_file, ofstream *summary_file, string input_path, std::string target_loop, unsigned lp_level, unsigned target_unroll_factor, unsigned IL_asap);
-  virtual ~BaseDatapath();
+	BaseDatapath(
+		std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
+		std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
+		uint64_t asapII
+	);
 
+	~BaseDatapath();
+
+	std::string getTargetLoopName() const;
+	unsigned getTargetLoopLevel() const;
+	uint64_t getTargetLoopUnrollFactor() const;
+
+protected:
+	uint64_t asapII;
+	uint64_t numCycles;
+
+	void initBaseAddress();
+
+	uint64_t fpgaEstimation();
+	uint64_t fpgaEstimationOneMoreSubtraceForRecIICalculation();
+
+	void dumpGraph();
+
+#if 0
   //Change graph.
   void addDddgEdge(unsigned int from, unsigned int to, uint8_t parid);
 	void insertMicroop(int node_microop);
@@ -830,6 +859,7 @@ private:
 	float ave_parallelism;
 
 	arrayName2memEfficiencyTy arrayName2memeff;
+#endif
 };
 
 class ColorWriter {
@@ -863,6 +893,8 @@ public:
 	template<class VE> void operator()(std::ostream &out, const VE &e) const;
 };
 
+#if 0
 void dump_summary(ofstream& summary_file, loopInfoTy loop_info, resourceTy fpga_rs, sharedMemTy sharedMem, arrayName2memEfficiencyTy& Memefficiency, std::vector<std::string>& limited_op_types, subTraceInstTy& sub_traceInst, float aveParallelism, arrayName2maxMemOpNumTy& arrayN2maxMemOpNum, arrayName2MemBankStatisTy arrayN2aveLdPerBank, arrayName2MemBankStatisTy arrayN2aveStPerBank);
+#endif
 
 #endif // End of __BASE_DATAPATH__

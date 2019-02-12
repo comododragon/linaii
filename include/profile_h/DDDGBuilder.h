@@ -1,22 +1,46 @@
-#ifndef __DDDG_H__
-#define __DDDG_H__
+#ifndef __DDDGBUILDER_H__
+#define __DDDGBUILDER_H__
 
-#include <stack>
-#include <string>
-#include <zlib.h>
-#include <stdlib.h>
-#include <stdint.h>
-#include <cstdlib>
-#include <set>
-#include <map>
 #include <fstream>
+#include <map>
+#include <set>
+#include <stack>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string>
+#include <unordered_map>
+#include <zlib.h>
 
-#include "profile_h/file_func.h"
-#include "profile_h/opcodes.h"
 #include "profile_h/auxiliary.h"
-/*#define HANDLE_INST(num, opc, clas) case num: return opc;*/
-using namespace std;
+//#include "profile_h/file_func.h"
+#include "profile_h/opcodes.h"
 
+typedef std::unordered_map<std::string, std::string> instName2bbNameMapTy;
+extern instName2bbNameMapTy instName2bbNameMap;
+
+typedef std::map<std::pair<std::string, std::string>, std::string> headerBBFuncNamePair2lastInstMapTy;
+extern headerBBFuncNamePair2lastInstMapTy headerBBFuncNamePair2lastInstMap;
+extern headerBBFuncNamePair2lastInstMapTy exitingBBFuncNamePair2lastInstMap;
+
+typedef std::pair<std::string, std::string> lpNameLevelStrPairTy;
+typedef std::map<lpNameLevelStrPairTy, std::string> lpNameLevelPair2headBBnameMapTy;
+extern lpNameLevelPair2headBBnameMapTy lpNameLevelPair2headBBnameMap;
+extern lpNameLevelPair2headBBnameMapTy lpNameLevelPair2exitingBBnameMap;
+
+typedef std::map<std::string, std::vector<unsigned> > loopName2levelUnrollVecMapTy;
+extern loopName2levelUnrollVecMapTy loopName2levelUnrollVecMap;
+
+typedef std::map<std::pair<std::string, std::string>, unsigned> funcBBNmPair2numInstInBBMapTy;
+extern funcBBNmPair2numInstInBBMapTy funcBBNmPair2numInstInBBMap;
+
+typedef std::map<std::string, bool> wholeloopName2perfectOrNotMapTy;
+extern wholeloopName2perfectOrNotMapTy wholeloopName2perfectOrNotMap;
+
+typedef std::pair<uint64_t, uint64_t> lineFromToTy;
+
+typedef std::map<std::string, std::pair<std::string, unsigned> > headerBBlastInst2loopNameLevelPairMapTy;
+
+#if 0
 struct edge_node_info{
   unsigned sink_node;
   int par_id;
@@ -26,25 +50,9 @@ struct edge_node_info{
 typedef unordered_map<std::string, unsigned int> string_to_uint;
 typedef unordered_map<long long int, unsigned int> uint_to_uint;
 typedef unordered_multimap<unsigned int, edge_node_info> multi_uint_to_node_info;
-typedef std::unordered_map<std::string, std::string> instName2bbNameMapTy;
-typedef std::map<std::pair<std::string, std::string>, std::string> headerBBFuncNamePair2lastInstMapTy;
-typedef std::pair<std::string, std::string> lpNameLevelStrPairTy;
-typedef std::map<lpNameLevelStrPairTy, std::string> lpNameLevelPair2headBBnameMapTy;
 /// (Function Name, Basic Block Name) --> number of instructions in a BB Map
-typedef std::map<std::pair<std::string, std::string>, unsigned> funcBBNmPair2numInstInBBMapTy;
 //typedef std::map<std::string, std::vector<uint64_t> > loopName2levelLpBoundVecMapTy;
-typedef std::map<std::string, std::vector<unsigned> > loopName2levelUnrollVecMapTy;
-typedef std::map<std::string, std::pair<std::string, unsigned> > headerBBlastInst2loopNameLevelPairMapTy;
-typedef std::map<std::string, bool> wholeloopName2perfectOrNotMapTy;
 
-extern instName2bbNameMapTy instName2bbNameMap;
-extern headerBBFuncNamePair2lastInstMapTy headerBBFuncNamePair2lastInstMap;
-extern headerBBFuncNamePair2lastInstMapTy exitingBBFuncNamePair2lastInstMap;
-extern lpNameLevelPair2headBBnameMapTy lpNameLevelPair2headBBnameMap;
-extern lpNameLevelPair2headBBnameMapTy lpNameLevelPair2exitingBBnameMap;
-extern funcBBNmPair2numInstInBBMapTy funcBBNmPair2numInstInBBMap;
-extern loopName2levelUnrollVecMapTy loopName2levelUnrollVecMap;
-extern wholeloopName2perfectOrNotMapTy wholeloopName2perfectOrNotMap;
 //extern loopName2levelLpBoundVecMapTy loopName2levelLpBoundVecMap;
 
 namespace llvm {
@@ -52,12 +60,30 @@ namespace llvm {
 }
 
 typedef std::pair<uint64_t, uint64_t> line_from_to_Ty;
+#endif
 
 class BaseDatapath;
 
-class DDDG
-{
+class ParsedTraceContainer {
+};
 
+class DDDGBuilder {
+	BaseDatapath *datapath;
+	int numRegDeps;
+	int numMemDeps;
+	int numInstructions;
+	bool lastParameter;
+	std::string prevBBBlock;
+
+	lineFromToTy getTraceLineFromTo(gzFile &traceFile);
+
+public:
+	DDDGBuilder(BaseDatapath *datapath);
+
+	bool buildInitialDDDG();
+	ParsedTraceContainer *getParsedTraceContainer();
+
+#if 0
 private:
   BaseDatapath *datapath;
 	std::string inputPath;
@@ -120,6 +146,7 @@ private:
   string_to_uint register_last_written;
 	uint_to_uint address_last_written;
 	//loopName2levelLpBoundVecMapTy loopName2levelLpBoundVecMap;
+#endif
 };
 
 #endif

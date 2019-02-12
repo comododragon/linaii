@@ -181,7 +181,7 @@ void Injector::injectTraceHeader(BasicBlock::iterator it, int lineNo, std::strin
 	staticInstID2OpcodeMap.insert(std::make_pair(instID, opcode));
 	instName2bbNameMap.insert(std::make_pair(instID, bbID));
 
-	// This instruction is a branch
+	// This instruction is a branch. If this is a loop header BB or exiting BB, save its ID as the last inst of this BB
 	if(LLVM_IR_Br == (unsigned) opcode) {
 		bbFuncNamePairTy bbFnName = std::make_pair(bbID, funcID);
 		bbFuncNamePair2lpNameLevelPairMapTy::iterator itHeader = headerBBFuncnamePair2lpNameLevelPairMap.find(bbFnName);
@@ -878,9 +878,9 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 		// Get recurrence-constrained II
 		if(enablePipelining) {
 			actualUnrollFactor = (targetLoopBound < (targetUnrollFactor << 1) && targetLoopBound)? targetLoopBound : (targetUnrollFactor << 1);
-			//DynamicDatapath DD(kernelName, traceFileName, &summaryFile, args.workDir, loopName, targetLoopLevel, actualUnrollFactor, enablePipelining, 0);
+			DynamicDatapath DD(kernelName, CM, &summaryFile, loopName, targetLoopLevel, actualUnrollFactor);
 			// TODO: This may be a place to insert a new scheduling?
-			//recII = DD.getASAPII();
+			recII = DD.getASAPII();
 
 			VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Recurrence-constrained II: " << recII << "\n");
 		}

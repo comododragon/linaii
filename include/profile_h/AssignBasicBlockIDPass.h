@@ -10,7 +10,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Scalar.h"
 
-#include "profile_h/DDDG.h"
+#include "profile_h/DDDGBuilder.h"
 #include "profile_h/Passes.h"
 #include "profile_h/auxiliary.h"
 

@@ -40,16 +40,29 @@ std::string appendDepthToLoopName(std::string loopName, unsigned depth) {
 	return loopName + "_" + std::to_string(depth);
 }
 
-std::tuple<std::string, unsigned, unsigned> parseLoopName(std::string loopName) {
+std::tuple<std::string, unsigned> parseLoopName(std::string loopName) {
 	const std::string mainLoopTag = "_loop";
-	const std::string depthTag = "_";
 	const size_t mainLoopTagSize = 5;
-	const size_t depthTagSize = 1;
 
 	size_t tagPos = loopName.find(mainLoopTag);
 	std::string funcName = loopName.substr(0, tagPos);
 
 	std::string rest = loopName.substr(tagPos + mainLoopTagSize);
+	unsigned loopNo = std::stoi(rest);
+
+	return std::make_tuple(funcName, loopNo);
+}
+
+std::tuple<std::string, unsigned, unsigned> parseWholeLoopName(std::string wholeLoopName) {
+	const std::string mainLoopTag = "_loop";
+	const std::string depthTag = "_";
+	const size_t mainLoopTagSize = 5;
+	const size_t depthTagSize = 1;
+
+	size_t tagPos = wholeLoopName.find(mainLoopTag);
+	std::string funcName = wholeLoopName.substr(0, tagPos);
+
+	std::string rest = wholeLoopName.substr(tagPos + mainLoopTagSize);
 	tagPos = rest.find(depthTag);
 	unsigned loopNo = std::stoi(rest.substr(0, tagPos));
 	unsigned loopLevel = std::stoi(rest.substr(tagPos + depthTagSize));
@@ -252,7 +265,7 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 
 			std::vector<std::string>::iterator found = std::find(unrollWholeLoopNameStr.begin(), unrollWholeLoopNameStr.end(), wholeLoopName);
 			if(unrollWholeLoopNameStr.end() == found) {
-				std::tuple<std::string, unsigned, unsigned> parsed = parseLoopName(wholeLoopName);
+				std::tuple<std::string, unsigned, unsigned> parsed = parseWholeLoopName(wholeLoopName);
 				appendToUnrollingCfg(std::get<0>(parsed), std::get<1>(parsed), std::get<2>(parsed), -1, loopBound);
 			}
 		}

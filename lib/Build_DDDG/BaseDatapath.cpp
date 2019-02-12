@@ -1,13 +1,83 @@
-#include <sstream>
-#include <fstream>
-
-#include "profile_h/opcodes.h"
 #include "profile_h/BaseDatapath.h"
+
+#include <fstream>
+#include <sstream>
+
 #include "llvm/Support/GraphWriter.h"
-//#include "profile_h/global_variables.h"
+#include "profile_h/opcodes.h"
 
-using namespace llvm;
+BaseDatapath::BaseDatapath(
+	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
+	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
+	uint64_t asapII
+) : kernelName(kernelName), CM(CM), summaryFile(summaryFile), loopName(loopName), loopLevel(loopLevel), loopUnrollFactor(loopUnrollFactor), asapII(asapII) {
+	builder = nullptr;
+	container = nullptr;
 
+	builder = new DDDGBuilder(this);
+
+	assert(builder->buildInitialDDDG() && "Dynamic data dependence graph build failed");
+
+	container = builder->getParsedTraceContainer();
+
+	delete builder;
+	builder = nullptr;
+
+#if 0
+	std::cout << "DEBUG-INFO: [DDDG-analysis] Analyzing DDDG\n";
+  numTotalNodes = microop.size();
+
+  BGL_FORALL_VERTICES(v, graph_, Graph)
+    nameToVertex[get(boost::vertex_index, graph_, v)] = v;
+  vertexToName = get(boost::vertex_index, graph_);
+
+  std::vector<std::string> dynamic_methodid(numTotalNodes, "");
+  initDynamicMethodID(dynamic_methodid);
+
+  for (auto dynamic_func_it = dynamic_methodid.begin(), E = dynamic_methodid.end();
+       dynamic_func_it != E; dynamic_func_it++)
+  {
+    char func_id[256];
+    int count;
+    sscanf((*dynamic_func_it).c_str(), "%[^-]-%d\n", func_id, &count);
+		if (functionNames.find(func_id) == functionNames.end()) {
+			functionNames.insert(func_id);
+		}
+  }
+	
+  //parse_config(bench, config_file);
+
+	num_cycles = 0;
+
+	///FIXME: We set numOfPortsPerPartition to 1000, so that we do not have memory port limitations. 
+	/// 1000 ports are sufficient. 
+	/// Later, we need to add memory port limitation below (struct will be better) to take read/write
+	/// ports into consideration.
+	numOfPortsPerPartition = 1000;
+#endif
+}
+
+BaseDatapath::~BaseDatapath() {
+	if(builder)
+		delete builder;
+
+	if(container)
+		delete container;
+}
+
+std::string BaseDatapath::getTargetLoopName() const {
+	return loopName;
+}
+
+unsigned BaseDatapath::getTargetLoopLevel() const {
+	return loopLevel;
+}
+
+uint64_t BaseDatapath::getTargetLoopUnrollFactor() const {
+	return loopUnrollFactor;
+}
+
+#if 0
 const std::string output_title = "type,function name,loop name,loop level,loop latency,IL,II,Res_mem,Res_op,Rec_II,DSP,BRAM18K,FF,LUT,Fadd,Fsub,Fmul,Fdiv,En_sharedLoad,shared_loads,repeated_stores,enable_TreeHeightReduction";
 
 bool compare_ready_queue_basedon_alapTime(const std::pair<unsigned, unsigned>& first, const std::pair<unsigned, unsigned>& second) {
@@ -6173,3 +6243,4 @@ void BaseDatapath::tokenizeString(std::string input,
     tokenized_list.push_back(value);
   }
 }
+#endif

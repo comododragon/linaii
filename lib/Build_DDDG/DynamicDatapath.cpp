@@ -1,57 +1,46 @@
 #include "profile_h/DynamicDatapath.h"
 
-DynamicDatapath::DynamicDatapath(std::string kernel_name, std::string trace_file_name, ofstream *summary_file, std::string input_path, std::string lp_name, unsigned lp_level, unsigned lp_unroll_factor, bool enable_pipelining, unsigned IL_asap) : BaseDatapath(kernel_name, trace_file_name, "", summary_file, input_path, lp_name, lp_level, lp_unroll_factor, IL_asap) {
-	std::cout << "===========================\n";
-	std::cout << "DEBUG-INFO: [trace-analysis_dynamic-trace] Analyzing DDDG for loop " << lp_name << "\n";
-	std::cout << "===========================\n";
+DynamicDatapath::DynamicDatapath(
+	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
+	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor
+) : BaseDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, 0) {
+	VERBOSE_PRINT(errs() << "[][][][dynamicDatapath] Analysing DDDG for loop \"" << loopName << "\"\n");
 
-	/// Initialization
-	// initialize_graph();
-	
-	// FPGA flow
-	//removeInductionDependence();
-	//removePhiNodes();
+#if 0
 	initBaseAddress();
 
-	/// completePartition() and scratchpadPartition() should be called when we enable optimization, otherwise it will
-	/// make calculateFPGAResRequired(...) invoked by asap_scheduling(...) or alap_scheduling(...) failed because of
-	/// modified array name
-	//completePartition();
-	//scratchpadPartition();
-	//loopUnrolling();
+	VERBOSE_PRINT(errs() << "[][][][dynamicDatapath] Analysing recurrence-constrained II\n");
+	asapII = fpgaEstimationOneMoreSubtraceForRecIICalculation();
 
-	//loopFlatten();
-	//calculateInstructionDistribution();
-	//calculateTimestampDDDG();
-	//parallelismProfileDDDG();
+	VERBOSE_PRINT(errs() << "[][][][dynamicDatapath] Finished\n");
+#endif
+}
 
-	/// Schedule and Calculate execution cycles
-	//uint64_t exe_cycles = run_fpga_simulation();
-	if (enable_pipelining == false) {
+DynamicDatapath::DynamicDatapath(
+	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
+	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
+	uint64_t asapII
+) : BaseDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, asapII) {
+	VERBOSE_PRINT(errs() << "[][][][dynamicDatapath] Analysing DDDG for loop \"" << loopName << "\"\n");
 
-		if (show_dddg_bf_opt == true) {
-			/// Output the Graph
-			dumpGraph();
-		}
+#if 0
+	initBaseAddress();
 
-		uint64_t exe_cycles = fpga_estimation();
-		std::cout << "DEBUG-INFO: [trace-analysis_dynamic-trace] FPGA execution time = " << exe_cycles << "(cycles)" << std::endl;
-	}
-	else {
-		VERBOSE_PRINT(std::cout << "DEBUG-INFO: [trace-analysis_dynamic-trace] Analyzing recurrence initiation interval\n");
-		IL_asap_ii = fpga_estimation_one_more_subtrace_for_recII_calculation();
-	}
-	
-	//uint64_t exe_cycles = run_parallel_simulation();
-	//cout << "Parallel Execution cycles = " << num_cycles << endl;
+	if(args.showPostOptDDDG)
+		dumpGraph();
 
-	// GPU flow
-	VERBOSE_PRINT(std::cout << "DEBUG-INFO: [trace-analysis_dynamic-trace] Finished\n");
-	VERBOSE_PRINT(std::cout << "-------------------\n");
+	numCycles = fpgaEstimation();
+
+	VERBOSE_PRINT(errs() << "[][][][dynamicDatapath] Finished\n");
+#endif
 }
 
 DynamicDatapath::~DynamicDatapath() {}
 
-unsigned DynamicDatapath::getIL_asap_ii() const {
-	return IL_asap_ii;
+uint64_t DynamicDatapath::getASAPII() const {
+	return asapII;
+}
+
+uint64_t DynamicDatapath::getCycles() const {
+	return numCycles;
 }

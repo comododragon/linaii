@@ -4,7 +4,7 @@ add_llvm_library(BuildDDDGlib
 	ColorWriter.cpp
 	DynamicDatapath.cpp
 	BaseDatapath.cpp
-	DDDG.cpp
+	DDDGBuilder.cpp
 	SlotTracker.cpp
 	TraceFunctions.cpp
 	file_func.cpp

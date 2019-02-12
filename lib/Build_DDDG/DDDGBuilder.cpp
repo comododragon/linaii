@@ -1,7 +1,180 @@
-#include "profile_h/DDDG.h"
-#include "profile_h/BaseDatapath.h"
-//#include "profile_h/ExtractLoopInfoPass.h"
+#include "profile_h/DDDGBuilder.h"
 
+#include "profile_h/BaseDatapath.h"
+
+DDDGBuilder::DDDGBuilder(BaseDatapath *datapath) : datapath(datapath) {
+	numRegDeps = 0;
+	numMemDeps = 0;
+	numInstructions = -1;
+	lastParameter = false;
+	prevBBBlock = "-1";
+}
+
+bool DDDGBuilder::buildInitialDDDG() {
+	std::string traceFileName = args.workDir + FILE_DYNAMIC_TRACE;
+	gzFile traceFile;
+
+	traceFile = gzopen(traceFileName.c_str(), "r");
+	assert(traceFile != Z_NULL && "Could not open trace input file");
+
+	lineFromToTy fromToPair = getTraceLineFromTo(traceFile);
+	//std::cout << "--------- " << fromToPair.first << " " << fromToPair.second << "\n";
+
+	return true;
+}
+
+lineFromToTy DDDGBuilder::getTraceLineFromTo(gzFile &traceFile) {
+	std::string loopName = datapath->getTargetLoopName();
+	unsigned loopLevel = datapath->getTargetLoopLevel();
+	uint64_t unrollFactor = datapath->getTargetLoopUnrollFactor();
+	std::string functionName = std::get<0>(parseLoopName(loopName));
+	lpNameLevelStrPairTy lpNameLevelPair = std::make_pair(loopName, std::to_string(loopLevel));
+
+	// Get name of header BB for this loop
+	lpNameLevelPair2headBBnameMapTy::iterator found = lpNameLevelPair2headBBnameMap.find(lpNameLevelPair);
+	assert(found != lpNameLevelPair2headBBnameMap.end() && "Could not find header BB of loop inside lpNameLevelPair2headBBnameMap");
+	std::string headerBBName = found->second;
+
+	// Get name of exiting BB for this loop
+	lpNameLevelPair2headBBnameMapTy::iterator found2 = lpNameLevelPair2exitingBBnameMap.find(lpNameLevelPair);
+	assert(found2 != lpNameLevelPair2exitingBBnameMap.end() && "Could not find exiting BB of loop inside lpNameLevelPair2exitingBBnameMap");
+	std::string exitingBBName = found2->second;
+
+	// Get ID of last instruction inside header BB
+	std::pair<std::string, std::string> headerBBFuncNamePair = std::make_pair(headerBBName, functionName);
+	headerBBFuncNamePair2lastInstMapTy::iterator found3 = headerBBFuncNamePair2lastInstMap.find(headerBBFuncNamePair);
+	assert(found3 != headerBBFuncNamePair2lastInstMap.end() && "Could not find last inst of header BB of loop inside headerBBFuncNamePair2lastInstMap");
+	std::string lastInstHeaderBB = found3->second;
+
+	// Get ID of last instruction inside exiting BB
+	std::pair<std::string, std::string> exitingBBFuncNamePair = std::make_pair(exitingBBName, functionName);
+	headerBBFuncNamePair2lastInstMapTy::iterator found4 = exitingBBFuncNamePair2lastInstMap.find(exitingBBFuncNamePair);
+	assert(found4 != exitingBBFuncNamePair2lastInstMap.end() && "Could not find last inst of exiting BB of loop inside headerBBFuncNamePair2lastInstMap");
+	std::string lastInstExitingBB = found4->second;
+
+	// Get number of instruction inside header BB
+	std::pair<std::string, std::string> funcHeaderBBNamePair = std::make_pair(functionName, headerBBName);
+	funcBBNmPair2numInstInBBMapTy::iterator found5 = funcBBNmPair2numInstInBBMap.find(funcHeaderBBNamePair);
+	assert(found5 != funcBBNmPair2numInstInBBMap.end() && "Could not find number of instructions in header BB inside funcBBNmPair2numInstInBBMap");
+	unsigned numInstInHeaderBB = found5->second;
+
+	// Create database of headerBBName-lastInst -> loopName-level
+	headerBBlastInst2loopNameLevelPairMapTy headerBBlastInst2loopNameLevelPairMap;
+	for(auto &it : lpNameLevelPair2headBBnameMap) {
+		std::string loopName = it.first.first;
+		unsigned loopLevel = std::stoul(it.first.second);
+		std::string funcName = std::get<0>(parseLoopName(loopName));
+		std::string headerBBName = it.second;
+		std::pair<std::string, std::string> headerBBFuncNamePair = std::make_pair(headerBBName, funcName);
+		std::string headerBBLastInst = headerBBFuncNamePair2lastInstMap[headerBBFuncNamePair];
+		std::pair<std::string, unsigned> loopNameLevelPair = std::make_pair(loopName, loopLevel);
+		headerBBlastInst2loopNameLevelPairMap.insert(std::make_pair(headerBBLastInst, loopNameLevelPair));
+	}
+
+	std::string wholeLoopName = appendDepthToLoopName(loopName, loopLevel);
+	uint64_t loopBound = wholeloopName2loopBoundMap.at(wholeLoopName);
+	bool skipRuntimeLoopBound = (loopBound > 0);
+
+	uint64_t from = 0, to = 0;
+	bool firstTraverseHeader = true;
+	uint64_t lastInstExitingCounter = 0;
+	char buffer[BUFF_STR_SZ];
+
+	// Iterate through dynamic trace
+	gzrewind(traceFile);
+	while(!gzeof(traceFile)) {
+		if(Z_NULL == gzgets(traceFile, buffer, sizeof(buffer)))
+			continue;
+
+		std::string line(buffer);
+		size_t tagPos = line.find(",");
+
+		if(std::string::npos == tagPos)
+			continue;
+
+		std::string tag = line.substr(0, tagPos);
+		std::string rest = line.substr(tagPos + 1);
+
+		if(!tag.compare("0")) {
+			char buffer2[BUFF_STR_SZ];
+			int count;
+			sscanf(rest.c_str(), "%*d,%*[^,],%*[^,],%[^,],%*d,%d\n", buffer2, &count);
+			std::string instName(buffer2);
+
+			// Mark the first line of the first iteration of this loop
+			if(firstTraverseHeader && !instName.compare(lastInstHeaderBB)) {
+				from = count - numInstInHeaderBB + 1;
+				firstTraverseHeader = false;
+			}
+
+			// Mark the last line of the last iteration of this loop
+			if(!instName.compare(lastInstExitingBB)) {
+				lastInstExitingCounter++;
+				if(unrollFactor == lastInstExitingCounter) {
+					to = count;
+
+					// If we don't need to calculate runtime loop bound, we can stop now
+					if(skipRuntimeLoopBound)
+						break;
+				}
+			}
+
+			// Calculating loop bound at runtime: Increment loop bound counter 
+			if(!skipRuntimeLoopBound) {
+				headerBBlastInst2loopNameLevelPairMapTy::iterator found6 = headerBBlastInst2loopNameLevelPairMap.find(instName);
+				if(found6 != headerBBlastInst2loopNameLevelPairMap.end()) {
+					std::string wholeLoopName = appendDepthToLoopName(found6->second.first, found6->second.second);
+					wholeloopName2loopBoundMap[wholeLoopName]++;
+				}
+			}
+		}
+	}
+
+	// Post-process runtime loop bound calculations
+	if(!skipRuntimeLoopBound) {
+		for(auto &it : loopName2levelUnrollVecMap) {
+			std::string loopName = it.first;
+			unsigned levelSize = it.second.size();
+
+			assert(levelSize >= 1 && "This loop level is less than 1");
+
+			// Create temporary vector with values inside wholeloopName2loopBoundMap
+			std::vector<unsigned> loopBounds(levelSize, 0);
+			for(unsigned i = 0; i < levelSize; i++) {
+				std::string wholeLoopName = appendDepthToLoopName(loopName, i + 1);
+				wholeloopName2loopBoundMapTy::iterator found7 = wholeloopName2loopBoundMap.find(wholeLoopName);
+				assert(found7 != wholeloopName2loopBoundMap.end() && "Could not find loop in wholeloopName2loopBoundMap");
+
+				loopBounds[i] = found7->second;
+			}
+
+			// The trace only keep trace of the innermost loop that an instruction was executed.
+			// This means that the runtime-calculated loop bounds are not reflecting actual nesting structure of the loops
+			// We must correct/adjust the runtime-calculated loop bounds to reflect the actual nesting structure of the loops
+			for(unsigned i = 1; i < levelSize; i++) {
+				std::string wholeLoopName = appendDepthToLoopName(loopName, i + 1);
+				wholeloopName2loopBoundMapTy::iterator found8 = wholeloopName2loopBoundMap.find(wholeLoopName);
+				assert(found8 != wholeloopName2loopBoundMap.end() && "Could not find loop in wholeloopName2loopBoundMap");
+
+				loopBounds[i] = loopBounds[i] / loopBounds[i - 1];
+				wholeloopName2loopBoundMap[wholeLoopName] = loopBounds[i];
+			}
+
+			/*
+			for(unsigned i = 0; i < levelSize; i++) {
+				std::string wholeLoopName = appendDepthToLoopName(loopName, i + 1);
+				wholeloopName2loopBoundMapTy::iterator found9 = wholeloopName2loopBoundMap.find(wholeLoopName);
+
+				std::cout << ">>>>>>>>>>>>> " << found9->first << ": " << found9->second << "\n";
+			}
+			*/
+		}
+	}
+
+	return std::make_pair(from, to);
+}
+
+#if 0
 gzFile dynamic_func_file;
 gzFile instid_file;
 gzFile line_num_file;
@@ -815,3 +988,4 @@ void DDDG::extract_trace_file(gzFile& trace_file, uint64_t from, uint64_t to) {
 	fclose(tracefile);
 	*/
 }
+#endif

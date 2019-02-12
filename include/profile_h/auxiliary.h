@@ -7,7 +7,7 @@
 
 #define ENABLE_TIMER
 
-//#define DBG_PRINT_ALL
+#define DBG_PRINT_ALL
 
 #include <fstream>
 #include <list>
@@ -42,7 +42,8 @@ bool isFunctionOfInterest(std::string key);
 bool verifyModuleAndPrintErrors(llvm::Module &M);
 std::string constructLoopName(std::string funcName, unsigned loopNo, unsigned depth = ((unsigned) -1));
 std::string appendDepthToLoopName(std::string loopName, unsigned depth);
-std::tuple<std::string, unsigned, unsigned> parseLoopName(std::string loopName);
+std::tuple<std::string, unsigned> parseLoopName(std::string loopName);
+std::tuple<std::string, unsigned, unsigned> parseWholeLoopName(std::string wholeLoopName);
 
 // TODO: REMOVER ISSO AQUI SOB DEMANDA
 extern std::string inputFileName;

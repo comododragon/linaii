@@ -22,6 +22,7 @@ typedef struct {
 	};
 
 	bool verbose;
+	bool compressed;
 	bool memTrace;
 	bool showCFG;
 	bool showCFGDetailed;

@@ -10,15 +10,13 @@ BaseDatapath::BaseDatapath(
 	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
 	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
 	uint64_t asapII
-) : kernelName(kernelName), CM(CM), summaryFile(summaryFile), loopName(loopName), loopLevel(loopLevel), loopUnrollFactor(loopUnrollFactor), asapII(asapII) {
+) : kernelName(kernelName), CM(CM), summaryFile(summaryFile), loopName(loopName), loopLevel(loopLevel), loopUnrollFactor(loopUnrollFactor), PC(this, kernelName), asapII(asapII) {
 	builder = nullptr;
-	container = nullptr;
+	microops.clear();
 
-	builder = new DDDGBuilder(this);
+	builder = new DDDGBuilder(this, PC);
 
 	assert(builder->buildInitialDDDG() && "Dynamic data dependence graph build failed");
-
-	container = builder->getParsedTraceContainer();
 
 	delete builder;
 	builder = nullptr;
@@ -60,9 +58,6 @@ BaseDatapath::BaseDatapath(
 BaseDatapath::~BaseDatapath() {
 	if(builder)
 		delete builder;
-
-	if(container)
-		delete container;
 }
 
 std::string BaseDatapath::getTargetLoopName() const {
@@ -75,6 +70,10 @@ unsigned BaseDatapath::getTargetLoopLevel() const {
 
 uint64_t BaseDatapath::getTargetLoopUnrollFactor() const {
 	return loopUnrollFactor;
+}
+
+void BaseDatapath::insertMicroop(int microop) {
+	microops.push_back(microop);
 }
 
 #if 0

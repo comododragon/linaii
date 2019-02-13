@@ -40,6 +40,17 @@ typedef std::pair<uint64_t, uint64_t> lineFromToTy;
 
 typedef std::map<std::string, std::pair<std::string, unsigned> > headerBBlastInst2loopNameLevelPairMapTy;
 
+typedef std::unordered_map<std::string, unsigned> s2uMap;
+
+struct edgeNodeInfo {
+	int sink;
+	int paramID;
+};
+
+typedef std::unordered_multimap<unsigned, edgeNodeInfo> u2eMMap;
+
+typedef std::unordered_map<int64_t, unsigned> i642uMap;
+
 #if 0
 struct edge_node_info{
   unsigned sink_node;
@@ -65,20 +76,74 @@ typedef std::pair<uint64_t, uint64_t> line_from_to_Ty;
 class BaseDatapath;
 
 class ParsedTraceContainer {
+	BaseDatapath *datapath;
+
+	std::string funcFileName;
+	std::string instIDFileName;
+	std::string lineNoFileName;
+	std::string memoryTraceFileName;
+	std::string getElementPtrFileName;
+	std::string prevBasicBlockFileName;
+	std::string currBasicBlockFileName;
+
+	gzFile funcFile;
+	gzFile instIDFile;
+	gzFile lineNoFile;
+	gzFile memoryTraceFile;
+	gzFile getElementPtrFile;
+	gzFile prevBasicBlockFile;
+	gzFile currBasicBlockFile;
+
+	std::vector<std::string> funcList;
+	std::vector<std::string> instIDList;
+	std::vector<int> lineNoList;
+	std::vector<std::tuple<int, int64_t, unsigned>> memoryTraceList;
+	std::vector<std::tuple<int, std::string, int64_t>> getElementPtrList;
+	std::vector<std::string> prevBBList;
+	std::vector<std::string> currBBList;
+
+	std::string rest;
+	uint8_t prevMicroop, currMicroop;
+	std::string currInstID;
+	std::string currDynamicFunction;
+	std::string calleeFunction;
+	std::stack<std::pair<std::string, int>> activeMethod;
+	s2uMap functionCounter;
+	std::string prevBB, currBB;
+	int numOfInstructions;
+	bool lastParameter;
+	// TODO: acertar tipos
+	std::vector<int64_t> parameterValuePerInst;
+	std::vector<unsigned> parameterSizePerInst;
+	std::vector<std::string> parameterLabelPerInst;
+	s2uMap registerLastWritten;
+	std::string calleeDynamicFunction;
+	int lastCallSource;
+	u2eMMap registerEdgeTable;
+	u2eMMap memoryEdgeTable;
+	int numOfRegDeps, numOfMemDeps;
+	i642uMap addressLastWritten;
+
+	void parseInstructionLine();
+	void parseResult();
+	void parseForward();
+	void parseParameter(int param);
+
+public:
+	ParsedTraceContainer(BaseDatapath *datapath, std::string kernelName);
+	~ParsedTraceContainer();
+
+	void parseTraceFile(gzFile &traceFile, lineFromToTy fromToPair);
 };
 
 class DDDGBuilder {
 	BaseDatapath *datapath;
-	int numRegDeps;
-	int numMemDeps;
-	int numInstructions;
-	bool lastParameter;
-	std::string prevBBBlock;
+	ParsedTraceContainer PC;
 
 	lineFromToTy getTraceLineFromTo(gzFile &traceFile);
 
 public:
-	DDDGBuilder(BaseDatapath *datapath);
+	DDDGBuilder(BaseDatapath *datapath, ParsedTraceContainer &PC);
 
 	bool buildInitialDDDG();
 	ParsedTraceContainer *getParsedTraceContainer();

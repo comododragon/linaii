@@ -399,8 +399,11 @@ class BaseDatapath {
 	std::string loopName;
 	unsigned loopLevel;
 	uint64_t loopUnrollFactor;
+
 	DDDGBuilder *builder;
-	ParsedTraceContainer *container;
+	ParsedTraceContainer PC;
+
+	std::vector<int> microops;
 
 public:
 	BaseDatapath(
@@ -414,6 +417,8 @@ public:
 	std::string getTargetLoopName() const;
 	unsigned getTargetLoopLevel() const;
 	uint64_t getTargetLoopUnrollFactor() const;
+
+	void insertMicroop(int microop);
 
 protected:
 	uint64_t asapII;

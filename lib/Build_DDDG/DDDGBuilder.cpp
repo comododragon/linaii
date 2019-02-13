@@ -2,12 +2,453 @@
 
 #include "profile_h/BaseDatapath.h"
 
-DDDGBuilder::DDDGBuilder(BaseDatapath *datapath) : datapath(datapath) {
-	numRegDeps = 0;
-	numMemDeps = 0;
-	numInstructions = -1;
+ParsedTraceContainer::ParsedTraceContainer(BaseDatapath *datapath, std::string kernelName) : datapath(datapath) {
+	funcFileName = args.outWorkDir + kernelName + "_dynamicfuncid.gz";
+	instIDFileName = args.outWorkDir + kernelName + "_instid.gz";
+	lineNoFileName = args.outWorkDir + kernelName + "_linenum.gz";
+	memoryTraceFileName = args.outWorkDir + kernelName + "_memaddr.gz";
+	getElementPtrFileName = args.outWorkDir + kernelName + "_getelementptr.gz";
+	prevBasicBlockFileName = args.outWorkDir + kernelName + "_prevbasicblock.gz";
+	currBasicBlockFileName = args.outWorkDir + kernelName + "_currbasicblock.gz";
+
+	funcFile = Z_NULL;
+	instIDFile = Z_NULL;
+	lineNoFile = Z_NULL;
+	memoryTraceFile = Z_NULL;
+	getElementPtrFile = Z_NULL;
+	prevBasicBlockFile = Z_NULL;
+	currBasicBlockFile = Z_NULL;
+
+	numOfInstructions = -1;
+	lastParameter = true;
+	prevBB = "-1";
+	numOfRegDeps = 0;
+	numOfMemDeps = 0;
+}
+
+ParsedTraceContainer::~ParsedTraceContainer() {
+	if(funcFile)
+		gzclose(funcFile);
+	if(instIDFile)
+		gzclose(instIDFile);
+	if(lineNoFile)
+		gzclose(lineNoFile);
+	if(memoryTraceFile)
+		gzclose(memoryTraceFile);
+	if(getElementPtrFile)
+		gzclose(getElementPtrFile);
+	if(prevBasicBlockFile)
+		gzclose(prevBasicBlockFile);
+	if(currBasicBlockFile)
+		gzclose(currBasicBlockFile);
+}
+
+void ParsedTraceContainer::parseTraceFile(gzFile &traceFile, lineFromToTy fromToPair) {
+	if(args.compressed) {
+		funcFile = gzopen(funcFileName.c_str(), "w");
+		assert(funcFile != Z_NULL && "Could not open dynamic funcID file for write");
+		instIDFile = gzopen(instIDFileName.c_str(), "w");
+		assert(instIDFile != Z_NULL && "Could not open instID file for write");
+		lineNoFile = gzopen(lineNoFileName.c_str(), "w");
+		assert(lineNoFile != Z_NULL && "Could not open line num file for write");
+		memoryTraceFile = gzopen(memoryTraceFileName.c_str(), "w");
+		assert(memoryTraceFile != Z_NULL && "Could not open memory trace file for write");
+		getElementPtrFile = gzopen(getElementPtrFileName.c_str(), "w");
+		assert(getElementPtrFile != Z_NULL && "Could not open getelementptr file for write");
+		prevBasicBlockFile = gzopen(prevBasicBlockFileName.c_str(), "w");
+		assert(prevBasicBlockFile != Z_NULL && "Could not open prev BB file for write");
+		currBasicBlockFile = gzopen(currBasicBlockFileName.c_str(), "w");
+		assert(currBasicBlockFile != Z_NULL && "Could not open curr BB file for write");
+	}
+
+	funcList.clear();
+	instIDList.clear();
+	lineNoList.clear();
+	memoryTraceList.clear();
+	getElementPtrList.clear();
+	prevBBList.clear();
+	currBBList.clear();
+
+	uint64_t from = fromToPair.first, to = fromToPair.second;
+	uint64_t instCount = 0;
+	bool parseInst = false;
+	char buffer[BUFF_STR_SZ];
+
+	// Iterate through dynamic trace, but only process the specified interval
+	gzrewind(traceFile);
+	while(!gzeof(traceFile)) {
+		if(Z_NULL == gzgets(traceFile, buffer, sizeof(buffer)))
+			continue;
+
+		std::string line(buffer);
+		size_t tagPos = line.find(",");
+
+		if(std::string::npos == tagPos)
+			continue;
+
+		std::string tag = line.substr(0, tagPos);
+		rest = line.substr(tagPos + 1);
+
+		if(!tag.compare("0")) {
+			// If log0 is within specified interval, process
+			if(instCount >= from && instCount <= to) {
+				parseInstructionLine();
+				parseInst = true;
+			}
+			else {
+				parseInst = false;
+			}
+			instCount++;
+		}
+		else if(parseInst) {
+			if(!tag.compare("r"))
+				parseResult();
+			else if(!tag.compare("f"))
+				parseForward();
+			else
+				parseParameter(std::atoi(tag.c_str()));
+		}
+		// No need to keep looking after interval, just stop
+		else if(instCount > to) {
+			break;
+		}
+	}
+
+	if(args.compressed) {
+		gzclose(funcFile);
+		gzclose(instIDFile);
+		gzclose(lineNoFile);
+		gzclose(memoryTraceFile);
+		gzclose(getElementPtrFile);
+		gzclose(prevBasicBlockFile);
+		gzclose(currBasicBlockFile);
+		funcFile = Z_NULL;
+		instIDFile = Z_NULL;
+		lineNoFile = Z_NULL;
+		memoryTraceFile = Z_NULL;
+		getElementPtrFile = Z_NULL;
+		prevBasicBlockFile = Z_NULL;
+		currBasicBlockFile = Z_NULL;
+	}
+}
+
+void ParsedTraceContainer::parseInstructionLine() {
+	int lineNo;
+	char buffer[BUFF_STR_SZ];
+	char buffer2[BUFF_STR_SZ];
+	char buffer3[BUFF_STR_SZ];
+	int microop;
+	int count;
+	sscanf(rest.c_str(), "%d,%[^,],%[^,],%[^,],%d,%d\n", &lineNo, buffer, buffer2, buffer3, &microop, &count);
+	std::string currStaticFunction(buffer);
+	std::string bbID(buffer2);
+	std::string instID(buffer3);
+
+	prevMicroop = currMicroop;
+	currMicroop = (uint8_t) microop;
+	datapath->insertMicroop(currMicroop);
+	currInstID = instID;
+
+	// Not first run
+	if(!activeMethod.empty()) {
+		std::string prevStaticFunction = activeMethod.top().first;
+		int prevCount = activeMethod.top().second;
+
+		// Function name in stack differs from current name, i.e. we are in a different function now
+		if(currStaticFunction.compare(prevStaticFunction)) {
+			s2uMap::iterator found = functionCounter.find(currStaticFunction);
+			// Add information from this function and reset counter to 0
+			if(functionCounter.end() == found) {
+				functionCounter.insert(std::make_pair(currStaticFunction, 0));
+				currDynamicFunction = currStaticFunction + "-0";
+				activeMethod.push(std::make_pair(currStaticFunction, 0));
+			}
+			// Update (increment) counter for this function
+			else {
+				found->second++;
+				currDynamicFunction = currStaticFunction + "-" + std::to_string(found->second);
+				activeMethod.push(std::make_pair(currStaticFunction, found->second));
+			}
+
+			/*
+			if(LLVM_IR_Call == prevMicroop) {
+				assert(calleeFunction == currStaticFunction && "Current static function differs from called instruction");
+
+				// TODO: push to methodCallGraph, but apparently this variable is never used
+				// Implement logic if necessary
+			}
+			*/
+		}
+		// Function name in stack equals to current name, either nothing changed or this is a recursive call
+		else {
+			// Last opcode was a call to this same function, increment counter
+			if(LLVM_IR_Call == prevMicroop && calleeFunction == currStaticFunction) {
+				s2uMap::iterator found = functionCounter.find(currStaticFunction);
+				assert(found != functionCounter.end() && "Current static function not found in function counter");
+
+				found->second++;
+				currDynamicFunction = currStaticFunction + "-" + std::to_string(found->second);
+				activeMethod.push(std::make_pair(currStaticFunction, found->second));
+			}
+			// Nothing changed, just change the current dynamic function
+			else {
+				currDynamicFunction = prevStaticFunction + "-" + std::to_string(prevCount);
+			}
+		}
+
+		// This is a return, pop the active function
+		if(LLVM_IR_Ret == microop)
+			activeMethod.pop();
+	}
+	// First run, add information about this function to stack
+	else {
+		s2uMap::iterator found = functionCounter.find(currStaticFunction);
+		// Add information from this function and reset counter to 0
+		if(functionCounter.end() == found) {
+			functionCounter.insert(std::make_pair(currStaticFunction, 0));
+			currDynamicFunction = currStaticFunction + "-0";
+			activeMethod.push(std::make_pair(currStaticFunction, 0));
+			functionCounter.insert(std::make_pair(currStaticFunction, 0));
+		}
+		// Update (increment) counter for this function
+		else {
+			found->second++;
+			currDynamicFunction = currStaticFunction + "-" + std::to_string(found->second);
+			activeMethod.push(std::make_pair(currStaticFunction, found->second));
+		}
+	}
+
+	// If this is a PHI instruction and last instruction was a branch, update BB pointers
+	if(isPhiOp(microop) && LLVM_IR_Br == prevMicroop)
+		prevBB = currBB;
+	currBB = bbID;
+
+	// Store collected info to compressed files or memory lists
+	if(args.compressed) {
+		gzprintf(funcFile, "%s\n", currDynamicFunction.c_str());
+		gzprintf(instIDFile, "%s\n", currInstID.c_str());
+		gzprintf(lineNoFile, "%d\n", lineNo);
+		gzprintf(prevBasicBlockFile, "%s\n", prevBB.c_str());
+		gzprintf(currBasicBlockFile, "%s\n", currBB.c_str());
+	}
+	else {
+		funcList.push_back(currDynamicFunction);
+		instIDList.push_back(currInstID);
+		lineNoList.push_back(lineNo);
+		prevBBList.push_back(prevBB);
+		currBBList.push_back(currBB);
+	}
+
+	// Reset variables for the following lines
+	numOfInstructions++;
+	lastParameter = true;
+	parameterValuePerInst.clear();
+	parameterSizePerInst.clear();
+	parameterLabelPerInst.clear();
+}
+
+void ParsedTraceContainer::parseResult() {
+	int size;
+	double value;
+	int isReg;
+	char buffer[BUFF_STR_SZ];
+	sscanf(rest.c_str(), "%d,%lf,%d,%[^\n]\n", &size, &value, &isReg, buffer);
+	std::string label(buffer);
+
+	assert(isReg && "Result trace line must be a register");
+
+	std::string uniqueRegID = currDynamicFunction + "-" + label;
+
+	// Store the instruction where this register was written
+	s2uMap::iterator found = registerLastWritten.find(uniqueRegID);
+	if(found != registerLastWritten.end())
+		found->second = numOfInstructions;
+	else
+		registerLastWritten.insert(std::make_pair(uniqueRegID, numOfInstructions));
+
+	// Register an allocation request
+	if(LLVM_IR_Alloca == currMicroop) {
+		if(args.compressed)
+			gzprintf(getElementPtrFile, "%d,%s,%lld\n", numOfInstructions, label, (int64_t) value);
+		else
+			getElementPtrList.push_back(std::make_tuple(numOfInstructions, label, value));
+	}
+	// Register a load
+	else if(isLoadOp(currMicroop)) {
+		int64_t addr = parameterValuePerInst.back();
+
+		if(args.compressed)
+			gzprintf(memoryTraceFile, "%d,%lld,%u\n", numOfInstructions, addr, size);
+		else
+			memoryTraceList.push_back(std::make_tuple(numOfInstructions, addr, size));
+	}
+	// Register a DMA request
+	else if(isDMAOp(currMicroop)) {
+		int64_t addr = parameterValuePerInst[1];
+		unsigned memSize = parameterValuePerInst[2];
+
+		if(args.compressed)
+			gzprintf(memoryTraceFile, "%d,%lld,%u\n", numOfInstructions, addr, memSize);
+		else
+			memoryTraceList.push_back(std::make_tuple(numOfInstructions, addr, memSize));
+	}
+}
+
+void ParsedTraceContainer::parseForward() {
+	int size, isReg;
+	double value;
+	char buffer[BUFF_STR_SZ];
+	sscanf(rest.c_str(), "%d,%lf,%d,%[^\n]\n", &size, &value, &isReg, buffer);
+	std::string label(buffer);
+
+	assert(isReg && "Forward trace line must be a register");
+	assert(isCallOp(currMicroop) && "Invalid forward line found in trace with no attached DMA/call instruction");
+
+	std::string uniqueRegID = calleeDynamicFunction + "-" + label;
+
+	int tmpWrittenInst = (lastCallSource != -1)? lastCallSource : numOfInstructions;
+
+	s2uMap::iterator found = registerLastWritten.find(uniqueRegID);
+	if(found != registerLastWritten.end())
+		found->second = tmpWrittenInst;
+	else
+		registerLastWritten.insert(std::make_pair(uniqueRegID, tmpWrittenInst));
+}
+
+void ParsedTraceContainer::parseParameter(int param) {
+	int size, isReg;
+	double value;
+	char buffer[BUFF_STR_SZ];
+	sscanf(rest.c_str(), "%d,%lf,%d,%[^\n]\n", &size, &value, &isReg, buffer);
+	std::string label(buffer);
+
+	// First line after log0 is the last parameter (parameters are traced backwards!)
+	if(lastParameter) {
+		//numOfParameters = param;
+
+		// This is a call, save the called function
+		if(LLVM_IR_Call == currMicroop)
+			calleeFunction = label;
+
+		// Update dynamic function
+		s2uMap::iterator found = functionCounter.find(calleeFunction);
+		if(found != functionCounter.end())
+			calleeDynamicFunction = calleeFunction + "-" + std::to_string(found->second + 1);
+		else
+			calleeDynamicFunction = calleeFunction + "-0";
+	}
+
+	// Note that the last parameter is listed first in the trace, hence this non-intuitive logic
 	lastParameter = false;
-	prevBBBlock = "-1";
+	lastCallSource = -1;
+
+	if(isReg) {
+		// Must check if PHI processing is necessary to find where this operand comes from
+		bool processPhi = true;
+		if(isPhiOp(currMicroop)) {
+			std::string operandBB = instName2bbNameMap.at(label);
+			if(operandBB != prevBB)
+				processPhi = false;
+		}
+
+		if(processPhi) {
+			std::string uniqueRegID = currDynamicFunction + "-" + label;
+
+			// Update, register a new register dependency, storing the instruction that writes the register
+			s2uMap::iterator found = registerLastWritten.find(uniqueRegID);
+			if(found != registerLastWritten.end()) {
+				edgeNodeInfo tmp;
+				tmp.sink = numOfInstructions;
+				tmp.paramID = param;
+
+				registerEdgeTable.insert(std::make_pair(found->second, tmp));
+				numOfRegDeps++;
+
+				if(LLVM_IR_Call == currMicroop)
+					lastCallSource = found->second;
+			}
+		}
+	}
+
+	// Handle load/store/memory parameter
+	if(isMemoryOp(currMicroop) || LLVM_IR_GetElementPtr == currMicroop || isDMAOp(currMicroop)) {
+		parameterValuePerInst.push_back((int64_t) value);
+		parameterSizePerInst.push_back(size);
+		parameterLabelPerInst.push_back(label);
+
+		// First parameter
+		if(1 == param && isLoadOp(currMicroop)) {
+			int64_t addr = parameterValuePerInst.back();
+			i642uMap::iterator found = addressLastWritten.find(addr);
+
+			if(found != addressLastWritten.end()) {
+				unsigned source = found->second;
+				auto sameSource = memoryEdgeTable.equal_range(source);
+				bool exists = false;
+
+				for(auto sink = sameSource.first; sink != sameSource.second; sink++) {
+					if(numOfInstructions == sink->second.sink) {
+						exists = true;
+						break;
+					}
+				}
+
+				if(!exists) {
+					edgeNodeInfo tmp;
+					tmp.sink = numOfInstructions;
+					tmp.paramID = -1;
+					memoryEdgeTable.insert(std::make_pair(source, tmp));
+					numOfMemDeps++;
+				}
+			}
+
+			//int64_t baseAddr = parameterValuePerInst.back();
+			std::string baseLabel = parameterLabelPerInst.back();
+
+			if(args.compressed)
+				gzprintf(getElementPtrFile, "%d,%s,%lld\n", numOfInstructions, baseLabel.c_str(), addr);
+			else
+				getElementPtrList.push_back(std::make_tuple(numOfInstructions, baseLabel, addr));
+		}
+		// Second parameter of store is the pointer
+		else if(2 == param && isStoreOp(currMicroop)) {
+			int64_t addr = parameterValuePerInst[0];
+			std::string baseLabel = parameterLabelPerInst[0];
+
+			i642uMap::iterator found = addressLastWritten.find(addr);
+			if(found != addressLastWritten.end())
+				found->second = numOfInstructions;
+			else
+				addressLastWritten.insert(std::make_pair(addr, numOfInstructions));
+
+			if(args.compressed)
+				gzprintf(getElementPtrFile, "%d,%s,%lld\n", numOfInstructions, baseLabel.c_str(), addr);
+			else
+				getElementPtrList.push_back(std::make_tuple(numOfInstructions, baseLabel, addr));
+		}
+		// First parameter of store is the value
+		else if(1 == param && isStoreOp(currMicroop)) {
+			int64_t addr = parameterValuePerInst[0];
+			unsigned size = parameterSizePerInst.back();
+
+			if(args.compressed)
+				gzprintf(memoryTraceFile, "%d,%lld,%u\n", numOfInstructions, addr, size);
+			else
+				memoryTraceList.push_back(std::make_tuple(numOfInstructions, addr, size));
+		}
+		else if(1 == param && LLVM_IR_GetElementPtr == currMicroop) {
+			int64_t addr = parameterValuePerInst.back();
+			std::string label = parameterLabelPerInst.back();
+
+			if(args.compressed)
+				gzprintf(getElementPtrFile, "%d,%s,%lld\n", numOfInstructions, label.c_str(), addr);
+			else
+				getElementPtrList.push_back(std::make_tuple(numOfInstructions, label.c_str(), addr));
+		}
+	}
+}
+
+DDDGBuilder::DDDGBuilder(BaseDatapath *datapath, ParsedTraceContainer &PC) : datapath(datapath), PC(PC) {
 }
 
 bool DDDGBuilder::buildInitialDDDG() {
@@ -19,6 +460,8 @@ bool DDDGBuilder::buildInitialDDDG() {
 
 	lineFromToTy fromToPair = getTraceLineFromTo(traceFile);
 	//std::cout << "--------- " << fromToPair.first << " " << fromToPair.second << "\n";
+
+	PC.parseTraceFile(traceFile, fromToPair);
 
 	return true;
 }

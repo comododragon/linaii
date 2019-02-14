@@ -10,49 +10,34 @@ BaseDatapath::BaseDatapath(
 	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
 	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
 	uint64_t asapII
-) : kernelName(kernelName), CM(CM), summaryFile(summaryFile), loopName(loopName), loopLevel(loopLevel), loopUnrollFactor(loopUnrollFactor), PC(this, kernelName), asapII(asapII) {
+) : kernelName(kernelName), CM(CM), summaryFile(summaryFile), loopName(loopName), loopLevel(loopLevel), loopUnrollFactor(loopUnrollFactor), PC(kernelName), asapII(asapII) {
 	builder = nullptr;
 	microops.clear();
 
 	builder = new DDDGBuilder(this, PC);
-
-	assert(builder->buildInitialDDDG() && "Dynamic data dependence graph build failed");
-
+	builder->buildInitialDDDG();
+	numOfTotalNodes = builder->getNumNodes();
 	delete builder;
 	builder = nullptr;
 
-#if 0
-	std::cout << "DEBUG-INFO: [DDDG-analysis] Analyzing DDDG\n";
-  numTotalNodes = microop.size();
+	BGL_FORALL_VERTICES(v, graph, Graph) nameToVertex[get(boost::vertex_index, graph, v)] = v;
+	vertexToName = get(boost::vertex_index, graph);
 
-  BGL_FORALL_VERTICES(v, graph_, Graph)
-    nameToVertex[get(boost::vertex_index, graph_, v)] = v;
-  vertexToName = get(boost::vertex_index, graph_);
+	for(auto &it : PC.getFuncList()) {
+		size_t tagPos = it.find("-");
+		std::string functionName = it.substr(0, tagPos);
 
-  std::vector<std::string> dynamic_methodid(numTotalNodes, "");
-  initDynamicMethodID(dynamic_methodid);
+		//if(functionNames.end() == functionNames.find(functionName))
+		functionNames.insert(functionName);
+	}
 
-  for (auto dynamic_func_it = dynamic_methodid.begin(), E = dynamic_methodid.end();
-       dynamic_func_it != E; dynamic_func_it++)
-  {
-    char func_id[256];
-    int count;
-    sscanf((*dynamic_func_it).c_str(), "%[^-]-%d\n", func_id, &count);
-		if (functionNames.find(func_id) == functionNames.end()) {
-			functionNames.insert(func_id);
-		}
-  }
-	
-  //parse_config(bench, config_file);
-
-	num_cycles = 0;
+	numCycles = 0;
 
 	///FIXME: We set numOfPortsPerPartition to 1000, so that we do not have memory port limitations. 
 	/// 1000 ports are sufficient. 
 	/// Later, we need to add memory port limitation below (struct will be better) to take read/write
 	/// ports into consideration.
 	numOfPortsPerPartition = 1000;
-#endif
 }
 
 BaseDatapath::~BaseDatapath() {
@@ -74,6 +59,11 @@ uint64_t BaseDatapath::getTargetLoopUnrollFactor() const {
 
 void BaseDatapath::insertMicroop(int microop) {
 	microops.push_back(microop);
+}
+
+void BaseDatapath::insertDDDGEdge(unsigned from, unsigned to, uint8_t paramID) {
+	if(from != to)
+		add_edge(from, to, EdgeProperty(paramID), graph);
 }
 
 #if 0

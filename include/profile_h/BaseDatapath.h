@@ -404,6 +404,13 @@ class BaseDatapath {
 	ParsedTraceContainer PC;
 
 	std::vector<int> microops;
+	Graph graph;
+	unsigned numOfTotalNodes;
+	std::unordered_map<unsigned, Vertex> nameToVertex;
+	VertexNameMap vertexToName;
+	std::unordered_set<std::string> functionNames;
+	// TODO: check type
+	unsigned numOfPortsPerPartition;
 
 public:
 	BaseDatapath(
@@ -419,6 +426,7 @@ public:
 	uint64_t getTargetLoopUnrollFactor() const;
 
 	void insertMicroop(int microop);
+	void insertDDDGEdge(unsigned from, unsigned to, uint8_t paramID);
 
 protected:
 	uint64_t asapII;
@@ -673,7 +681,6 @@ protected:
   std::vector<int> microop;
   std::unordered_map<unsigned, pair<std::string, long long int> > baseAddress;
   std::unordered_set<std::string> dynamicMemoryOps;
-  std::unordered_set<std::string> functionNames;
   std::vector<unsigned> numParents;
   std::vector<float> latestParents;
   std::vector<bool> finalIsolated;

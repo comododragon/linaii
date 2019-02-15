@@ -98,7 +98,7 @@ class ParsedTraceContainer {
 	std::vector<std::string> instIDList;
 	std::vector<int> lineNoList;
 	std::vector<std::tuple<int, int64_t, unsigned>> memoryTraceList;
-	std::vector<std::tuple<int, std::string, int64_t>> getElementPtrList;
+	std::unordered_map<int, std::pair<std::string, int64_t>> getElementPtrList;
 	std::vector<std::string> prevBasicBlockList;
 	std::vector<std::string> currBasicBlockList;
 
@@ -120,7 +120,7 @@ public:
 	void appendToInstIDList(std::string elem);
 	void appendToLineNoList(int elem);
 	void appendToMemoryTraceList(std::tuple<int, int64_t, unsigned> elem);
-	void appendToGetElementPtrList(std::tuple<int, std::string, int64_t> elem);
+	void appendToGetElementPtrList(int key, std::pair<std::string, int64_t> elem);
 	void appendToPrevBBList(std::string elem);
 	void appendToCurrBBList(std::string elem);
 
@@ -128,7 +128,7 @@ public:
 	const std::vector<std::string> &getInstIDList();
 	const std::vector<int> &getLineNoList();
 	const std::vector<std::tuple<int, int64_t, unsigned>> &getMemoryTraceList();
-	const std::vector<std::tuple<int, std::string, int64_t>> &getGetElementPtrList();
+	const std::unordered_map<int, std::pair<std::string, int64_t>> &getGetElementPtrList();
 	const std::vector<std::string> &getPrevBBList();
 	const std::vector<std::string> &getCurrBBList();
 };

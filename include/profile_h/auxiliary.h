@@ -12,6 +12,7 @@
 #include <fstream>
 #include <list>
 #include <map>
+#include <unordered_map>
 
 #ifdef ENABLE_BTREE_MAP
 #include "profile_h/btree_map.h"
@@ -172,8 +173,16 @@ public:
 		int lineNo;
 		uint64_t unrollFactor;
 	} unrollingCfgTy;
-	// TODO: fix elements
 	typedef struct {
+		enum {
+			PARTITION_TYPE_BLOCK,
+			PARTITION_TYPE_CYCLIC,
+			PARTITION_TYPE_COMPLETE
+		};
+		unsigned type;
+		std::string baseAddr;
+		uint64_t size;
+		size_t wordSize;
 		uint64_t pFactor;
 	} partitionCfgTy;
 	typedef struct {
@@ -181,6 +190,7 @@ public:
 		uint64_t totalSize;
 		size_t wordSize;
 	} arrayInfoCfgTy;
+	typedef std::unordered_map<std::string, partitionCfgTy *> partitionCfgMapTy;
 
 private:
 	std::string kernelName;
@@ -191,10 +201,13 @@ private:
 	std::vector<partitionCfgTy> completePartitionCfg;
 	std::vector<arrayInfoCfgTy> arrayInfoCfg;
 
+	partitionCfgMapTy partitionCfgMap;
+	partitionCfgMapTy completePartitionCfgMap;
+
 	void appendToPipeliningCfg(std::string funcName, unsigned loopNo, unsigned loopLevel);
 	void appendToUnrollingCfg(std::string funcName, unsigned loopNo, unsigned loopLevel, int lineNo, uint64_t unrollFactor);
-	void appendToPartitionCfg(uint64_t pFactor);
-	void appendToCompletePartitionCfg(uint64_t pFactor);
+	void appendToPartitionCfg(unsigned type, std::string baseAddr, uint64_t size, size_t wordSize, uint64_t pFactor);
+	void appendToCompletePartitionCfg(std::string baseAddr, uint64_t size);
 	void appendToArrayInfoCfg(std::string arrayName, uint64_t totalSize, size_t wordSize);
 
 public:
@@ -210,6 +223,9 @@ public:
 	const std::vector<partitionCfgTy> &getPartitionCfg() const { return partitionCfg; }
 	const std::vector<partitionCfgTy> &getCompletePartitionCfg() const { return completePartitionCfg; }
 	const std::vector<arrayInfoCfgTy> &getArrayInfoCfg() const { return arrayInfoCfg; }
+
+	const partitionCfgMapTy &getPartitionCfgMap() const { return partitionCfgMap; }
+	const partitionCfgMapTy &getCompletePartitionCfgMap() const { return completePartitionCfgMap; }
 };
 
 }

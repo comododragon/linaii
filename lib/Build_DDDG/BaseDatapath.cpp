@@ -62,8 +62,82 @@ void BaseDatapath::insertMicroop(int microop) {
 }
 
 void BaseDatapath::insertDDDGEdge(unsigned from, unsigned to, uint8_t paramID) {
+	errs() << "oi " << std::to_string(from) << " " << std::to_string(to) << "\n";
 	if(from != to)
 		add_edge(from, to, EdgeProperty(paramID), graph);
+}
+
+void BaseDatapath::initBaseAddress() {
+	//const std::vector<ConfigurationManager::partitionCfgTy> &partitionCfg = CM.getPartitionCfg();
+	//const std::vector<ConfigurationManager::partitionCfgTy> &completePartitionCfg = CM.getCompletePartitionCfg();
+	const ConfigurationManager::partitionCfgMapTy &partitionMap = CM.getPartitionCfgMap();
+	const ConfigurationManager::partitionCfgMapTy &completePartitionMap = CM.getCompletePartitionCfgMap();
+	const std::unordered_map<int, std::pair<std::string, int64_t>> &getElementPtrMap = PC.getGetElementPtrList();
+
+	edgeToParamID = get(boost::edge_weight, graph);
+
+	VertexIterator vi, viEnd;
+	for(std::tie(vi, viEnd) = vertices(graph); vi != viEnd; vi++) {
+		if(!boost::degree(*vi, graph))
+			continue;
+
+		Vertex currNode = *vi;
+		unsigned nodeID = vertexToName[currNode];
+		int nodeMicroop = microops.at(nodeID);
+
+		if(!isMemoryOp(nodeMicroop))
+			continue;
+
+		bool modified = false;
+
+		while(true) {
+			bool foundParent = false;
+
+			InEdgeIterator inEdgei, inEdgeEnd;
+			for(std::tie(inEdgei, inEdgeEnd) = in_edges(currNode, graph); inEdgei != inEdgeEnd; inEdgei++) {
+				int paramID = edgeToParamID[*inEdgei];
+				if((isLoadOp(nodeMicroop) && paramID != 1) || (LLVM_IR_GetElementPtr == nodeMicroop && paramID != 1) || (isStoreOp(nodeMicroop) && paramID != 2))
+					continue;
+
+				unsigned parentID = vertexToName[source(*inEdgei, graph)];
+				int parentMicroop = microops.at(parentID);
+				if(LLVM_IR_GetElementPtr == parentMicroop || isLoadOp(parentMicroop)) {
+					baseAddress[nodeID] = getElementPtrMap.at(parentID);
+					currNode = source(*inEdgei, graph);
+					nodeMicroop = parentMicroop;
+					foundParent = true;
+					modified = true;
+					break;
+				}
+				else if(LLVM_IR_Alloca == parentMicroop) {
+					baseAddress[nodeID] = getElementPtrMap.at(parentID);
+					modified = true;
+					break;
+				}
+			}
+
+			if(!foundParent)
+				break;
+		}
+
+		if(!modified)
+			baseAddress[nodeID] = getElementPtrMap.at(nodeID);
+
+		// Check if base address is inside a partition request. If not, add to a no-partition vector
+		// XXX: A partition sanity check was implemented in the original version.
+		// I've removed it because since my map and partition configuration are constructed together ("atomically"),
+		// I don't think that are possibilities of a partition not existing in the database (or at least I hope so...)
+		std::string baseAddr = baseAddress[nodeID].first;
+		if(partitionMap.end() == partitionMap.find(baseAddr) && completePartitionMap.end() == completePartitionMap.find(baseAddr))
+			noPartitionArrayName.insert(baseAddr);
+	}
+
+	// XXX: In the original implementation, base address is written to a configuration file "_baseAddr.gz"
+	// but apparently is never used. Therefore it was removed for now.
+}
+
+uint64_t BaseDatapath::fpgaEstimationOneMoreSubtraceForRecIICalculation() {
+	// TODO PAREI AQUI
 }
 
 #if 0

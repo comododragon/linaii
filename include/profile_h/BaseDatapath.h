@@ -403,15 +403,6 @@ class BaseDatapath {
 	DDDGBuilder *builder;
 	ParsedTraceContainer PC;
 
-	std::vector<int> microops;
-	Graph graph;
-	unsigned numOfTotalNodes;
-	std::unordered_map<unsigned, Vertex> nameToVertex;
-	VertexNameMap vertexToName;
-	std::unordered_set<std::string> functionNames;
-	// TODO: check type
-	unsigned numOfPortsPerPartition;
-
 public:
 	BaseDatapath(
 		std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
@@ -431,6 +422,27 @@ public:
 protected:
 	uint64_t asapII;
 	uint64_t numCycles;
+
+	// A map from node ID to its microop
+	std::vector<int> microops;
+	// The DDDG
+	Graph graph;
+	// Number of nodes in the graph
+	unsigned numOfTotalNodes;
+	// A map from node ID to boost internal ID
+	std::unordered_map<unsigned, Vertex> nameToVertex;
+	// A map from boost internal ID to node ID
+	VertexNameMap vertexToName;
+	// A map from edge internal ID to its weight (parameter ID)
+	EdgeWeightMap edgeToParamID;
+	// Set containing all called functions
+	std::unordered_set<std::string> functionNames;
+	// TODO: check type
+	unsigned numOfPortsPerPartition;
+	// A map from node ID to a getelementptr pair (variable name and its address)
+	std::unordered_map<int, std::pair<std::string, int64_t>> baseAddress;
+	// A set containing the name of all arrays that are not marked for partitioning
+	std::set<std::string> noPartitionArrayName;
 
 	void initBaseAddress();
 

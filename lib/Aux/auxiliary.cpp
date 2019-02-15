@@ -28,7 +28,7 @@ bool verifyModuleAndPrintErrors(Module &M) {
 }
 
 std::string constructLoopName(std::string funcName, unsigned loopNo, unsigned depth) {
-	std::string loopName = funcName + "_loop" + std::to_string(loopNo);
+	std::string loopName = funcName + "_loop-" + std::to_string(loopNo);
 
 	if(((unsigned) -1) == depth)
 		return loopName;
@@ -41,8 +41,8 @@ std::string appendDepthToLoopName(std::string loopName, unsigned depth) {
 }
 
 std::tuple<std::string, unsigned> parseLoopName(std::string loopName) {
-	const std::string mainLoopTag = "_loop";
-	const size_t mainLoopTagSize = 5;
+	const std::string mainLoopTag = "_loop-";
+	const size_t mainLoopTagSize = 6;
 
 	size_t tagPos = loopName.find(mainLoopTag);
 	std::string funcName = loopName.substr(0, tagPos);
@@ -54,9 +54,9 @@ std::tuple<std::string, unsigned> parseLoopName(std::string loopName) {
 }
 
 std::tuple<std::string, unsigned, unsigned> parseWholeLoopName(std::string wholeLoopName) {
-	const std::string mainLoopTag = "_loop";
+	const std::string mainLoopTag = "_loop-";
 	const std::string depthTag = "_";
-	const size_t mainLoopTagSize = 5;
+	const size_t mainLoopTagSize = 6;
 	const size_t depthTagSize = 1;
 
 	size_t tagPos = wholeLoopName.find(mainLoopTag);
@@ -94,20 +94,30 @@ void ConfigurationManager::appendToUnrollingCfg(std::string funcName, unsigned l
 	unrollingCfg.push_back(elem);
 }
 
-void ConfigurationManager::appendToPartitionCfg(uint64_t pFactor) {
+void ConfigurationManager::appendToPartitionCfg(unsigned type, std::string baseAddr, uint64_t size, size_t wordSize, uint64_t pFactor) {
 	partitionCfgTy elem;
 
+	elem.type = type;
+	elem.baseAddr = baseAddr;
+	elem.size = size;
+	elem.wordSize = wordSize;
 	elem.pFactor = pFactor;
 
 	partitionCfg.push_back(elem);
+	partitionCfgMap.insert(std::make_pair(baseAddr, &(partitionCfg.back())));
 }
 
-void ConfigurationManager::appendToCompletePartitionCfg(uint64_t pFactor) {
+void ConfigurationManager::appendToCompletePartitionCfg(std::string baseAddr, uint64_t size) {
 	partitionCfgTy elem;
 
-	elem.pFactor = pFactor;
+	elem.type = partitionCfgTy::PARTITION_TYPE_COMPLETE;
+	elem.baseAddr = baseAddr;
+	elem.size = size;
+	elem.wordSize = 0;
+	elem.pFactor = 0;
 
 	completePartitionCfg.push_back(elem);
+	completePartitionCfgMap.insert(std::make_pair(baseAddr, &(completePartitionCfg.back())));
 }
 
 void ConfigurationManager::appendToArrayInfoCfg(std::string arrayName, uint64_t totalSize, size_t wordSize) {
@@ -124,7 +134,9 @@ void ConfigurationManager::clear() {
 	pipeliningCfg.clear();
 	unrollingCfg.clear();
 	partitionCfg.clear();
+	partitionCfgMap.clear();
 	completePartitionCfg.clear();
+	completePartitionCfgMap.clear();
 	arrayInfoCfg.clear();
 }
 
@@ -286,23 +298,30 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 		assert(false && "Please provide array information for this kernel");
 	}
 
-	// TODO: consertar os elementos!
 	if(partitionCfgStr.size()) {
 		for(std::string i : partitionCfgStr) {
+			char buff[BUFF_STR_SZ];
+			char buff2[BUFF_STR_SZ];
+			uint64_t size;
+			size_t wordSize;
 			uint64_t pFactor;
-			sscanf(i.c_str(), "%*[^,],%*[^,],%*[^,],%*d,%*d,%lu\n", &pFactor);
+			sscanf(i.c_str(), "%*[^,],%[^,],%[^,],%lu,%zu,%lu\n", buff, buff2, &size, &wordSize, &pFactor);
 
-			appendToPartitionCfg(pFactor);
+			std::string typeStr(buff);
+			unsigned type = (typeStr.compare("cyclic"))? partitionCfgTy::PARTITION_TYPE_BLOCK : partitionCfgTy::PARTITION_TYPE_CYCLIC;
+			std::string baseAddr(buff2);
+			appendToPartitionCfg(type, baseAddr, size, wordSize, pFactor);
 		}
 	}
 
-	// TODO: consertar os elementos!
 	if(completePartitionCfgStr.size()) {
 		for(std::string i : completePartitionCfgStr) {
-			uint64_t pFactor;
-			sscanf(i.c_str(), "%*[^,],%*[^,],%*[^,],%*d,%*d,%lu\n", &pFactor);
+			char buff[BUFF_STR_SZ];
+			uint64_t size;
+			sscanf(i.c_str(), "%*[^,],%*[^,],%[^,],%lu\n", buff, &size);
 
-			appendToCompletePartitionCfg(pFactor);
+			std::string baseAddr(buff);
+			appendToCompletePartitionCfg(baseAddr, size);
 		}
 	}
 
@@ -338,16 +357,16 @@ void ConfigurationManager::parseToFiles() {
 	}
 	outFile.close();
 
-	// TODO: fix elements
 	outFile.open(partitionFileName);
-	for(auto &it : partitionCfg)
-		outFile << "partition,XXXX," << std::to_string(it.pFactor) << "\n";
+	for(auto &it : partitionCfg) {
+		std::string type = (partitionCfgTy::PARTITION_TYPE_BLOCK == it.type)? "block" : "cyclic";
+		outFile << "partition," << type << "," << it.baseAddr << "," << std::to_string(it.size) << "," << std::to_string(it.wordSize) << "," << std::to_string(it.pFactor) << "\n";
+	}
 	outFile.close();
 
-	// TODO: fix elements
 	outFile.open(completePartitionFileName);
 	for(auto &it : completePartitionCfg)
-		outFile << "partition,complete," << std::to_string(it.pFactor) << "\n";
+		outFile << "partition,complete," << it.baseAddr << "," << std::to_string(it.size) << "\n";
 	outFile.close();
 
 	outFile.open(arrayInfoFileName);

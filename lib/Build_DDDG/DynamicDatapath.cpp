@@ -6,13 +6,15 @@ DynamicDatapath::DynamicDatapath(
 ) : BaseDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, 0) {
 	VERBOSE_PRINT(errs() << "[][][][dynamicDatapath] Analysing DDDG for loop \"" << loopName << "\"\n");
 
-#if 0
 	initBaseAddress();
 
 	VERBOSE_PRINT(errs() << "[][][][dynamicDatapath] Analysing recurrence-constrained II\n");
 	asapII = fpgaEstimationOneMoreSubtraceForRecIICalculation();
 
 	VERBOSE_PRINT(errs() << "[][][][dynamicDatapath] Finished\n");
+
+#ifdef DBG_PRINT_ALL
+	printDatabase();
 #endif
 }
 
@@ -44,3 +46,38 @@ uint64_t DynamicDatapath::getASAPII() const {
 uint64_t DynamicDatapath::getCycles() const {
 	return numCycles;
 }
+
+#ifdef DBG_PRINT_ALL
+void DynamicDatapath::printDatabase() {
+	errs() << "-- microops\n";
+	for(auto const &x : microops)
+		errs() << "-- " << std::to_string(x) << "\n";
+	errs() << "-- --------\n";
+	errs() << "-- nameToVertex\n";
+	for(auto const &x : nameToVertex)
+		errs() << "-- " << std::to_string(x.first) << ": " << x.second << "\n";
+	errs() << "-- ------------\n";
+	errs() << "-- vertexToName\n";
+	VertexIterator vi, viEnd;
+	for(std::tie(vi, viEnd) = vertices(graph); vi != viEnd; vi++)
+		errs() << "-- " << vertexToName[*vi] << "\n";
+	errs() << "-- ------------\n";
+	errs() << "-- edgeToParamID\n";
+	EdgeIterator ei, eiEnd;
+	for(std::tie(ei, eiEnd) = edges(graph); ei != eiEnd; ei++)
+		errs() << "-- " << std::to_string(edgeToParamID[*ei]) << "\n";
+	errs() << "-- -------------\n";
+	errs() << "-- functionNames\n";
+	for(auto const &x : functionNames)
+		errs() << "-- " << x << "\n";
+	errs() << "-- -------------\n";
+	errs() << "-- baseAddress\n";
+	for(auto const &x : baseAddress)
+		errs() << "-- " << std::to_string(x.first) << ": <" << x.second.first << ", " << std::to_string(x.second.second) << ">\n";
+	errs() << "-- -----------\n";
+	errs() << "-- noPartitionArrayName\n";
+	for(auto const &x : noPartitionArrayName)
+		errs() << "-- " << x << "\n";
+	errs() << "-- --------------------\n";
+}
+#endif

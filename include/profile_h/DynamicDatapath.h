@@ -24,6 +24,10 @@ public:
 
 	uint64_t getASAPII() const;
 	uint64_t getCycles() const;
+
+#ifdef DBG_PRINT_ALL
+	void printDatabase();
+#endif
 };
 
 #endif // End of DYNAMIC_DATAPATH_H

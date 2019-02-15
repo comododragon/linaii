@@ -222,7 +222,7 @@ void ParsedTraceContainer::appendToMemoryTraceList(std::tuple<int, int64_t, unsi
 	}
 }
 
-void ParsedTraceContainer::appendToGetElementPtrList(std::tuple<int, std::string, int64_t> elem) {
+void ParsedTraceContainer::appendToGetElementPtrList(int key, std::pair<std::string, int64_t> elem) {
 	assert(!locked && "This container is locked, no modification permitted");
 	assert(!keepAliveRead && "This container is open for read, no modification permitted");
 
@@ -232,7 +232,7 @@ void ParsedTraceContainer::appendToGetElementPtrList(std::tuple<int, std::string
 			assert(getElementPtrFile != Z_NULL && "Could not open getelementptr file for write");
 		}
 
-		gzprintf(getElementPtrFile, "%d,%s,%ld\n", (int) std::get<0>(elem), std::get<1>(elem).c_str(), (int64_t) std::get<2>(elem));
+		gzprintf(getElementPtrFile, "%d,%s,%ld\n", (int) key, elem.first.c_str(), (int64_t) elem.second);
 
 		if(!keepAliveWrite) {
 			gzclose(getElementPtrFile);
@@ -240,7 +240,7 @@ void ParsedTraceContainer::appendToGetElementPtrList(std::tuple<int, std::string
 		}
 	}
 	else {
-		getElementPtrList.push_back(elem);
+		getElementPtrList.insert(std::make_pair(key, elem));
 	}
 }
 
@@ -410,7 +410,7 @@ const std::vector<std::tuple<int, int64_t, unsigned>> &ParsedTraceContainer::get
 	return memoryTraceList;
 }
 
-const std::vector<std::tuple<int, std::string, int64_t>> &ParsedTraceContainer::getGetElementPtrList() {
+const std::unordered_map<int, std::pair<std::string, int64_t>> &ParsedTraceContainer::getGetElementPtrList() {
 	if(compressed) {
 		assert(!keepAliveWrite && "This container is open for write, no reading permitted");
 
@@ -430,7 +430,7 @@ const std::vector<std::tuple<int, std::string, int64_t>> &ParsedTraceContainer::
 			char elem2[BUFF_STR_SZ];
 			int64_t elem3;
 			sscanf(buffer, "%d,%s,%ld\n", &elem, elem2, &elem3);
-			getElementPtrList.push_back(std::make_tuple(elem, std::string(elem2), elem3));
+			getElementPtrList.insert(std::make_pair(elem, std::make_pair(std::string(elem2), elem3)));
 		}
 
 		if(!keepAliveRead) {
@@ -871,7 +871,7 @@ void DDDGBuilder::parseResult() {
 
 	// Register an allocation request
 	if(LLVM_IR_Alloca == currMicroop) {
-		PC.appendToGetElementPtrList(std::make_tuple(numOfInstructions, label, (int64_t) value));
+		PC.appendToGetElementPtrList(numOfInstructions, std::make_pair(label, (int64_t) value));
 	}
 	// Register a load
 	else if(isLoadOp(currMicroop)) {
@@ -999,7 +999,7 @@ void DDDGBuilder::parseParameter(int param) {
 
 			//int64_t baseAddr = parameterValuePerInst.back();
 			std::string baseLabel = parameterLabelPerInst.back();
-			PC.appendToGetElementPtrList(std::make_tuple(numOfInstructions, baseLabel, addr));
+			PC.appendToGetElementPtrList(numOfInstructions, std::make_pair(baseLabel, addr));
 		}
 		// Second parameter of store is the pointer
 		else if(2 == param && isStoreOp(currMicroop)) {
@@ -1012,7 +1012,7 @@ void DDDGBuilder::parseParameter(int param) {
 			else
 				addressLastWritten.insert(std::make_pair(addr, numOfInstructions));
 
-			PC.appendToGetElementPtrList(std::make_tuple(numOfInstructions, baseLabel, addr));
+			PC.appendToGetElementPtrList(numOfInstructions, std::make_pair(baseLabel, addr));
 		}
 		// First parameter of store is the value
 		else if(1 == param && isStoreOp(currMicroop)) {
@@ -1023,7 +1023,7 @@ void DDDGBuilder::parseParameter(int param) {
 		else if(1 == param && LLVM_IR_GetElementPtr == currMicroop) {
 			int64_t addr = parameterValuePerInst.back();
 			std::string label = parameterLabelPerInst.back();
-			PC.appendToGetElementPtrList(std::make_tuple(numOfInstructions, label, addr));
+			PC.appendToGetElementPtrList(numOfInstructions, std::make_pair(label, addr));
 		}
 	}
 }

@@ -92,6 +92,12 @@ typedef std::vector<std::string> NameVecTy;
 typedef std::unordered_map<std::string, unsigned> staticInstID2OpcodeMapTy;
 extern staticInstID2OpcodeMapTy staticInstID2OpcodeMap;
 
+typedef struct {
+	unsigned from;
+	unsigned to;
+	uint8_t paramID;
+} edgeTy;
+
 #if 0
 // Used heavily in reporting cycle-level statistics.
 typedef std::unordered_map<std::string, std::vector<int>> ActivityMap;
@@ -418,6 +424,9 @@ public:
 
 	void insertMicroop(int microop);
 	void insertDDDGEdge(unsigned from, unsigned to, uint8_t paramID);
+	bool edgeExists(unsigned from, unsigned to);
+	void updateRemoveDDDGEdges(std::set<Edge> &edgesToRemove);
+	void updateAddDDDGEdges(std::vector<edgeTy> &edgesToAdd);
 
 protected:
 	uint64_t asapII;
@@ -448,6 +457,9 @@ protected:
 
 	uint64_t fpgaEstimation();
 	uint64_t fpgaEstimationOneMoreSubtraceForRecIICalculation();
+
+	void removeInductionDependencies();
+	void removePhiNodes();
 
 	void dumpGraph();
 

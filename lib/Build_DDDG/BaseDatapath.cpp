@@ -66,6 +66,22 @@ void BaseDatapath::insertDDDGEdge(unsigned from, unsigned to, uint8_t paramID) {
 		add_edge(from, to, EdgeProperty(paramID), graph);
 }
 
+bool BaseDatapath::edgeExists(unsigned from, unsigned to) {
+	return edge(nameToVertex[from], nameToVertex[to], graph).second;
+}
+
+void BaseDatapath::updateRemoveDDDGEdges(std::set<Edge> &edgesToRemove) {
+	for(auto &it : edgesToRemove)
+		remove_edge(it, graph);
+}
+
+void BaseDatapath::updateAddDDDGEdges(std::vector<edgeTy> &edgesToAdd) {
+	for(auto &it : edgesToAdd) {
+		if(it.from != it.to && !edgeExists(it.from, it.to))
+			get(boost::edge_weight, graph)[add_edge(it.from, it.to, graph).first] = it.paramID;
+	}
+}
+
 void BaseDatapath::initBaseAddress() {
 	//const std::vector<ConfigurationManager::partitionCfgTy> &partitionCfg = CM.getPartitionCfg();
 	//const std::vector<ConfigurationManager::partitionCfgTy> &completePartitionCfg = CM.getCompletePartitionCfg();
@@ -136,7 +152,85 @@ void BaseDatapath::initBaseAddress() {
 }
 
 uint64_t BaseDatapath::fpgaEstimationOneMoreSubtraceForRecIICalculation() {
-	// TODO PAREI AQUI
+	removeInductionDependencies();
+	removePhiNodes();
+}
+
+void BaseDatapath::removeInductionDependencies() {
+	const std::vector<std::string> &instID = PC.getInstIDList();
+
+	std::vector<Vertex> topologicalSortedNodes;
+	boost::topological_sort(graph, std::back_inserter(topologicalSortedNodes));
+
+	// Nodes with no incoming edges first
+	for(auto vi = topologicalSortedNodes.rbegin(); vi != topologicalSortedNodes.rend(); vi++) {
+		unsigned nodeID = vertexToName[*vi];
+		std::string nodeInstID = instID.at(nodeID);
+
+		if(nodeInstID.find("indvars") != std::string::npos) {
+			if(LLVM_IR_Add == microops.at(nodeID))
+				microops.at(nodeID) = LLVM_IR_IndexAdd;
+		}
+		else {
+			InEdgeIterator inEdgei, inEdgeEnd;
+			for(std::tie(inEdgei, inEdgeEnd) = in_edges(*vi, graph); inEdgei != inEdgeEnd; inEdgei++) {
+				unsigned parentID = vertexToName[source(*inEdgei, graph)];
+				std::string parentInstID = instID.at(parentID);
+
+				if(std::string::npos == parentInstID.find("indvars"))
+					continue;
+
+				if(LLVM_IR_Add == microops.at(nodeID))
+					microops.at(nodeID) = LLVM_IR_IndexAdd;
+			}
+		}
+	}
+}
+
+void BaseDatapath::removePhiNodes() {
+	EdgeWeightMap edgeToParamID = get(boost::edge_weight, graph);
+	std::set<Edge> edgesToRemove;
+	std::vector<edgeTy> edgesToAdd;
+
+	VertexIterator vi, viEnd;
+	for(std::tie(vi, viEnd) = vertices(graph); vi != viEnd; vi++) {
+		unsigned nodeID = vertexToName[*vi];
+		int nodeMicroop = microops.at(nodeID);
+
+		if(nodeMicroop != LLVM_IR_PHI && nodeMicroop != LLVM_IR_BitCast)
+			continue;
+
+		// If code reaches this point, this node is a PHI node
+
+		std::vector<std::pair<unsigned, uint8_t>> phiChild;
+
+		// Mark its children
+		OutEdgeIterator outEdgei, outEdgeEnd;
+		for(std::tie(outEdgei, outEdgeEnd) = out_edges(*vi, graph); outEdgei != outEdgeEnd; outEdgei++) {
+			edgesToRemove.insert(*outEdgei);
+			phiChild.push_back(std::make_pair(vertexToName[target(*outEdgei, graph)], edgeToParamID[*outEdgei]));
+		}
+
+		if(!phiChild.size())
+			continue;
+
+		// Mark its parents
+		InEdgeIterator inEdgei, inEdgeEnd;
+		for(std::tie(inEdgei, inEdgeEnd) = in_edges(*vi, graph); inEdgei != inEdgeEnd; inEdgei++) {
+			unsigned parentID = vertexToName[source(*inEdgei, graph)];
+			edgesToRemove.insert(*inEdgei);
+
+			for(auto &child : phiChild)
+				edgesToAdd.push_back({parentID, child.first, child.second});
+		}
+
+		// XXX: Not sure why the vector is being cleaned this way...
+		std::vector<std::pair<unsigned, uint8_t>>().swap(phiChild);
+	}
+
+	// Edges from-to PHI nodes are substituted by direct connections (i.e. PHI nodes are removed)
+	updateRemoveDDDGEdges(edgesToRemove);
+	updateAddDDDGEdges(edgesToAdd);
 }
 
 #if 0

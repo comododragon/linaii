@@ -119,8 +119,8 @@ public:
 	void appendToFuncList(std::string elem);
 	void appendToInstIDList(std::string elem);
 	void appendToLineNoList(int elem);
-	void appendToMemoryTraceList(std::tuple<int, int64_t, unsigned> elem);
-	void appendToGetElementPtrList(int key, std::pair<std::string, int64_t> elem);
+	void appendToMemoryTraceList(int elem, int64_t elem2, unsigned elem3);
+	void appendToGetElementPtrList(int key, std::string elem, int64_t elem2);
 	void appendToPrevBBList(std::string elem);
 	void appendToCurrBBList(std::string elem);
 
@@ -135,7 +135,7 @@ public:
 
 class DDDGBuilder {
 	BaseDatapath *datapath;
-	ParsedTraceContainer PC;
+	ParsedTraceContainer &PC;
 
 	std::string rest;
 	uint8_t prevMicroop, currMicroop;

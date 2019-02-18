@@ -62,7 +62,6 @@ void BaseDatapath::insertMicroop(int microop) {
 }
 
 void BaseDatapath::insertDDDGEdge(unsigned from, unsigned to, uint8_t paramID) {
-	errs() << "oi " << std::to_string(from) << " " << std::to_string(to) << "\n";
 	if(from != to)
 		add_edge(from, to, EdgeProperty(paramID), graph);
 }

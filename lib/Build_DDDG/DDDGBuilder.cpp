@@ -200,7 +200,7 @@ void ParsedTraceContainer::appendToLineNoList(int elem) {
 	}
 }
 
-void ParsedTraceContainer::appendToMemoryTraceList(std::tuple<int, int64_t, unsigned> elem) {
+void ParsedTraceContainer::appendToMemoryTraceList(int elem, int64_t elem2, unsigned elem3) {
 	assert(!locked && "This container is locked, no modification permitted");
 	assert(!keepAliveRead && "This container is open for read, no modification permitted");
 
@@ -210,7 +210,7 @@ void ParsedTraceContainer::appendToMemoryTraceList(std::tuple<int, int64_t, unsi
 			assert(memoryTraceFile != Z_NULL && "Could not open memory trace file for write");
 		}
 
-		gzprintf(memoryTraceFile, "%d,%ld,%u\n", (int) std::get<0>(elem), (int64_t) std::get<1>(elem), (unsigned) std::get<2>(elem));
+		gzprintf(memoryTraceFile, "%d,%ld,%u\n", elem, elem2, elem3);
 
 		if(!keepAliveWrite) {
 			gzclose(memoryTraceFile);
@@ -218,11 +218,11 @@ void ParsedTraceContainer::appendToMemoryTraceList(std::tuple<int, int64_t, unsi
 		}
 	}
 	else {
-		memoryTraceList.push_back(elem);
+		memoryTraceList.push_back(std::make_tuple(elem, elem2, elem3));
 	}
 }
 
-void ParsedTraceContainer::appendToGetElementPtrList(int key, std::pair<std::string, int64_t> elem) {
+void ParsedTraceContainer::appendToGetElementPtrList(int key, std::string elem, int64_t elem2) {
 	assert(!locked && "This container is locked, no modification permitted");
 	assert(!keepAliveRead && "This container is open for read, no modification permitted");
 
@@ -232,7 +232,7 @@ void ParsedTraceContainer::appendToGetElementPtrList(int key, std::pair<std::str
 			assert(getElementPtrFile != Z_NULL && "Could not open getelementptr file for write");
 		}
 
-		gzprintf(getElementPtrFile, "%d,%s,%ld\n", (int) key, elem.first.c_str(), (int64_t) elem.second);
+		gzprintf(getElementPtrFile, "%d,%s,%ld\n", key, elem.c_str(), elem2);
 
 		if(!keepAliveWrite) {
 			gzclose(getElementPtrFile);
@@ -240,7 +240,7 @@ void ParsedTraceContainer::appendToGetElementPtrList(int key, std::pair<std::str
 		}
 	}
 	else {
-		getElementPtrList.insert(std::make_pair(key, elem));
+		getElementPtrList.insert(std::make_pair(key, std::make_pair(elem, elem2)));
 	}
 }
 
@@ -429,7 +429,7 @@ const std::unordered_map<int, std::pair<std::string, int64_t>> &ParsedTraceConta
 			int elem;
 			char elem2[BUFF_STR_SZ];
 			int64_t elem3;
-			sscanf(buffer, "%d,%s,%ld\n", &elem, elem2, &elem3);
+			sscanf(buffer, "%d,%[^,],%ld\n", &elem, elem2, &elem3);
 			getElementPtrList.insert(std::make_pair(elem, std::make_pair(std::string(elem2), elem3)));
 		}
 
@@ -518,9 +518,10 @@ void DDDGBuilder::buildInitialDDDG() {
 	assert(traceFile != Z_NULL && "Could not open trace input file");
 
 	lineFromToTy fromToPair = getTraceLineFromTo(traceFile);
-	//std::cout << "--------- " << fromToPair.first << " " << fromToPair.second << "\n";
 
 	parseTraceFile(traceFile, fromToPair);
+
+	writeDDDG();
 
 	// TODO: write graph property csv?
 }
@@ -695,9 +696,16 @@ lineFromToTy DDDGBuilder::getTraceLineFromTo(gzFile &traceFile) {
 void DDDGBuilder::parseTraceFile(gzFile &traceFile, lineFromToTy fromToPair) {
 	PC.openAndClearAllFiles();
 
+#if 0
+// XXX: New simpler logic
+	uint64_t from = fromToPair.first, to = fromToPair.second;
+	uint64_t instCount = 0;
+#else
+// XXX: Old logic that seems buggish
 	uint64_t from = fromToPair.first, to = fromToPair.second;
 	uint64_t instCount = 0;
 	bool parseInst = false;
+#endif
 	char buffer[BUFF_STR_SZ];
 
 	// Iterate through dynamic trace, but only process the specified interval
@@ -715,19 +723,15 @@ void DDDGBuilder::parseTraceFile(gzFile &traceFile, lineFromToTy fromToPair) {
 		std::string tag = line.substr(0, tagPos);
 		rest = line.substr(tagPos + 1);
 
-		if(!tag.compare("0")) {
-			// If log0 is within specified interval, process
-			if(instCount >= from && instCount <= to) {
-				parseInstructionLine();
-				parseInst = true;
-			}
-			else {
-				parseInst = false;
-			}
+#if 0
+// XXX: New simpler logic
+		if(!tag.compare("0"))
 			instCount++;
-		}
-		else if(parseInst) {
-			if(!tag.compare("r"))
+
+		if(instCount > from && instCount <= to) {
+			if(!tag.compare("0"))
+				parseInstructionLine();
+			else if(!tag.compare("r"))
 				parseResult();
 			else if(!tag.compare("f"))
 				parseForward();
@@ -738,6 +742,31 @@ void DDDGBuilder::parseTraceFile(gzFile &traceFile, lineFromToTy fromToPair) {
 		else if(instCount > to) {
 			break;
 		}
+#else
+// XXX: Old logic that seems buggish
+		if(!tag.compare("0")) {
+			if(instCount >= from && instCount <= to) {
+				parseInstructionLine();
+				parseInst = true;
+			}
+			else {
+				parseInst = false;
+			}
+			instCount++;
+		}
+
+		if(tag.compare("0") && parseInst) {
+			if(!tag.compare("r"))
+				parseResult();
+			else if(!tag.compare("f"))
+				parseForward();
+			else
+				parseParameter(std::atoi(tag.c_str()));
+		}
+		else if(instCount > to) {
+			break;
+		}
+#endif
 	}
 
 	PC.closeAllFiles();
@@ -871,18 +900,18 @@ void DDDGBuilder::parseResult() {
 
 	// Register an allocation request
 	if(LLVM_IR_Alloca == currMicroop) {
-		PC.appendToGetElementPtrList(numOfInstructions, std::make_pair(label, (int64_t) value));
+		PC.appendToGetElementPtrList(numOfInstructions, label, (int64_t) value);
 	}
 	// Register a load
 	else if(isLoadOp(currMicroop)) {
 		int64_t addr = parameterValuePerInst.back();
-		PC.appendToMemoryTraceList(std::make_tuple(numOfInstructions, addr, size));
+		PC.appendToMemoryTraceList(numOfInstructions, addr, size);
 	}
 	// Register a DMA request
 	else if(isDMAOp(currMicroop)) {
 		int64_t addr = parameterValuePerInst[1];
 		unsigned memSize = parameterValuePerInst[2];
-		PC.appendToMemoryTraceList(std::make_tuple(numOfInstructions, addr, memSize));
+		PC.appendToMemoryTraceList(numOfInstructions, addr, memSize);
 	}
 }
 
@@ -999,7 +1028,7 @@ void DDDGBuilder::parseParameter(int param) {
 
 			//int64_t baseAddr = parameterValuePerInst.back();
 			std::string baseLabel = parameterLabelPerInst.back();
-			PC.appendToGetElementPtrList(numOfInstructions, std::make_pair(baseLabel, addr));
+			PC.appendToGetElementPtrList(numOfInstructions, baseLabel, addr);
 		}
 		// Second parameter of store is the pointer
 		else if(2 == param && isStoreOp(currMicroop)) {
@@ -1012,18 +1041,18 @@ void DDDGBuilder::parseParameter(int param) {
 			else
 				addressLastWritten.insert(std::make_pair(addr, numOfInstructions));
 
-			PC.appendToGetElementPtrList(numOfInstructions, std::make_pair(baseLabel, addr));
+			PC.appendToGetElementPtrList(numOfInstructions, baseLabel, addr);
 		}
 		// First parameter of store is the value
 		else if(1 == param && isStoreOp(currMicroop)) {
 			int64_t addr = parameterValuePerInst[0];
 			unsigned size = parameterSizePerInst.back();
-			PC.appendToMemoryTraceList(std::make_tuple(numOfInstructions, addr, size));
+			PC.appendToMemoryTraceList(numOfInstructions, addr, size);
 		}
 		else if(1 == param && LLVM_IR_GetElementPtr == currMicroop) {
 			int64_t addr = parameterValuePerInst.back();
 			std::string label = parameterLabelPerInst.back();
-			PC.appendToGetElementPtrList(numOfInstructions, std::make_pair(label, addr));
+			PC.appendToGetElementPtrList(numOfInstructions, label, addr);
 		}
 	}
 }

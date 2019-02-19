@@ -8,10 +8,13 @@
 #define ENABLE_TIMER
 
 #define DBG_PRINT_ALL
+//#define USE_FUTURE
+#define PROGRESSIVE_TRACE_CURSOR
 
 #include <fstream>
 #include <list>
 #include <map>
+#include <queue>
 #include <unordered_map>
 
 #ifdef ENABLE_BTREE_MAP
@@ -34,6 +37,10 @@
 #define FILE_SUMMARY_SUFFIX "_summary.log"
 
 extern ArgPack args;
+#ifdef PROGRESSIVE_TRACE_CURSOR
+extern long int progressiveTraceCursor;
+extern uint64_t progressiveTraceInstCount;
+#endif
 extern const std::string loopNumberMDKindName;
 extern const std::string assignBasicBlockIDMDKindName;
 extern const std::string assignLoadStoreIDMDKindName;
@@ -226,6 +233,19 @@ public:
 
 	const partitionCfgMapTy &getPartitionCfgMap() const { return partitionCfgMap; }
 	const partitionCfgMapTy &getCompletePartitionCfgMap() const { return completePartitionCfgMap; }
+};
+
+class LimitedQueue {
+	size_t size;
+	std::queue<unsigned> history;
+
+public:
+	LimitedQueue(size_t size);
+
+	void push(unsigned elem);
+	unsigned front();
+	unsigned back();
+	size_t getSize();
 };
 
 }

@@ -408,13 +408,25 @@ class BaseDatapath {
 
 	DDDGBuilder *builder;
 	ParsedTraceContainer PC;
+#ifdef USE_FUTURE
+	FutureCache *future;
+#endif
 
 public:
+#ifdef USE_FUTURE
+	BaseDatapath(
+		std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
+		std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
+		FutureCache *future,
+		uint64_t asapII
+	);
+#else
 	BaseDatapath(
 		std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
 		std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
 		uint64_t asapII
 	);
+#endif
 
 	~BaseDatapath();
 

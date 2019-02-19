@@ -2,6 +2,16 @@
 
 #include "profile_h/BaseDatapath.h"
 
+#ifdef USE_FUTURE
+FutureCache::FutureCache(unsigned unrollFactor) : unrollFactor(unrollFactor), computed(false) { }
+
+void FutureCache::saveInterval(intervalTy interval) {
+	assert(!computed && "Attempt to save interval on a computed future cache");
+	this->interval = interval;
+	computed = true;
+}
+#endif
+
 ParsedTraceContainer::ParsedTraceContainer(std::string kernelName) {
 	funcFileName = args.outWorkDir + kernelName + "_dynamicfuncid.gz";
 	instIDFileName = args.outWorkDir + kernelName + "_instid.gz";
@@ -502,7 +512,11 @@ const std::vector<std::string> &ParsedTraceContainer::getCurrBBList() {
 	return currBasicBlockList;
 }
 
+#ifdef USE_FUTURE
+DDDGBuilder::DDDGBuilder(BaseDatapath *datapath, ParsedTraceContainer &PC, FutureCache *future) : datapath(datapath), PC(PC), future(future) {
+#else
 DDDGBuilder::DDDGBuilder(BaseDatapath *datapath, ParsedTraceContainer &PC) : datapath(datapath), PC(PC) {
+#endif
 	numOfInstructions = -1;
 	lastParameter = true;
 	prevBB = "-1";
@@ -517,9 +531,20 @@ void DDDGBuilder::buildInitialDDDG() {
 	traceFile = gzopen(traceFileName.c_str(), "r");
 	assert(traceFile != Z_NULL && "Could not open trace input file");
 
-	lineFromToTy fromToPair = getTraceLineFromTo(traceFile);
+	//lineFromToTy fromToPair = getTraceLineFromTo(traceFile);
+	//parseTraceFile(traceFile, fromToPair);
+#ifdef USE_FUTURE
+	intervalTy interval;
+	// If interval was computed on a previous DynamicDatapath construction, use that
+	if(future && future->isComputed())
+		interval = future->getInterval();
+	else
+		interval = getTraceLineFromTo(traceFile);
+#else
+	intervalTy interval = getTraceLineFromTo(traceFile);
+#endif
 
-	parseTraceFile(traceFile, fromToPair);
+	parseTraceFile(traceFile, interval);
 
 	writeDDDG();
 
@@ -542,7 +567,7 @@ unsigned DDDGBuilder::getNumOfMemoryDependencies() {
 	return numOfMemDeps;
 }
 
-lineFromToTy DDDGBuilder::getTraceLineFromTo(gzFile &traceFile) {
+intervalTy DDDGBuilder::getTraceLineFromTo(gzFile &traceFile) {
 	std::string loopName = datapath->getTargetLoopName();
 	unsigned loopLevel = datapath->getTargetLoopLevel();
 	uint64_t unrollFactor = datapath->getTargetLoopUnrollFactor();
@@ -592,15 +617,48 @@ lineFromToTy DDDGBuilder::getTraceLineFromTo(gzFile &traceFile) {
 
 	std::string wholeLoopName = appendDepthToLoopName(loopName, loopLevel);
 	uint64_t loopBound = wholeloopName2loopBoundMap.at(wholeLoopName);
+#ifdef USE_FUTURE
+	bool actualComputed = false;
+	// XXX: I AM ASSUMING THAT THIS WILL ONLY BE POSSIBLY FALSE ON FIRST DYNAMICDATAPATH CONSTRUCTION EVER
+	// XXX: This method iterates from the beginning of file. If loopBound == 0, there will be no break in the
+	// XXX: line reading loop, i.e. ALL LOOP BOUNDS WILL BE COMPUTED, therefore if skipRuntimeLoopBound == false,
+	// XXX: it won't be in the future again.
+	// XXX: Since future cache skips this getLineFromTo() when generated, wholeloopName2loopBoundMap is not updated!
+	// XXX: But if wholeloopName2loopBoundMap is updated only once, this won't be a problem
+#endif
 	bool skipRuntimeLoopBound = (loopBound > 0);
 
-	uint64_t from = 0, to = 0;
+#ifdef USE_FUTURE
+	// Handle future generation logic
+	bool computeFuture = future;
+	bool futureComputed = !computeFuture;
+	uint64_t futureUnrollFactor = computeFuture? future->getUnrollFactor() : 0;
+	if(computeFuture)
+		assert(!(future->isComputed()) && "Future cache computation was asked but its values are already computed");
+#endif
+
+#ifdef PROGRESSIVE_TRACE_CURSOR
+	uint64_t instCount = progressiveTraceInstCount;
+#else
+	uint64_t instCount = 0;
+#endif
+#ifdef USE_FUTURE
+	uint64_t byteFrom, to = 0, futureTo = 0;
+#else
+	uint64_t byteFrom, to = 0;
+#endif
+	// This queue saves exactly the last (numInstInHeaderBB - 1) byte offsets for the beggining of each line
+	LimitedQueue lineByteOffset(numInstInHeaderBB - 1);
 	bool firstTraverseHeader = true;
 	uint64_t lastInstExitingCounter = 0;
 	char buffer[BUFF_STR_SZ];
 
 	// Iterate through dynamic trace
+#ifdef PROGRESSIVE_TRACE_CURSOR
+	gzseek(traceFile, progressiveTraceCursor, SEEK_SET);
+#else
 	gzrewind(traceFile);
+#endif
 	while(!gzeof(traceFile)) {
 		if(Z_NULL == gzgets(traceFile, buffer, sizeof(buffer)))
 			continue;
@@ -621,14 +679,58 @@ lineFromToTy DDDGBuilder::getTraceLineFromTo(gzFile &traceFile) {
 			std::string instName(buffer2);
 
 			// Mark the first line of the first iteration of this loop
+#if 0
 			if(firstTraverseHeader && !instName.compare(lastInstHeaderBB)) {
 				from = count - numInstInHeaderBB + 1;
 				firstTraverseHeader = false;
 			}
+#endif
+#if 1
+			if(firstTraverseHeader) {
+				instCount++;
+
+				if(!instName.compare(lastInstHeaderBB)) {
+					// Save in byteFrom the amount of bytes between beginning of trace of file and first instruction
+					// of first loop iteration (the front() of this queue has the line byte offset for the header)
+					byteFrom = lineByteOffset.front();
+					instCount -= numInstInHeaderBB;
+					firstTraverseHeader = false;
+
+#ifdef PROGRESSIVE_TRACE_CURSOR
+					if(args.progressive) {
+						progressiveTraceCursor = byteFrom;
+						progressiveTraceInstCount = instCount;
+					}
+#endif
+				}
+				else {
+					// Save this line byte offset
+					lineByteOffset.push(gztell(traceFile) - line.size());
+				}
+			}
+#endif
 
 			// Mark the last line of the last iteration of this loop
 			if(!instName.compare(lastInstExitingBB)) {
 				lastInstExitingCounter++;
+
+#ifdef USE_FUTURE
+				// Compute actual "to" value
+				if(!actualComputed && unrollFactor == lastInstExitingCounter) {
+					to = count;
+					actualComputed = true;
+				}
+
+				// Compute future "to" value (only if asked)
+				if(computeFuture && !futureComputed && (futureUnrollFactor == lastInstExitingCounter)) {
+					futureTo = count;
+					futureComputed = true;
+				}
+
+				// If we computed all "to" values and no runtime loop bound must be calculated, we can stop now
+				if(actualComputed && futureComputed && skipRuntimeLoopBound)
+					break;
+#else
 				if(unrollFactor == lastInstExitingCounter) {
 					to = count;
 
@@ -636,6 +738,7 @@ lineFromToTy DDDGBuilder::getTraceLineFromTo(gzFile &traceFile) {
 					if(skipRuntimeLoopBound)
 						break;
 				}
+#endif
 			}
 
 			// Calculating loop bound at runtime: Increment loop bound counter 
@@ -690,26 +793,46 @@ lineFromToTy DDDGBuilder::getTraceLineFromTo(gzFile &traceFile) {
 		}
 	}
 
-	return std::make_pair(from, to);
+#ifdef USE_FUTURE
+	// If future was asked to be computed, save interval
+	if(computeFuture && futureComputed)
+		future->saveInterval(std::make_tuple(byteFrom, futureTo, instCount));
+#endif
+
+	return std::make_tuple(byteFrom, to, instCount);
 }
 
-void DDDGBuilder::parseTraceFile(gzFile &traceFile, lineFromToTy fromToPair) {
+void DDDGBuilder::parseTraceFile(gzFile &traceFile, intervalTy interval) {
 	PC.openAndClearAllFiles();
 
 #if 0
 // XXX: New simpler logic
 	uint64_t from = fromToPair.first, to = fromToPair.second;
 	uint64_t instCount = 0;
-#else
+#endif
+#if 0
 // XXX: Old logic that seems buggish
 	uint64_t from = fromToPair.first, to = fromToPair.second;
 	uint64_t instCount = 0;
 	bool parseInst = false;
 #endif
+#if 1
+// XXX: New logic based on old logic that speeds up file reading
+	uint64_t from = std::get<0>(interval), to = std::get<1>(interval);
+	uint64_t instCount = std::get<2>(interval);
+	bool parseInst = false;
+#endif
 	char buffer[BUFF_STR_SZ];
 
 	// Iterate through dynamic trace, but only process the specified interval
+#if 0
+// XXX: New simpler logic and old logic
 	gzrewind(traceFile);
+#endif
+#if 1
+// XXX: New logic based on old logic that speeds up file reading
+	gzseek(traceFile, from, SEEK_SET);
+#endif
 	while(!gzeof(traceFile)) {
 		if(Z_NULL == gzgets(traceFile, buffer, sizeof(buffer)))
 			continue;
@@ -742,10 +865,36 @@ void DDDGBuilder::parseTraceFile(gzFile &traceFile, lineFromToTy fromToPair) {
 		else if(instCount > to) {
 			break;
 		}
-#else
+#endif
+#if 0
 // XXX: Old logic that seems buggish
 		if(!tag.compare("0")) {
 			if(instCount >= from && instCount <= to) {
+				parseInstructionLine();
+				parseInst = true;
+			}
+			else {
+				parseInst = false;
+			}
+			instCount++;
+		}
+
+		if(tag.compare("0") && parseInst) {
+			if(!tag.compare("r"))
+				parseResult();
+			else if(!tag.compare("f"))
+				parseForward();
+			else
+				parseParameter(std::atoi(tag.c_str()));
+		}
+		else if(instCount > to) {
+			break;
+		}
+#endif
+#if 1
+// XXX: New logic based on old logic that speeds up file reading
+		if(!tag.compare("0")) {
+			if(instCount <= to) {
 				parseInstructionLine();
 				parseInst = true;
 			}

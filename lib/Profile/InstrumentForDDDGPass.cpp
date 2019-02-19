@@ -872,13 +872,23 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 		VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Target loop bound: " << targetLoopBound << "\n");
 		VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Pipelining: " << (enablePipelining? "enabled" : "disabled") << "\n");
 
-		unsigned actualUnrollFactor = 1;
+#ifdef USE_FUTURE
+		unsigned futureUnrollFactor = (targetLoopBound < targetUnrollFactor && targetLoopBound)? targetLoopBound : targetUnrollFactor;
+		FutureCache future(futureUnrollFactor);
+#else
+		unsigned unrollFactor = (targetLoopBound < targetUnrollFactor && targetLoopBound)? targetLoopBound : targetUnrollFactor;
+#endif
 		unsigned recII = 0;
 
 		// Get recurrence-constrained II
 		if(enablePipelining) {
-			actualUnrollFactor = (targetLoopBound < (targetUnrollFactor << 1) && targetLoopBound)? targetLoopBound : (targetUnrollFactor << 1);
+			unsigned actualUnrollFactor = (targetLoopBound < (targetUnrollFactor << 1) && targetLoopBound)? targetLoopBound : (targetUnrollFactor << 1);
+#ifdef USE_FUTURE
+			// The future cache receives some parsed data that can be reused when the DynamicDatapath is regenerated, saving some processing time
+			DynamicDatapath DD(kernelName, CM, &summaryFile, loopName, targetLoopLevel, actualUnrollFactor, &future);
+#else
 			DynamicDatapath DD(kernelName, CM, &summaryFile, loopName, targetLoopLevel, actualUnrollFactor);
+#endif
 			// TODO: This may be a place to insert a new scheduling?
 			recII = DD.getASAPII();
 

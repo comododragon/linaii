@@ -1,10 +1,18 @@
 #include "profile_h/DynamicDatapath.h"
 
+#ifdef USE_FUTURE
+DynamicDatapath::DynamicDatapath(
+	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
+	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor, FutureCache *future
+) : BaseDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, future, 0) {
+	VERBOSE_PRINT(errs() << "[][][][dynamicDatapath] Analysing DDDG for loop \"" << loopName << "\"\n");
+#else
 DynamicDatapath::DynamicDatapath(
 	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
 	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor
 ) : BaseDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, 0) {
 	VERBOSE_PRINT(errs() << "[][][][dynamicDatapath] Analysing DDDG for loop \"" << loopName << "\"\n");
+#endif
 
 	initBaseAddress();
 
@@ -18,11 +26,23 @@ DynamicDatapath::DynamicDatapath(
 #endif
 }
 
+#ifdef USE_FUTURE
+DynamicDatapath::DynamicDatapath(
+	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
+	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
+	FutureCache *future,
+	uint64_t asapII
+) : BaseDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, future, asapII) {
+	if(future && future->isComputed())
+		VERBOSE_PRINT(errs() << "[][][][dynamicDatapath] Using computed cache from previous dynamic datapath constructions\n");
+
+#else
 DynamicDatapath::DynamicDatapath(
 	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
 	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
 	uint64_t asapII
 ) : BaseDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, asapII) {
+#endif
 	VERBOSE_PRINT(errs() << "[][][][dynamicDatapath] Analysing DDDG for loop \"" << loopName << "\"\n");
 
 #if 0

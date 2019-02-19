@@ -49,6 +49,12 @@ const std::string helpMessage =
 	"                                           VC707: Xilinx Virtex-7 FPGA\n"
 	"        -v       , --verbose         : be verbose, print a lot of information\n"
 	"        -x       , --compressed      : use compressed files to reduce memory footprint\n"
+#ifdef PROGRESSIVE_TRACE_CURSOR
+	"        -p       , --progressive     : use progressive trace cursor when trace is\n"
+	"                                       analysed, reducing estimation time when several\n"
+	"                                       top loops are analysed. Loops defined with\n"
+	"                                       -l|--loops flag must be in crescent order\n"
+#endif
 	"        -l LOOPS , --loops=LOOPS     : specify loops to be analysed comma-separated (e.g.\n"
 	"                                       --loops=2,3 only analyse loops 2 and 3)\n"
 	"                   --mem-trace       : obtain memory trace for access pattern analysis.\n"
@@ -75,6 +81,10 @@ const std::string helpMessage =
 	"or guanwen<guanwen@comp.nus.edu.sg>\n";
 
 ArgPack args;
+#ifdef PROGRESSIVE_TRACE_CURSOR
+long int progressiveTraceCursor = 0;
+uint64_t progressiveTraceInstCount = 0;
+#endif
 
 int main(int argc, char **argv) {
 	parseInputArguments(argc, argv);
@@ -155,6 +165,9 @@ void parseInputArguments(int argc, char **argv) {
 	args.mode = args.MODE_TRACE_AND_ESTIMATE;
 	args.target = args.TARGET_XILINX_ZC702;
 	args.compressed = false;
+#ifdef PROGRESSIVE_TRACE_CURSOR
+	args.progressive = false;
+#endif
 	args.verbose = false;
 	args.memTrace = false;
 	args.showCFG = false;
@@ -183,6 +196,10 @@ void parseInputArguments(int argc, char **argv) {
 			{"mode", required_argument, 0, 'm'},
 			{"target", required_argument, 0, 't'},
 			{"verbose", no_argument, 0, 'v'},
+			{"compressed", no_argument, 0, 'x'},
+#ifdef PROGRESSIVE_TRACE_CURSOR
+			{"progressive", no_argument, 0, 'p'},
+#endif
 			{"loops", required_argument, 0, 'l'},
 			{"mem-trace", no_argument, 0, 0xF00},
 			{"show-cfg", no_argument, 0, 0xF01},
@@ -203,7 +220,11 @@ void parseInputArguments(int argc, char **argv) {
 		};
 		int optionIndex = 0;
 
+#ifdef PROGRESSIVE_TRACE_CURSOR
+		c = getopt_long(argc, argv, "+hi:o:c:m:t:vxpl:", longOptions, &optionIndex);
+#else
 		c = getopt_long(argc, argv, "+hi:o:c:m:t:vxl:", longOptions, &optionIndex);
+#endif
 		if(-1 == c)
 			break;
 
@@ -239,6 +260,11 @@ void parseInputArguments(int argc, char **argv) {
 			case 'x':
 				args.compressed = true;
 				break;
+#ifdef PROGRESSIVE_TRACE_CURSOR
+			case 'p':
+				args.progressive = true;
+				break;
+#endif
 			case 'l':
 				optargStr = optarg;
 				commaPos = optargStr.find(",");
@@ -332,6 +358,21 @@ void parseInputArguments(int argc, char **argv) {
 
 	if(!args.targetLoops.size())
 		args.targetLoops.push_back("0");
+
+#ifdef PROGRESSIVE_TRACE_CURSOR
+	if(args.progressive) {
+		int maxLoop = -1;
+
+		for(auto &it : args.targetLoops) {
+			int itInt = std::stoi(it);
+			if(itInt <= maxLoop) {
+				errs() << "Progressive trace cursor enabled, target loops must be provided in crescent order\n";
+				exit(-1);
+			}
+			maxLoop = itInt;
+		}
+	}
+#endif
 
 	VERBOSE_PRINT(
 		errs() << "Input bitcode file: " << InputFilename << "\n";

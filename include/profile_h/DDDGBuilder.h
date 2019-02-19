@@ -36,7 +36,8 @@ extern funcBBNmPair2numInstInBBMapTy funcBBNmPair2numInstInBBMap;
 typedef std::map<std::string, bool> wholeloopName2perfectOrNotMapTy;
 extern wholeloopName2perfectOrNotMapTy wholeloopName2perfectOrNotMap;
 
-typedef std::pair<uint64_t, uint64_t> lineFromToTy;
+//typedef std::pair<uint64_t, uint64_t> lineFromToTy;
+typedef std::tuple<uint64_t, uint64_t, uint64_t> intervalTy;
 
 typedef std::map<std::string, std::pair<std::string, unsigned> > headerBBlastInst2loopNameLevelPairMapTy;
 
@@ -71,6 +72,22 @@ namespace llvm {
 }
 
 typedef std::pair<uint64_t, uint64_t> line_from_to_Ty;
+#endif
+
+#ifdef USE_FUTURE
+class FutureCache {
+	unsigned unrollFactor;
+	intervalTy interval;
+	bool computed;
+
+public:
+	FutureCache(unsigned unrollFactor);
+
+	unsigned getUnrollFactor() { return unrollFactor; }
+	intervalTy getInterval() { return interval; }
+	bool isComputed() { return computed; }
+	void saveInterval(intervalTy interval);
+};
 #endif
 
 class BaseDatapath;
@@ -136,6 +153,9 @@ public:
 class DDDGBuilder {
 	BaseDatapath *datapath;
 	ParsedTraceContainer &PC;
+#ifdef USE_FUTURE
+	FutureCache *future;
+#endif
 
 	std::string rest;
 	uint8_t prevMicroop, currMicroop;
@@ -158,8 +178,8 @@ class DDDGBuilder {
 	unsigned numOfRegDeps, numOfMemDeps;
 	i642uMap addressLastWritten;
 
-	lineFromToTy getTraceLineFromTo(gzFile &traceFile);
-	void parseTraceFile(gzFile &traceFile, lineFromToTy fromToPair);
+	intervalTy getTraceLineFromTo(gzFile &traceFile);
+	void parseTraceFile(gzFile &traceFile, intervalTy interval);
 	void parseInstructionLine();
 	void parseResult();
 	void parseForward();
@@ -168,7 +188,11 @@ class DDDGBuilder {
 	void writeDDDG();
 
 public:
+#ifdef USE_FUTURE
+	DDDGBuilder(BaseDatapath *datapath, ParsedTraceContainer &PC, FutureCache *future);
+#else
 	DDDGBuilder(BaseDatapath *datapath, ParsedTraceContainer &PC);
+#endif
 
 	void buildInitialDDDG();
 

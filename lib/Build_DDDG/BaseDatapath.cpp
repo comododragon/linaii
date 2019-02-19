@@ -6,15 +6,32 @@
 #include "llvm/Support/GraphWriter.h"
 #include "profile_h/opcodes.h"
 
+#ifdef USE_FUTURE
+BaseDatapath::BaseDatapath(
+	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
+	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
+	FutureCache *future,
+	uint64_t asapII
+) :
+	kernelName(kernelName), CM(CM), summaryFile(summaryFile),
+	loopName(loopName), loopLevel(loopLevel), loopUnrollFactor(loopUnrollFactor),
+	PC(kernelName), future(future), asapII(asapII)
+{
+#else
 BaseDatapath::BaseDatapath(
 	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
 	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
 	uint64_t asapII
 ) : kernelName(kernelName), CM(CM), summaryFile(summaryFile), loopName(loopName), loopLevel(loopLevel), loopUnrollFactor(loopUnrollFactor), PC(kernelName), asapII(asapII) {
+#endif
 	builder = nullptr;
 	microops.clear();
 
+#ifdef USE_FUTURE
+	builder = new DDDGBuilder(this, PC, future);
+#else
 	builder = new DDDGBuilder(this, PC);
+#endif
 	builder->buildInitialDDDG();
 	numOfTotalNodes = builder->getNumNodes();
 	delete builder;

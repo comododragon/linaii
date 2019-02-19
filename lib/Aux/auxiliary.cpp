@@ -374,3 +374,24 @@ void ConfigurationManager::parseToFiles() {
 		outFile << "array," << it.arrayName << "," << std::to_string(it.totalSize) << "," << std::to_string(it.wordSize) << "\n";
 	outFile.close();
 }
+
+LimitedQueue::LimitedQueue(size_t size) : size(size) { }
+
+void LimitedQueue::push(unsigned elem) {
+	history.push(elem);
+
+	if(history.size() > size)
+		history.pop();
+}
+
+unsigned LimitedQueue::front() {
+	return (history.size() < size)? 0 : history.front();
+}
+
+unsigned LimitedQueue::back() {
+	return history.back();
+}
+
+size_t LimitedQueue::getSize() {
+	return size;
+}

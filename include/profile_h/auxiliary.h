@@ -9,6 +9,12 @@
 
 #define DBG_PRINT_ALL
 //#define USE_FUTURE
+// XXX: According to https://github.com/llvm-mirror/llvm/blob/6b547686c5410b7528212e898fe30fc7ee7a70a3/lib/Analysis/LoopPass.cpp,
+// the loop queue that runOnLoop is called is populated in reverse program order. Assuming that runOnLoop() will execute following
+// a (reverse?) program order guarantees that lpNameLevelPair2headBBnameMap is populated in program order as well, which guarantees
+// that loopName2levelUnrollVecMap is populated in program order as well, which is iterated to calculate the dynamic dapataths.
+// Thus, progressive trace cursor won't skip any valuable data from the trace analysis if the target loops are passed in a
+// monotonically crescent vector, which is enforced in validations performed at lin-profile.cpp 
 #define PROGRESSIVE_TRACE_CURSOR
 
 #include <fstream>
@@ -35,6 +41,8 @@
 #define FILE_DYNAMIC_TRACE "dynamic_trace.gz"
 #define FILE_MEM_TRACE "mem_trace.txt"
 #define FILE_SUMMARY_SUFFIX "_summary.log"
+
+#define GLOBAL_SEPARATOR "~"
 
 extern ArgPack args;
 #ifdef PROGRESSIVE_TRACE_CURSOR

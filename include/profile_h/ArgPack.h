@@ -1,8 +1,6 @@
 #ifndef ARGPACK_H
 #define ARGPACK_H
 
-#define PROGRESSIVE_TRACE_CURSOR
-
 typedef struct {
 	std::string inputFileName;
 	std::string workDir;

@@ -1,9 +1,9 @@
 /// Format of the NamedMDNode:
 /// !lia.kernelloopnumber = !{!n, !n+1, !n+2, ...}
 /// ...
-/// !n = metadata !{metadata !"kernel1", metadata !"loop1"}
-/// !n+1 = metadata !{metadata !"kernel1", metadata !"loop2"}
-/// !n+2 = metadata !{metadata !"kernel2", metadata !"loop1"}
+/// !n = metadata !{metadata !"kernel1", metadata !"loop~1"}
+/// !n+1 = metadata !{metadata !"kernel1", metadata !"loop~2"}
+/// !n+2 = metadata !{metadata !"kernel2", metadata !"loop~1"}
 /// ...
 
 /// First element: kernel name
@@ -82,7 +82,7 @@ bool LoopNumber::runOnLoop(Loop *L, LPPassManager &LPM) {
 	if(1 == depth) {
 		MDString *funcName = MDString::get(Context, F->getName());
 		LoopsMetadataNode.push_back(funcName);
-		std::string loopName = "loop" + std::to_string(loopCounter++);
+		std::string loopName = "loop" GLOBAL_SEPARATOR + std::to_string(loopCounter++);
 		LoopsMetadataNode.push_back(MDString::get(Context, loopName));
 		MDNode *MD = MDNode::getWhenValsUnresolved(Context, ArrayRef<Value *>(LoopsMetadataNode), false);
 		NMD->addOperand(MD);

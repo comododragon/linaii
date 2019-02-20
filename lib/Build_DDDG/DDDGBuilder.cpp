@@ -950,13 +950,13 @@ void DDDGBuilder::parseInstructionLine() {
 			// Add information from this function and reset counter to 0
 			if(functionCounter.end() == found) {
 				functionCounter.insert(std::make_pair(currStaticFunction, 0));
-				currDynamicFunction = currStaticFunction + "-0";
+				currDynamicFunction = currStaticFunction + GLOBAL_SEPARATOR + "0";
 				activeMethod.push(std::make_pair(currStaticFunction, 0));
 			}
 			// Update (increment) counter for this function
 			else {
 				found->second++;
-				currDynamicFunction = currStaticFunction + "-" + std::to_string(found->second);
+				currDynamicFunction = currStaticFunction + GLOBAL_SEPARATOR + std::to_string(found->second);
 				activeMethod.push(std::make_pair(currStaticFunction, found->second));
 			}
 
@@ -977,12 +977,12 @@ void DDDGBuilder::parseInstructionLine() {
 				assert(found != functionCounter.end() && "Current static function not found in function counter");
 
 				found->second++;
-				currDynamicFunction = currStaticFunction + "-" + std::to_string(found->second);
+				currDynamicFunction = currStaticFunction + GLOBAL_SEPARATOR + std::to_string(found->second);
 				activeMethod.push(std::make_pair(currStaticFunction, found->second));
 			}
 			// Nothing changed, just change the current dynamic function
 			else {
-				currDynamicFunction = prevStaticFunction + "-" + std::to_string(prevCount);
+				currDynamicFunction = prevStaticFunction + GLOBAL_SEPARATOR + std::to_string(prevCount);
 			}
 		}
 
@@ -996,14 +996,14 @@ void DDDGBuilder::parseInstructionLine() {
 		// Add information from this function and reset counter to 0
 		if(functionCounter.end() == found) {
 			functionCounter.insert(std::make_pair(currStaticFunction, 0));
-			currDynamicFunction = currStaticFunction + "-0";
+			currDynamicFunction = currStaticFunction + GLOBAL_SEPARATOR + "0";
 			activeMethod.push(std::make_pair(currStaticFunction, 0));
 			functionCounter.insert(std::make_pair(currStaticFunction, 0));
 		}
 		// Update (increment) counter for this function
 		else {
 			found->second++;
-			currDynamicFunction = currStaticFunction + "-" + std::to_string(found->second);
+			currDynamicFunction = currStaticFunction + GLOBAL_SEPARATOR + std::to_string(found->second);
 			activeMethod.push(std::make_pair(currStaticFunction, found->second));
 		}
 	}
@@ -1038,7 +1038,7 @@ void DDDGBuilder::parseResult() {
 
 	assert(isReg && "Result trace line must be a register");
 
-	std::string uniqueRegID = currDynamicFunction + "-" + label;
+	std::string uniqueRegID = currDynamicFunction + GLOBAL_SEPARATOR + label;
 
 	// Store the instruction where this register was written
 	s2uMap::iterator found = registerLastWritten.find(uniqueRegID);
@@ -1074,7 +1074,7 @@ void DDDGBuilder::parseForward() {
 	assert(isReg && "Forward trace line must be a register");
 	assert(isCallOp(currMicroop) && "Invalid forward line found in trace with no attached DMA/call instruction");
 
-	std::string uniqueRegID = calleeDynamicFunction + "-" + label;
+	std::string uniqueRegID = calleeDynamicFunction + GLOBAL_SEPARATOR + label;
 
 	int tmpWrittenInst = (lastCallSource != -1)? lastCallSource : numOfInstructions;
 
@@ -1103,9 +1103,9 @@ void DDDGBuilder::parseParameter(int param) {
 		// Update dynamic function
 		s2uMap::iterator found = functionCounter.find(calleeFunction);
 		if(found != functionCounter.end())
-			calleeDynamicFunction = calleeFunction + "-" + std::to_string(found->second + 1);
+			calleeDynamicFunction = calleeFunction + GLOBAL_SEPARATOR + std::to_string(found->second + 1);
 		else
-			calleeDynamicFunction = calleeFunction + "-0";
+			calleeDynamicFunction = calleeFunction + GLOBAL_SEPARATOR + "0";
 	}
 
 	// Note that the last parameter is listed first in the trace, hence this non-intuitive logic

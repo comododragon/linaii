@@ -37,11 +37,11 @@ BaseDatapath::BaseDatapath(
 	delete builder;
 	builder = nullptr;
 
-	BGL_FORALL_VERTICES(v, graph, Graph) nameToVertex[get(boost::vertex_index, graph, v)] = v;
-	vertexToName = get(boost::vertex_index, graph);
+	BGL_FORALL_VERTICES(v, graph, Graph) nameToVertex[boost::get(boost::vertex_index, graph, v)] = v;
+	vertexToName = boost::get(boost::vertex_index, graph);
 
 	for(auto &it : PC.getFuncList()) {
-		size_t tagPos = it.find("-");
+		size_t tagPos = it.find(GLOBAL_SEPARATOR);
 		std::string functionName = it.substr(0, tagPos);
 
 		//if(functionNames.end() == functionNames.find(functionName))
@@ -80,23 +80,28 @@ void BaseDatapath::insertMicroop(int microop) {
 
 void BaseDatapath::insertDDDGEdge(unsigned from, unsigned to, uint8_t paramID) {
 	if(from != to)
-		add_edge(from, to, EdgeProperty(paramID), graph);
+		boost::add_edge(from, to, EdgeProperty(paramID), graph);
 }
 
 bool BaseDatapath::edgeExists(unsigned from, unsigned to) {
-	return edge(nameToVertex[from], nameToVertex[to], graph).second;
+	return boost::edge(nameToVertex[from], nameToVertex[to], graph).second;
 }
 
 void BaseDatapath::updateRemoveDDDGEdges(std::set<Edge> &edgesToRemove) {
 	for(auto &it : edgesToRemove)
-		remove_edge(it, graph);
+		boost::remove_edge(it, graph);
 }
 
 void BaseDatapath::updateAddDDDGEdges(std::vector<edgeTy> &edgesToAdd) {
 	for(auto &it : edgesToAdd) {
 		if(it.from != it.to && !edgeExists(it.from, it.to))
-			get(boost::edge_weight, graph)[add_edge(it.from, it.to, graph).first] = it.paramID;
+			boost::get(boost::edge_weight, graph)[boost::add_edge(it.from, it.to, graph).first] = it.paramID;
 	}
+}
+
+void BaseDatapath::updateRemoveDDDGNodes(std::vector<unsigned> &nodesToRemove) {
+	for(auto &it : nodesToRemove)
+		boost::clear_vertex(nameToVertex[it], graph);
 }
 
 void BaseDatapath::initBaseAddress() {
@@ -106,7 +111,7 @@ void BaseDatapath::initBaseAddress() {
 	const ConfigurationManager::partitionCfgMapTy &completePartitionMap = CM.getCompletePartitionCfgMap();
 	const std::unordered_map<int, std::pair<std::string, int64_t>> &getElementPtrMap = PC.getGetElementPtrList();
 
-	edgeToParamID = get(boost::edge_weight, graph);
+	edgeToParamID = boost::get(boost::edge_weight, graph);
 
 	VertexIterator vi, viEnd;
 	for(std::tie(vi, viEnd) = vertices(graph); vi != viEnd; vi++) {
@@ -126,16 +131,16 @@ void BaseDatapath::initBaseAddress() {
 			bool foundParent = false;
 
 			InEdgeIterator inEdgei, inEdgeEnd;
-			for(std::tie(inEdgei, inEdgeEnd) = in_edges(currNode, graph); inEdgei != inEdgeEnd; inEdgei++) {
+			for(std::tie(inEdgei, inEdgeEnd) = boost::in_edges(currNode, graph); inEdgei != inEdgeEnd; inEdgei++) {
 				int paramID = edgeToParamID[*inEdgei];
 				if((isLoadOp(nodeMicroop) && paramID != 1) || (LLVM_IR_GetElementPtr == nodeMicroop && paramID != 1) || (isStoreOp(nodeMicroop) && paramID != 2))
 					continue;
 
-				unsigned parentID = vertexToName[source(*inEdgei, graph)];
+				unsigned parentID = vertexToName[boost::source(*inEdgei, graph)];
 				int parentMicroop = microops.at(parentID);
 				if(LLVM_IR_GetElementPtr == parentMicroop || isLoadOp(parentMicroop)) {
 					baseAddress[nodeID] = getElementPtrMap.at(parentID);
-					currNode = source(*inEdgei, graph);
+					currNode = boost::source(*inEdgei, graph);
 					nodeMicroop = parentMicroop;
 					foundParent = true;
 					modified = true;
@@ -171,6 +176,9 @@ void BaseDatapath::initBaseAddress() {
 uint64_t BaseDatapath::fpgaEstimationOneMoreSubtraceForRecIICalculation() {
 	removeInductionDependencies();
 	removePhiNodes();
+
+	if(args.fSBOpt)
+		enableStoreBufferOptimisation();
 }
 
 void BaseDatapath::removeInductionDependencies() {
@@ -190,8 +198,8 @@ void BaseDatapath::removeInductionDependencies() {
 		}
 		else {
 			InEdgeIterator inEdgei, inEdgeEnd;
-			for(std::tie(inEdgei, inEdgeEnd) = in_edges(*vi, graph); inEdgei != inEdgeEnd; inEdgei++) {
-				unsigned parentID = vertexToName[source(*inEdgei, graph)];
+			for(std::tie(inEdgei, inEdgeEnd) = boost::in_edges(*vi, graph); inEdgei != inEdgeEnd; inEdgei++) {
+				unsigned parentID = vertexToName[boost::source(*inEdgei, graph)];
 				std::string parentInstID = instID.at(parentID);
 
 				if(std::string::npos == parentInstID.find("indvars"))
@@ -205,12 +213,13 @@ void BaseDatapath::removeInductionDependencies() {
 }
 
 void BaseDatapath::removePhiNodes() {
-	EdgeWeightMap edgeToParamID = get(boost::edge_weight, graph);
+	// TODO: There is a global attribute for this, should we always call this?
+	//EdgeWeightMap edgeToParamID = boost::get(boost::edge_weight, graph);
 	std::set<Edge> edgesToRemove;
 	std::vector<edgeTy> edgesToAdd;
 
 	VertexIterator vi, viEnd;
-	for(std::tie(vi, viEnd) = vertices(graph); vi != viEnd; vi++) {
+	for(std::tie(vi, viEnd) = boost::vertices(graph); vi != viEnd; vi++) {
 		unsigned nodeID = vertexToName[*vi];
 		int nodeMicroop = microops.at(nodeID);
 
@@ -223,7 +232,7 @@ void BaseDatapath::removePhiNodes() {
 
 		// Mark its children
 		OutEdgeIterator outEdgei, outEdgeEnd;
-		for(std::tie(outEdgei, outEdgeEnd) = out_edges(*vi, graph); outEdgei != outEdgeEnd; outEdgei++) {
+		for(std::tie(outEdgei, outEdgeEnd) = boost::out_edges(*vi, graph); outEdgei != outEdgeEnd; outEdgei++) {
 			edgesToRemove.insert(*outEdgei);
 			phiChild.push_back(std::make_pair(vertexToName[target(*outEdgei, graph)], edgeToParamID[*outEdgei]));
 		}
@@ -233,8 +242,8 @@ void BaseDatapath::removePhiNodes() {
 
 		// Mark its parents
 		InEdgeIterator inEdgei, inEdgeEnd;
-		for(std::tie(inEdgei, inEdgeEnd) = in_edges(*vi, graph); inEdgei != inEdgeEnd; inEdgei++) {
-			unsigned parentID = vertexToName[source(*inEdgei, graph)];
+		for(std::tie(inEdgei, inEdgeEnd) = boost::in_edges(*vi, graph); inEdgei != inEdgeEnd; inEdgei++) {
+			unsigned parentID = vertexToName[boost::source(*inEdgei, graph)];
 			edgesToRemove.insert(*inEdgei);
 
 			for(auto &child : phiChild)
@@ -248,6 +257,94 @@ void BaseDatapath::removePhiNodes() {
 	// Edges from-to PHI nodes are substituted by direct connections (i.e. PHI nodes are removed)
 	updateRemoveDDDGEdges(edgesToRemove);
 	updateAddDDDGEdges(edgesToAdd);
+}
+
+void BaseDatapath::enableStoreBufferOptimisation() {
+	const std::vector<std::string> &instID = PC.getInstIDList();
+	const std::vector<std::string> &dynamicMethodID = PC.getFuncList();
+	const std::vector<std::string> &prevBB = PC.getPrevBBList();
+
+	// TODO: There is a global attribute for this, should we always call this?
+	//EdgeWeightMap edgeToParamID = boost::get(boost::edge_weight, graph);
+
+	std::vector<edgeTy> edgesToAdd;
+	std::vector<unsigned> nodesToRemove;
+
+	for(unsigned nodeID = 0; nodeID < numOfTotalNodes; nodeID++) {
+		// Node not found or with no connections
+		if(nameToVertex.end() == nameToVertex.find(nodeID) || !boost::degree(nameToVertex[nodeID], graph)) {
+			// TODO: Is this right? Aren't we jumping one node?
+			// XXX: We will check the child and also the parent of this node, therefore this might be the case
+			// XXX: why the counter is incremented (i.e. check in pairs), but I'm not sure if this is the
+			// XXX: best or even the correct way of doing that
+			nodeID++;
+			continue;
+		}
+
+		if(isStoreOp(microops.at(nodeID))) {
+			std::string key = constructUniqueID(dynamicMethodID.at(nodeID), instID.at(nodeID), prevBB.at(nodeID));
+			// TODO: When enableStoreBufferOptimisation() is executed in pipeline analysis, dynamicMemoryOps is still empty!
+			// TODO: Is this something expected? Perhaps dynamicMemoryOps should be generated beforehand!
+			// Dynamic store, cannot disambiguate in static time, cannot remove
+			if(dynamicMemoryOps.find(key) != dynamicMemoryOps.end()) {
+				// TODO: Is this right? Aren't we jumping one node?
+				// XXX: Check above
+				nodeID++;
+				continue;
+			}
+
+			Vertex node = nameToVertex[nodeID];
+			std::vector<Vertex> storeChild;
+
+			// Check for child nodes that are loads
+			OutEdgeIterator outEdgei, outEdgeEnd;
+			for(tie(outEdgei, outEdgeEnd) = boost::out_edges(node, graph); outEdgei != outEdgeEnd; outEdgei++) {
+				Vertex child = boost::target(*outEdgei, graph);
+				unsigned childID = vertexToName[child];
+
+				if(isLoadOp(microops.at(childID))) {
+					std::string key = constructUniqueID(dynamicMethodID.at(childID), instID.at(childID), prevBB.at(childID));
+					// TODO: Same possible problem as above!
+					if(dynamicMemoryOps.find(key) != dynamicMemoryOps.end())
+						continue;
+					else
+						storeChild.push_back(child);
+				}
+			}
+
+			if(storeChild.size()) {
+				// Find the parent of the store node that generates the stored value
+				InEdgeIterator inEdgei, inEdgeEnd;
+				for(tie(inEdgei, inEdgeEnd) = boost::in_edges(node, graph); inEdgei != inEdgeEnd; inEdgei++) {
+					if(1 == edgeToParamID[*inEdgei]) {
+						// Create a direct connection between the node that generates the value and the node that loads it
+						for(auto &it : storeChild) {
+							nodesToRemove.push_back(vertexToName[it]);
+
+							OutEdgeIterator outEdgei, outEdgeEnd;
+							for(tie(outEdgei, outEdgeEnd) = boost::out_edges(it, graph); outEdgei != outEdgeEnd; outEdgei++) {
+								edgesToAdd.push_back({
+									(unsigned) vertexToName[boost::source(*inEdgei, graph)],
+									(unsigned) vertexToName[boost::target(*outEdgei, graph)],
+									edgeToParamID[*outEdgei]
+								});
+							}
+						}
+
+						break;
+					}
+				}
+			}
+		}
+	}
+
+	// Sequences of static [value generation]->store->load->[value use] are substituted by [value generation]->[value use]
+	updateAddDDDGEdges(edgesToAdd);
+	updateRemoveDDDGNodes(nodesToRemove);
+}
+
+std::string BaseDatapath::constructUniqueID(std::string funcID, std::string instID, std::string bbID) {
+	return funcID + GLOBAL_SEPARATOR + instID + GLOBAL_SEPARATOR + bbID;
 }
 
 #if 0

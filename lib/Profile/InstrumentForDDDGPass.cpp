@@ -371,7 +371,7 @@ bool InstrumentForDDDG::getInstID(Instruction *I, std::string bbID, unsigned &in
 		return true;
 	}
 	else if(-1 == id) {
-		instID = bbID + "-" + std::to_string(instCnt++);
+		instID = bbID + GLOBAL_SEPARATOR + std::to_string(instCnt++);
 		return true;
 	}
 

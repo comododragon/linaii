@@ -439,6 +439,9 @@ public:
 	bool edgeExists(unsigned from, unsigned to);
 	void updateRemoveDDDGEdges(std::set<Edge> &edgesToRemove);
 	void updateAddDDDGEdges(std::vector<edgeTy> &edgesToAdd);
+	void updateRemoveDDDGNodes(std::vector<unsigned> &nodesToRemove);
+
+	std::string constructUniqueID(std::string funcID, std::string instID, std::string bbID);
 
 protected:
 	uint64_t asapII;
@@ -464,6 +467,8 @@ protected:
 	std::unordered_map<int, std::pair<std::string, int64_t>> baseAddress;
 	// A set containing the name of all arrays that are not marked for partitioning
 	std::set<std::string> noPartitionArrayName;
+	// TODO: check its purpose
+  	std::unordered_set<std::string> dynamicMemoryOps;
 
 	void initBaseAddress();
 
@@ -472,6 +477,7 @@ protected:
 
 	void removeInductionDependencies();
 	void removePhiNodes();
+	void enableStoreBufferOptimisation();
 
 	void dumpGraph();
 

@@ -28,7 +28,7 @@ bool verifyModuleAndPrintErrors(Module &M) {
 }
 
 std::string constructLoopName(std::string funcName, unsigned loopNo, unsigned depth) {
-	std::string loopName = funcName + "_loop-" + std::to_string(loopNo);
+	std::string loopName = funcName + GLOBAL_SEPARATOR + "loop" + GLOBAL_SEPARATOR + std::to_string(loopNo);
 
 	if(((unsigned) -1) == depth)
 		return loopName;
@@ -37,11 +37,11 @@ std::string constructLoopName(std::string funcName, unsigned loopNo, unsigned de
 }
 
 std::string appendDepthToLoopName(std::string loopName, unsigned depth) {
-	return loopName + "_" + std::to_string(depth);
+	return loopName + GLOBAL_SEPARATOR + std::to_string(depth);
 }
 
 std::tuple<std::string, unsigned> parseLoopName(std::string loopName) {
-	const std::string mainLoopTag = "_loop-";
+	const std::string mainLoopTag = GLOBAL_SEPARATOR "loop" GLOBAL_SEPARATOR;
 	const size_t mainLoopTagSize = 6;
 
 	size_t tagPos = loopName.find(mainLoopTag);
@@ -54,8 +54,8 @@ std::tuple<std::string, unsigned> parseLoopName(std::string loopName) {
 }
 
 std::tuple<std::string, unsigned, unsigned> parseWholeLoopName(std::string wholeLoopName) {
-	const std::string mainLoopTag = "_loop-";
-	const std::string depthTag = "_";
+	const std::string mainLoopTag = GLOBAL_SEPARATOR "loop" GLOBAL_SEPARATOR;
+	const std::string depthTag = GLOBAL_SEPARATOR;
 	const size_t mainLoopTagSize = 6;
 	const size_t depthTagSize = 1;
 

@@ -1,7 +1,7 @@
 /// Format of the NamedMDNode:
 /// !lia.kernelloopinfo = !{!n, !n+1, ...}
 /// ...
-/// !n = metadata !{metadata !"kernel1", metadata !"kernel1_loop2_2", i32 2, i32 0, i32 12, metadata !"kernel1_loop1_1", i32 1, i32 0, i32 10, ...}
+/// !n = metadata !{metadata !"kernel1", metadata !"kernel1_loop~2~2", i32 2, i32 0, i32 12, metadata !"kernel1_loop~1~1", i32 1, i32 0, i32 10, ...}
 /// !n+1 = metadata !{metadata !"kernel2", ...}
 /// ...
 

@@ -950,13 +950,21 @@ void DDDGBuilder::parseInstructionLine() {
 			// Add information from this function and reset counter to 0
 			if(functionCounter.end() == found) {
 				functionCounter.insert(std::make_pair(currStaticFunction, 0));
-				currDynamicFunction = currStaticFunction + GLOBAL_SEPARATOR + "0";
+#ifdef LEGACY_SEPARATOR
+				currDynamicFunction = currStaticFunction + "-0";
+#else
+				currDynamicFunction = currStaticFunction + GLOBAL_SEPARATOR "0";
+#endif
 				activeMethod.push(std::make_pair(currStaticFunction, 0));
 			}
 			// Update (increment) counter for this function
 			else {
 				found->second++;
+#ifdef LEGACY_SEPARATOR
+				currDynamicFunction = currStaticFunction + "-" + std::to_string(found->second);
+#else
 				currDynamicFunction = currStaticFunction + GLOBAL_SEPARATOR + std::to_string(found->second);
+#endif
 				activeMethod.push(std::make_pair(currStaticFunction, found->second));
 			}
 
@@ -977,12 +985,20 @@ void DDDGBuilder::parseInstructionLine() {
 				assert(found != functionCounter.end() && "Current static function not found in function counter");
 
 				found->second++;
+#ifdef LEGACY_SEPARATOR
+				currDynamicFunction = currStaticFunction + "-" + std::to_string(found->second);
+#else
 				currDynamicFunction = currStaticFunction + GLOBAL_SEPARATOR + std::to_string(found->second);
+#endif
 				activeMethod.push(std::make_pair(currStaticFunction, found->second));
 			}
 			// Nothing changed, just change the current dynamic function
 			else {
+#ifdef LEGACY_SEPARATOR
+				currDynamicFunction = prevStaticFunction + "-" + std::to_string(prevCount);
+#else
 				currDynamicFunction = prevStaticFunction + GLOBAL_SEPARATOR + std::to_string(prevCount);
+#endif
 			}
 		}
 
@@ -996,14 +1012,22 @@ void DDDGBuilder::parseInstructionLine() {
 		// Add information from this function and reset counter to 0
 		if(functionCounter.end() == found) {
 			functionCounter.insert(std::make_pair(currStaticFunction, 0));
-			currDynamicFunction = currStaticFunction + GLOBAL_SEPARATOR + "0";
+#ifdef LEGACY_SEPARATOR
+			currDynamicFunction = currStaticFunction + "-0";
+#else
+			currDynamicFunction = currStaticFunction + GLOBAL_SEPARATOR "0";
+#endif
 			activeMethod.push(std::make_pair(currStaticFunction, 0));
 			functionCounter.insert(std::make_pair(currStaticFunction, 0));
 		}
 		// Update (increment) counter for this function
 		else {
 			found->second++;
+#ifdef LEGACY_SEPARATOR
+			currDynamicFunction = currStaticFunction + "-" + std::to_string(found->second);
+#else
 			currDynamicFunction = currStaticFunction + GLOBAL_SEPARATOR + std::to_string(found->second);
+#endif
 			activeMethod.push(std::make_pair(currStaticFunction, found->second));
 		}
 	}
@@ -1038,7 +1062,11 @@ void DDDGBuilder::parseResult() {
 
 	assert(isReg && "Result trace line must be a register");
 
+#ifdef LEGACY_SEPARATOR
+	std::string uniqueRegID = currDynamicFunction + "-" + label;
+#else
 	std::string uniqueRegID = currDynamicFunction + GLOBAL_SEPARATOR + label;
+#endif
 
 	// Store the instruction where this register was written
 	s2uMap::iterator found = registerLastWritten.find(uniqueRegID);
@@ -1074,7 +1102,11 @@ void DDDGBuilder::parseForward() {
 	assert(isReg && "Forward trace line must be a register");
 	assert(isCallOp(currMicroop) && "Invalid forward line found in trace with no attached DMA/call instruction");
 
+#ifdef LEGACY_SEPARATOR
+	std::string uniqueRegID = calleeDynamicFunction + "-" + label;
+#else
 	std::string uniqueRegID = calleeDynamicFunction + GLOBAL_SEPARATOR + label;
+#endif
 
 	int tmpWrittenInst = (lastCallSource != -1)? lastCallSource : numOfInstructions;
 
@@ -1102,10 +1134,17 @@ void DDDGBuilder::parseParameter(int param) {
 
 		// Update dynamic function
 		s2uMap::iterator found = functionCounter.find(calleeFunction);
+#ifdef LEGACY_SEPARATOR
+		if(found != functionCounter.end())
+			calleeDynamicFunction = calleeFunction + "-" + std::to_string(found->second + 1);
+		else
+			calleeDynamicFunction = calleeFunction + "-0";
+#else
 		if(found != functionCounter.end())
 			calleeDynamicFunction = calleeFunction + GLOBAL_SEPARATOR + std::to_string(found->second + 1);
 		else
-			calleeDynamicFunction = calleeFunction + GLOBAL_SEPARATOR + "0";
+			calleeDynamicFunction = calleeFunction + GLOBAL_SEPARATOR "0";
+#endif
 	}
 
 	// Note that the last parameter is listed first in the trace, hence this non-intuitive logic

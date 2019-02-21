@@ -1,5 +1,3 @@
-#include "profile_h/xilinx_node_latency.h"
-
 #ifndef OPCODES_H
 #define OPCODES_H
 
@@ -90,6 +88,5 @@ bool isFMulOp(unsigned microop);
 bool isFDivOp(unsigned microop);
 bool isFCmpOp(unsigned microop);
 bool isFloatOp(unsigned microop);
-unsigned fpgaNodeLatency(unsigned microop);
 
 #endif

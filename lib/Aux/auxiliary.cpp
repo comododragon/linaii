@@ -28,7 +28,11 @@ bool verifyModuleAndPrintErrors(Module &M) {
 }
 
 std::string constructLoopName(std::string funcName, unsigned loopNo, unsigned depth) {
+#ifdef LEGACY_SEPARATOR
+	std::string loopName = funcName + "_loop-" + std::to_string(loopNo);
+#else
 	std::string loopName = funcName + GLOBAL_SEPARATOR + "loop" + GLOBAL_SEPARATOR + std::to_string(loopNo);
+#endif
 
 	if(((unsigned) -1) == depth)
 		return loopName;
@@ -37,12 +41,21 @@ std::string constructLoopName(std::string funcName, unsigned loopNo, unsigned de
 }
 
 std::string appendDepthToLoopName(std::string loopName, unsigned depth) {
+#ifdef LEGACY_SEPARATOR
+	return loopName + "_" + std::to_string(depth);
+#else
 	return loopName + GLOBAL_SEPARATOR + std::to_string(depth);
+#endif
 }
 
 std::tuple<std::string, unsigned> parseLoopName(std::string loopName) {
+#ifdef LEGACY_SEPARATOR
+	const std::string mainLoopTag = "_loop-";
+	const size_t mainLoopTagSize = 6;
+#else
 	const std::string mainLoopTag = GLOBAL_SEPARATOR "loop" GLOBAL_SEPARATOR;
 	const size_t mainLoopTagSize = 6;
+#endif
 
 	size_t tagPos = loopName.find(mainLoopTag);
 	std::string funcName = loopName.substr(0, tagPos);
@@ -54,10 +67,17 @@ std::tuple<std::string, unsigned> parseLoopName(std::string loopName) {
 }
 
 std::tuple<std::string, unsigned, unsigned> parseWholeLoopName(std::string wholeLoopName) {
+#ifdef LEGACY_SEPARATOR
+	const std::string mainLoopTag = "_loop-";
+	const std::string depthTag = "_";
+	const size_t mainLoopTagSize = 6;
+	const size_t depthTagSize = 1;
+#else
 	const std::string mainLoopTag = GLOBAL_SEPARATOR "loop" GLOBAL_SEPARATOR;
 	const std::string depthTag = GLOBAL_SEPARATOR;
 	const size_t mainLoopTagSize = 6;
 	const size_t depthTagSize = 1;
+#endif
 
 	size_t tagPos = wholeLoopName.find(mainLoopTag);
 	std::string funcName = wholeLoopName.substr(0, tagPos);

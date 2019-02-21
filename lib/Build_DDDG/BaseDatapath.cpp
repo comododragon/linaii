@@ -25,7 +25,11 @@ BaseDatapath::BaseDatapath(
 ) : kernelName(kernelName), CM(CM), summaryFile(summaryFile), loopName(loopName), loopLevel(loopLevel), loopUnrollFactor(loopUnrollFactor), PC(kernelName), asapII(asapII) {
 #endif
 	builder = nullptr;
+	NL = nullptr;
 	microops.clear();
+
+	// Create node latency calculator based on selected platform
+	NL = NodeLatency::createInstance();
 
 #ifdef USE_FUTURE
 	builder = new DDDGBuilder(this, PC, future);
@@ -41,7 +45,11 @@ BaseDatapath::BaseDatapath(
 	vertexToName = boost::get(boost::vertex_index, graph);
 
 	for(auto &it : PC.getFuncList()) {
+#ifdef LEGACY_SEPARATOR
+		size_t tagPos = it.find("-");
+#else
 		size_t tagPos = it.find(GLOBAL_SEPARATOR);
+#endif
 		std::string functionName = it.substr(0, tagPos);
 
 		//if(functionNames.end() == functionNames.find(functionName))
@@ -60,6 +68,8 @@ BaseDatapath::BaseDatapath(
 BaseDatapath::~BaseDatapath() {
 	if(builder)
 		delete builder;
+	if(NL)
+		delete NL;
 }
 
 std::string BaseDatapath::getTargetLoopName() const {
@@ -179,6 +189,24 @@ uint64_t BaseDatapath::fpgaEstimationOneMoreSubtraceForRecIICalculation() {
 
 	if(args.fSBOpt)
 		enableStoreBufferOptimisation();
+
+	// Put the node latency using selected architecture as edge weights in the graph
+	EdgeWeightMap edgeWeightMap = boost::get(boost::edge_weight, graph);
+	EdgeIterator edgei, edgeEnd;
+	for(std::tie(edgei, edgeEnd) = boost::edges(graph); edgei != edgeEnd; edgei++) {
+		uint8_t weight = edgeWeightMap[*edgei];
+
+		// XXX: Up to this point no control edges were added so far, I think...
+		if(EDGE_CONTROL == weight) {
+			boost::put(boost::edge_weight, graph, *edgei, 0);
+		}
+		else {
+			unsigned nodeID = vertexToName[boost::source(*edgei, graph)];
+			unsigned opcode = microops.at(nodeID);
+			unsigned latency = NL->getLatency(opcode);
+			boost::put(boost::edge_weight, graph, *edgei, latency);
+		}
+	}
 }
 
 void BaseDatapath::removeInductionDependencies() {
@@ -344,7 +372,11 @@ void BaseDatapath::enableStoreBufferOptimisation() {
 }
 
 std::string BaseDatapath::constructUniqueID(std::string funcID, std::string instID, std::string bbID) {
+#ifdef LEGACY_SEPARATOR
+	return funcID + "-" + instID + "-" + bbID;
+#else
 	return funcID + GLOBAL_SEPARATOR + instID + GLOBAL_SEPARATOR + bbID;
+#endif
 }
 
 #if 0

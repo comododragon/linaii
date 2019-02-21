@@ -42,7 +42,10 @@
 #define FILE_MEM_TRACE "mem_trace.txt"
 #define FILE_SUMMARY_SUFFIX "_summary.log"
 
-#define GLOBAL_SEPARATOR "~"
+// XXX: For now, I'm using the old separators as defined in the original lin-analyzer to simplify correctness
+// comparison and also portability
+#define LEGACY_SEPARATOR
+//#define GLOBAL_SEPARATOR "~"
 
 extern ArgPack args;
 #ifdef PROGRESSIVE_TRACE_CURSOR

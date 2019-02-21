@@ -382,10 +382,10 @@ void parseInputArguments(int argc, char **argv) {
 		errs() << "Configuration file: " << args.configFileName << "\n";
 		errs() << "Mode: ";
 		switch(args.mode) {
-			case args.MODE_TRACE_ONLY:
+			case ArgPack::MODE_TRACE_ONLY:
 				errs() << "dynamic trace only\n";
 				break;
-			case args.MODE_ESTIMATE_ONLY:
+			case ArgPack::MODE_ESTIMATE_ONLY:
 				errs() << "cycle estimation only\n";
 				break;
 			default:
@@ -394,9 +394,10 @@ void parseInputArguments(int argc, char **argv) {
 		}
 		errs() << "Target: ";
 		switch(args.mode) {
-			case args.TARGET_XILINX_VC707:
+			case ArgPack::TARGET_XILINX_VC707:
 				errs() << "Xilinx Virtex-7 FPGA\n";
 				break;
+			case ArgPack::TARGET_XILINX_ZC702:
 			default:
 				errs() << "Xilinx Zynq-7000 SoC\n";
 				break;

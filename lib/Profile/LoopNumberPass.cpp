@@ -82,7 +82,11 @@ bool LoopNumber::runOnLoop(Loop *L, LPPassManager &LPM) {
 	if(1 == depth) {
 		MDString *funcName = MDString::get(Context, F->getName());
 		LoopsMetadataNode.push_back(funcName);
+#ifdef LEGACY_SEPARATOR
+		std::string loopName = "loop" + std::to_string(loopCounter++);
+#else
 		std::string loopName = "loop" GLOBAL_SEPARATOR + std::to_string(loopCounter++);
+#endif
 		LoopsMetadataNode.push_back(MDString::get(Context, loopName));
 		MDNode *MD = MDNode::getWhenValsUnresolved(Context, ArrayRef<Value *>(LoopsMetadataNode), false);
 		NMD->addOperand(MD);

@@ -95,7 +95,7 @@ EdgeColorWriter::EdgeColorWriter(Graph &graph, EdgeWeightMap &edgeWeightMap) : g
 template<class VE> void EdgeColorWriter::operator()(std::ostream &out, const VE &e) const {
 	unsigned weight = edgeWeightMap[e];
 
-	if(CONTROL_EDGE == weight)
+	if(BaseDatapath::EDGE_CONTROL == weight)
 		out << "[color=red label=" << weight << "]";
 	else
 		out << "[color=black label=" << weight << "]";

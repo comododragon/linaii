@@ -52,12 +52,19 @@
 //#include "profile_h/file_func.h"
 //#include "profile_h/fpga_resources.h"
 //#include "profile_h/generic_func.h"
-#include "profile_h/opcodes.h"
+//#include "profile_h/opcodes.h"
 #include "profile_h/DDDGBuilder.h"
+#include "profile_h/NodeLatency.h"
 //#include "profile_h/Registers.h"
 
 using namespace llvm;
 
+// TODO: ENABLE THOSE MACROS ON DEMAND
+// TODO: ENABLE THOSE MACROS ON DEMAND
+// TODO: ENABLE THOSE MACROS ON DEMAND
+// TODO: ENABLE THOSE MACROS ON DEMAND
+// TODO: (but first, check if there is no other better way to create them (i.e. enums)
+#if 0
 #define CONTROL_EDGE 200
 #define PIPE_EDGE 201
 
@@ -74,6 +81,7 @@ using namespace llvm;
 // each level when we analyze parallelism profile in parallelismProfileDDDG() 
 // of BaseDatapath.cpp
 #define CHECK_INST_IN_EACH_LEVEL
+#endif
 
 typedef boost::property<boost::vertex_index_t, unsigned> VertexProperty;
 typedef boost::property<boost::edge_weight_t, uint8_t> EdgeProperty;
@@ -411,6 +419,7 @@ class BaseDatapath {
 #ifdef USE_FUTURE
 	FutureCache *future;
 #endif
+	NodeLatency *NL;
 
 public:
 #ifdef USE_FUTURE
@@ -444,6 +453,12 @@ public:
 	std::string constructUniqueID(std::string funcID, std::string instID, std::string bbID);
 
 protected:
+	// Special edge types
+	enum {
+		EDGE_CONTROL = 200,
+		EDGE_PIPE = 201
+	};
+
 	uint64_t asapII;
 	uint64_t numCycles;
 

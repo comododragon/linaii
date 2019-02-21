@@ -371,7 +371,11 @@ bool InstrumentForDDDG::getInstID(Instruction *I, std::string bbID, unsigned &in
 		return true;
 	}
 	else if(-1 == id) {
+#ifdef LEGACY_SEPARATOR
+		instID = bbID + "-" + std::to_string(instCnt++);
+#else
 		instID = bbID + GLOBAL_SEPARATOR + std::to_string(instCnt++);
+#endif
 		return true;
 	}
 

@@ -1,6 +1,7 @@
 include_directories( ${ZLIB_INCLUDE_DIRS} )
 
 add_llvm_library(BuildDDDGlib
+	NodeLatency.cpp
 	ColorWriter.cpp
 	DynamicDatapath.cpp
 	BaseDatapath.cpp

@@ -531,6 +531,8 @@ void DDDGBuilder::buildInitialDDDG() {
 	traceFile = gzopen(traceFileName.c_str(), "r");
 	assert(traceFile != Z_NULL && "Could not open trace input file");
 
+	VERBOSE_PRINT(errs() << "\t\tStarted build of initial DDDG\n");
+
 	//lineFromToTy fromToPair = getTraceLineFromTo(traceFile);
 	//parseTraceFile(traceFile, fromToPair);
 #ifdef USE_FUTURE
@@ -540,13 +542,24 @@ void DDDGBuilder::buildInitialDDDG() {
 		interval = future->getInterval();
 	else
 		interval = getTraceLineFromTo(traceFile);
+
+	VERBOSE_PRINT(errs() << "\t\tUsing cached interval of trace to analyse\n");
 #else
 	intervalTy interval = getTraceLineFromTo(traceFile);
 #endif
 
+	VERBOSE_PRINT(errs() << "\t\tSkipping " << std::to_string(std::get<0>(interval)) << " bytes from trace\n");
+	VERBOSE_PRINT(errs() << "\t\tEnd of interval: " << std::to_string(std::get<1>(interval)) << "\n");
+
 	parseTraceFile(traceFile, interval);
 
 	writeDDDG();
+
+	VERBOSE_PRINT(errs() << "\t\tNumber of nodes: " << std::to_string(getNumNodes()) << "\n");
+	VERBOSE_PRINT(errs() << "\t\tNumber of edges: " << std::to_string(getNumEdges()) << "\n");
+	VERBOSE_PRINT(errs() << "\t\tNumber of register dependencies: " << std::to_string(getNumOfRegisterDependencies()) << "\n");
+	VERBOSE_PRINT(errs() << "\t\tNumber of memory dependencies: " << std::to_string(getNumOfMemoryDependencies()) << "\n");
+	VERBOSE_PRINT(errs() << "\t\tDDDG build finished\n");
 
 	// TODO: write graph property csv?
 }
@@ -655,6 +668,8 @@ intervalTy DDDGBuilder::getTraceLineFromTo(gzFile &traceFile) {
 
 	// Iterate through dynamic trace
 #ifdef PROGRESSIVE_TRACE_CURSOR
+	if(args.progressive)
+		VERBOSE_PRINT(errs() << "\t\tUsing progressive trace cursor, skipping " << std::to_string(progressiveTraceCursor) << " bytes from trace\n");
 	gzseek(traceFile, progressiveTraceCursor, SEEK_SET);
 #else
 	gzrewind(traceFile);
@@ -754,6 +769,8 @@ intervalTy DDDGBuilder::getTraceLineFromTo(gzFile &traceFile) {
 
 	// Post-process runtime loop bound calculations
 	if(!skipRuntimeLoopBound) {
+		VERBOSE_PRINT(errs() << "\t\tThere are loops with unknown static bounds, using trace to determine their bounds\n");
+
 		for(auto &it : loopName2levelUnrollVecMap) {
 			std::string loopName = it.first;
 			unsigned levelSize = it.second.size();

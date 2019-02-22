@@ -5,8 +5,8 @@
 ColorWriter::ColorWriter(
 	Graph &graph,
 	VertexNameMap &vertexNameMap,
-	NameVecTy &bbNames,
-	NameVecTy &funcNames,
+	const std::vector<std::string> &bbNames,
+	const std::vector<std::string> &funcNames,
 	std::vector<int> &opcodes,
 	llvm::bbFuncNamePair2lpNameLevelPairMapTy &bbFuncNamePair2lpNameLevelPairMap
 ) : graph(graph), vertexNameMap(vertexNameMap), bbNames(bbNames), funcNames(funcNames), opcodes(opcodes), bbFuncNamePair2lpNameLevelPairMap(bbFuncNamePair2lpNameLevelPairMap) { }

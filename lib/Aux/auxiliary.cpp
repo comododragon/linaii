@@ -1,7 +1,6 @@
 #include "profile_h/auxiliary.h"
 
 #include "llvm/IR/Verifier.h"
-#include "llvm/Support/raw_ostream.h"
 
 using namespace llvm;
 
@@ -143,11 +142,10 @@ void ConfigurationManager::appendToCompletePartitionCfg(std::string baseAddr, ui
 void ConfigurationManager::appendToArrayInfoCfg(std::string arrayName, uint64_t totalSize, size_t wordSize) {
 	arrayInfoCfgTy elem;
 
-	elem.arrayName = arrayName;
 	elem.totalSize = totalSize;
 	elem.wordSize = wordSize;
 
-	arrayInfoCfg.push_back(elem);
+	arrayInfoCfgMap.insert(std::make_pair(arrayName, elem));
 }
 
 void ConfigurationManager::clear() {
@@ -157,7 +155,7 @@ void ConfigurationManager::clear() {
 	partitionCfgMap.clear();
 	completePartitionCfg.clear();
 	completePartitionCfgMap.clear();
-	arrayInfoCfg.clear();
+	arrayInfoCfgMap.clear();
 }
 
 void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLoopLevelVec) {
@@ -390,8 +388,8 @@ void ConfigurationManager::parseToFiles() {
 	outFile.close();
 
 	outFile.open(arrayInfoFileName);
-	for(auto &it : arrayInfoCfg)
-		outFile << "array," << it.arrayName << "," << std::to_string(it.totalSize) << "," << std::to_string(it.wordSize) << "\n";
+	for(auto &it : arrayInfoCfgMap)
+		outFile << "array," << it.first << "," << std::to_string(it.second.totalSize) << "," << std::to_string(it.second.wordSize) << "\n";
 	outFile.close();
 }
 

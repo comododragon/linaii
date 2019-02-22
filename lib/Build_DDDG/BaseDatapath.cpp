@@ -25,11 +25,13 @@ BaseDatapath::BaseDatapath(
 ) : kernelName(kernelName), CM(CM), summaryFile(summaryFile), loopName(loopName), loopLevel(loopLevel), loopUnrollFactor(loopUnrollFactor), PC(kernelName), asapII(asapII) {
 #endif
 	builder = nullptr;
-	NL = nullptr;
+	profile = nullptr;
 	microops.clear();
 
-	// Create node latency calculator based on selected platform
-	NL = NodeLatency::createInstance();
+	// Create hardware profile based on selected platform
+	profile = HardwareProfile::createInstance();
+
+	VERBOSE_PRINT(errs() << "\tBuild initial DDDG\n");
 
 #ifdef USE_FUTURE
 	builder = new DDDGBuilder(this, PC, future);
@@ -63,13 +65,16 @@ BaseDatapath::BaseDatapath(
 	/// Later, we need to add memory port limitation below (struct will be better) to take read/write
 	/// ports into consideration.
 	numOfPortsPerPartition = 1000;
+
+	// Reset resource counting in profile
+	profile->clear();
 }
 
 BaseDatapath::~BaseDatapath() {
 	if(builder)
 		delete builder;
-	if(NL)
-		delete NL;
+	if(profile)
+		delete profile;
 }
 
 std::string BaseDatapath::getTargetLoopName() const {
@@ -121,7 +126,7 @@ void BaseDatapath::initBaseAddress() {
 	const ConfigurationManager::partitionCfgMapTy &completePartitionMap = CM.getCompletePartitionCfgMap();
 	const std::unordered_map<int, std::pair<std::string, int64_t>> &getElementPtrMap = PC.getGetElementPtrList();
 
-	edgeToParamID = boost::get(boost::edge_weight, graph);
+	edgeToWeight = boost::get(boost::edge_weight, graph);
 
 	VertexIterator vi, viEnd;
 	for(std::tie(vi, viEnd) = vertices(graph); vi != viEnd; vi++) {
@@ -142,7 +147,7 @@ void BaseDatapath::initBaseAddress() {
 
 			InEdgeIterator inEdgei, inEdgeEnd;
 			for(std::tie(inEdgei, inEdgeEnd) = boost::in_edges(currNode, graph); inEdgei != inEdgeEnd; inEdgei++) {
-				int paramID = edgeToParamID[*inEdgei];
+				int paramID = edgeToWeight[*inEdgei];
 				if((isLoadOp(nodeMicroop) && paramID != 1) || (LLVM_IR_GetElementPtr == nodeMicroop && paramID != 1) || (isStoreOp(nodeMicroop) && paramID != 2))
 					continue;
 
@@ -184,17 +189,24 @@ void BaseDatapath::initBaseAddress() {
 }
 
 uint64_t BaseDatapath::fpgaEstimationOneMoreSubtraceForRecIICalculation() {
+	VERBOSE_PRINT(errs() << "\tStarting calculation of RecII calculation\n");
+
+	VERBOSE_PRINT(errs() << "\tRemoving induction dependencies\n");
 	removeInductionDependencies();
+	VERBOSE_PRINT(errs() << "\tRemoving PHI nodes\n");
 	removePhiNodes();
 
-	if(args.fSBOpt)
+	if(args.fSBOpt) {
+		VERBOSE_PRINT(errs() << "\tOptimising store buffers\n");
 		enableStoreBufferOptimisation();
+	}
 
 	// Put the node latency using selected architecture as edge weights in the graph
-	EdgeWeightMap edgeWeightMap = boost::get(boost::edge_weight, graph);
+	VERBOSE_PRINT(errs() << "\tUpdating DDDG edges with operation latencies according to selected hardware\n");
+	//EdgeWeightMap edgeWeightMap = boost::get(boost::edge_weight, graph);
 	EdgeIterator edgei, edgeEnd;
 	for(std::tie(edgei, edgeEnd) = boost::edges(graph); edgei != edgeEnd; edgei++) {
-		uint8_t weight = edgeWeightMap[*edgei];
+		uint8_t weight = edgeToWeight[*edgei];
 
 		// XXX: Up to this point no control edges were added so far, I think...
 		if(EDGE_CONTROL == weight) {
@@ -203,10 +215,18 @@ uint64_t BaseDatapath::fpgaEstimationOneMoreSubtraceForRecIICalculation() {
 		else {
 			unsigned nodeID = vertexToName[boost::source(*edgei, graph)];
 			unsigned opcode = microops.at(nodeID);
-			unsigned latency = NL->getLatency(opcode);
+			unsigned latency = profile->getLatency(opcode);
 			boost::put(boost::edge_weight, graph, *edgei, latency);
 		}
 	}
+
+	VERBOSE_PRINT(errs() << "\tStarting ASAP scheduling\n");
+	std::tuple<uint64_t, uint64_t> asapResult = asapScheduling();
+
+	// XXX: O resultado dessa chamada não é usado (pelo menos nao na primeira geração de DynamicDatapath)!!!!
+	//std::tuple<uint64_t, uint64_t> alapResult = alapScheduling(asapResult);
+
+	return std::get<0>(asapResult);
 }
 
 void BaseDatapath::removeInductionDependencies() {
@@ -262,7 +282,7 @@ void BaseDatapath::removePhiNodes() {
 		OutEdgeIterator outEdgei, outEdgeEnd;
 		for(std::tie(outEdgei, outEdgeEnd) = boost::out_edges(*vi, graph); outEdgei != outEdgeEnd; outEdgei++) {
 			edgesToRemove.insert(*outEdgei);
-			phiChild.push_back(std::make_pair(vertexToName[target(*outEdgei, graph)], edgeToParamID[*outEdgei]));
+			phiChild.push_back(std::make_pair(vertexToName[target(*outEdgei, graph)], edgeToWeight[*outEdgei]));
 		}
 
 		if(!phiChild.size())
@@ -344,7 +364,7 @@ void BaseDatapath::enableStoreBufferOptimisation() {
 				// Find the parent of the store node that generates the stored value
 				InEdgeIterator inEdgei, inEdgeEnd;
 				for(tie(inEdgei, inEdgeEnd) = boost::in_edges(node, graph); inEdgei != inEdgeEnd; inEdgei++) {
-					if(1 == edgeToParamID[*inEdgei]) {
+					if(1 == edgeToWeight[*inEdgei]) {
 						// Create a direct connection between the node that generates the value and the node that loads it
 						for(auto &it : storeChild) {
 							nodesToRemove.push_back(vertexToName[it]);
@@ -354,7 +374,7 @@ void BaseDatapath::enableStoreBufferOptimisation() {
 								edgesToAdd.push_back({
 									(unsigned) vertexToName[boost::source(*inEdgei, graph)],
 									(unsigned) vertexToName[boost::target(*outEdgei, graph)],
-									edgeToParamID[*outEdgei]
+									edgeToWeight[*outEdgei]
 								});
 							}
 						}
@@ -377,6 +397,102 @@ std::string BaseDatapath::constructUniqueID(std::string funcID, std::string inst
 #else
 	return funcID + GLOBAL_SEPARATOR + instID + GLOBAL_SEPARATOR + bbID;
 #endif
+}
+
+std::tuple<uint64_t, uint64_t> BaseDatapath::asapScheduling() {
+	VERBOSE_PRINT(errs() << "\t\tASAP scheduling started\n");
+
+	uint64_t maxCycles = 0, maxScheduledTime = 0;
+	//EdgeWeightMap edgeWeightMap = boost::get(boost::edge_weight, graph);
+
+	nodeScheduledTime.assign(numOfTotalNodes, 0);
+
+	std::map<uint64_t, std::vector<unsigned>> maxTimesNodesMap;
+
+	for(unsigned nodeID = 0; nodeID < numOfTotalNodes; nodeID++) {
+		Vertex currNode = nameToVertex[nodeID];
+
+		if(!boost::in_degree(currNode, graph)) {
+			nodeScheduledTime[currNode] = 0;
+			continue;
+		}
+
+		unsigned maxCurrStartTime = 0;
+		InEdgeIterator inEdgei, inEdgeEnd;
+		for(std::tie(inEdgei, inEdgeEnd) = boost::in_edges(currNode, graph); inEdgei != inEdgeEnd; inEdgei++) {
+			unsigned parentNodeID = vertexToName[boost::source(*inEdgei, graph)];
+			unsigned currNodeStartTime = nodeScheduledTime[parentNodeID] + edgeToWeight[*inEdgei];
+			if(currNodeStartTime > maxCurrStartTime)
+				maxCurrStartTime = currNodeStartTime;
+		}
+		nodeScheduledTime[nodeID] = maxCurrStartTime;
+
+		maxTimesNodesMap[maxCurrStartTime].push_back(nodeID);
+	}
+
+	const ConfigurationManager::arrayInfoCfgMapTy &arrayInfoCfgMap = CM.getArrayInfoCfgMap();
+	profile->calculateRequiredResources(microops, arrayInfoCfgMap, baseAddress, maxTimesNodesMap);
+
+	std::vector<uint64_t>::iterator found = std::max_element(nodeScheduledTime.begin(), nodeScheduledTime.end());
+	maxScheduledTime = *found;
+
+	uint64_t maxLatency = 0;
+	for(auto &it : maxTimesNodesMap[maxScheduledTime]) {
+		unsigned opcode = microops.at(it);
+		unsigned latency = profile->getLatency(opcode);
+		if(latency > maxLatency)
+			maxLatency = latency;
+	}
+
+	maxCycles = (args.fExtraScalar)? maxScheduledTime + maxLatency : maxScheduledTime + maxLatency - 1;
+
+	// TODO: Salvar maxCycles em IL_asap como no código original??
+
+	// XXX: Precisa desse clear?
+	std::map<uint64_t, std::vector<unsigned>>().swap(maxTimesNodesMap);
+
+	VERBOSE_PRINT(errs() << "\t\tLatency: " << std::to_string(maxCycles) << "\n");
+	if(XilinxHardwareProfile *fpgaProfile = dynamic_cast<XilinxHardwareProfile *>(profile)) {
+		VERBOSE_PRINT(errs() << "\t\tDSPs: " << std::to_string(fpgaProfile->resourcesGetDSPs()) << "\n");
+		VERBOSE_PRINT(errs() << "\t\tFFs: " << std::to_string(fpgaProfile->resourcesGetFFs()) << "\n");
+		VERBOSE_PRINT(errs() << "\t\tLUTs: " << std::to_string(fpgaProfile->resourcesGetLUTs()) << "\n");
+	}
+	VERBOSE_PRINT(errs() << "\t\tfAdd units: " << std::to_string(profile->fAddGetAmount()) << "\n");
+	VERBOSE_PRINT(errs() << "\t\tfSub units: " << std::to_string(profile->fSubGetAmount()) << "\n");
+	VERBOSE_PRINT(errs() << "\t\tfMul units: " << std::to_string(profile->fMulGetAmount()) << "\n");
+	VERBOSE_PRINT(errs() << "\t\tfDiv units: " << std::to_string(profile->fDivGetAmount()) << "\n");
+	for(auto &it : arrayInfoCfgMap)
+		VERBOSE_PRINT(errs() << "\t\tNumber of partitions for array \"" << it.first << "\": " << std::to_string(profile->arrayGetNumOfPartitions(it.first)) << "\n");
+	VERBOSE_PRINT(errs() << "\t\tfASAP scheduling finished\n");
+
+	return std::make_tuple(maxCycles, maxLatency);
+}
+
+void BaseDatapath::dumpGraph() {
+	std::string graphFileName(kernelName + "_" + loopName + "_graph.dot");
+	std::ofstream out(graphFileName);
+
+	std::vector<std::string> functionNames;
+	for(auto &it : PC.getFuncList()) {
+#ifdef LEGACY_SEPARATOR
+		size_t tagPos = it.find("-");
+#else
+		size_t tagPos = it.find(GLOBAL_SEPARATOR);
+#endif
+		std::string functionName = it.substr(0, tagPos);
+
+		functionNames.push_back(functionName);
+	}
+	write_graphviz(
+		out, graph,
+		ColorWriter(graph, vertexToName, PC.getCurrBBList(), functionNames, microops, bbFuncNamePair2lpNameLevelPairMap),
+		EdgeColorWriter(graph, edgeToWeight)
+	);
+
+	out.close();
+
+	GraphProgram::Name program = GraphProgram::DOT;
+	DisplayGraph(graphFileName, true, program);
 }
 
 #if 0

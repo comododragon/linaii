@@ -54,7 +54,7 @@
 //#include "profile_h/generic_func.h"
 //#include "profile_h/opcodes.h"
 #include "profile_h/DDDGBuilder.h"
-#include "profile_h/NodeLatency.h"
+#include "profile_h/HardwareProfile.h"
 //#include "profile_h/Registers.h"
 
 using namespace llvm;
@@ -94,8 +94,6 @@ typedef boost::graph_traits<Graph>::in_edge_iterator InEdgeIterator;
 typedef boost::graph_traits<Graph>::out_edge_iterator OutEdgeIterator;
 typedef boost::property_map<Graph, boost::edge_weight_t>::type EdgeWeightMap;
 typedef boost::property_map<Graph, boost::vertex_index_t>::type VertexNameMap;
-
-typedef std::vector<std::string> NameVecTy;
 
 typedef std::unordered_map<std::string, unsigned> staticInstID2OpcodeMapTy;
 extern staticInstID2OpcodeMapTy staticInstID2OpcodeMap;
@@ -419,7 +417,7 @@ class BaseDatapath {
 #ifdef USE_FUTURE
 	FutureCache *future;
 #endif
-	NodeLatency *NL;
+	HardwareProfile *profile;
 
 public:
 #ifdef USE_FUTURE
@@ -472,8 +470,8 @@ protected:
 	std::unordered_map<unsigned, Vertex> nameToVertex;
 	// A map from boost internal ID to node ID
 	VertexNameMap vertexToName;
-	// A map from edge internal ID to its weight (parameter ID)
-	EdgeWeightMap edgeToParamID;
+	// A map from edge internal ID to its weight (parameter ID before estimation, node latency after estimation)
+	EdgeWeightMap edgeToWeight;
 	// Set containing all called functions
 	std::unordered_set<std::string> functionNames;
 	// TODO: check type
@@ -484,6 +482,8 @@ protected:
 	std::set<std::string> noPartitionArrayName;
 	// TODO: check its purpose
   	std::unordered_set<std::string> dynamicMemoryOps;
+	// Vector with scheduled times for each node
+	std::vector<uint64_t> nodeScheduledTime;
 
 	void initBaseAddress();
 
@@ -493,6 +493,8 @@ protected:
 	void removeInductionDependencies();
 	void removePhiNodes();
 	void enableStoreBufferOptimisation();
+
+	std::tuple<uint64_t, uint64_t> asapScheduling();
 
 	void dumpGraph();
 
@@ -934,8 +936,8 @@ private:
 class ColorWriter {
 	Graph &graph;
 	VertexNameMap &vertexNameMap;
-	NameVecTy &bbNames;
-	NameVecTy &funcNames;
+	const std::vector<std::string> &bbNames;
+	const std::vector<std::string> &funcNames;
 	std::vector<int> &opcodes;
 	llvm::bbFuncNamePair2lpNameLevelPairMapTy &bbFuncNamePair2lpNameLevelPairMap;
 
@@ -943,8 +945,8 @@ public:
 	ColorWriter(
 		Graph &graph,
 		VertexNameMap &vertexNameMap,
-		NameVecTy &bbNames,
-		NameVecTy &funcNames,
+		const std::vector<std::string> &bbNames,
+		const std::vector<std::string> &funcNames,
 		std::vector<int> &opcodes,
 		llvm::bbFuncNamePair2lpNameLevelPairMapTy &bbFuncNamePair2lpNameLevelPairMap
 	);

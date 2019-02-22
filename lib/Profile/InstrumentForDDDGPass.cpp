@@ -886,6 +886,8 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 
 		// Get recurrence-constrained II
 		if(enablePipelining) {
+			VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Building dynamic datapath for recurrence-constrained II calculation\n");
+
 			unsigned actualUnrollFactor = (targetLoopBound < (targetUnrollFactor << 1) && targetLoopBound)? targetLoopBound : (targetUnrollFactor << 1);
 #ifdef USE_FUTURE
 			// The future cache receives some parsed data that can be reused when the DynamicDatapath is regenerated, saving some processing time
@@ -898,6 +900,16 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 
 			VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Recurrence-constrained II: " << recII << "\n");
 		}
+
+		VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Building dynamic datapath\n");
+
+#ifdef USE_FUTURE
+		DynamicDatapath DD(kernelName, CM, &summaryFile, loopName, targetLoopLevel, unrollFactor, &future, recII);
+#else
+		DynamicDatapath DD(kernelName, CM, &summaryFile, loopName, targetLoopLevel, unrollFactor, recII);
+#endif
+
+		// TODO: Retrieve results from DD and print WITHOUT VERBOSE
 	}
 
 	VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Summary file closed\n");

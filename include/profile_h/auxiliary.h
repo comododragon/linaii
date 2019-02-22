@@ -4,6 +4,7 @@
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/Timer.h"
+#include "llvm/Support/raw_ostream.h"
 
 #define ENABLE_TIMER
 
@@ -28,10 +29,6 @@
 #endif // End of ENABLE_BTREE_MAP
 
 #include "profile_h/ArgPack.h"
-
-#define READ_PORT_PER_PARTITION 2
-#define WRITE_PORT_PER_PARTITION 1
-#define MAX_WRITE_PORT_PER_PARTITION (WRITE_PORT_PER_PARTITION+1)
 
 #define INFINITE_HARDWARE 999999999
 
@@ -203,12 +200,12 @@ public:
 		size_t wordSize;
 		uint64_t pFactor;
 	} partitionCfgTy;
+	typedef std::unordered_map<std::string, partitionCfgTy *> partitionCfgMapTy;
 	typedef struct {
-		std::string arrayName;
 		uint64_t totalSize;
 		size_t wordSize;
 	} arrayInfoCfgTy;
-	typedef std::unordered_map<std::string, partitionCfgTy *> partitionCfgMapTy;
+	typedef std::map<std::string, arrayInfoCfgTy> arrayInfoCfgMapTy;
 
 private:
 	std::string kernelName;
@@ -217,10 +214,10 @@ private:
 	std::vector<unrollingCfgTy> unrollingCfg;
 	std::vector<partitionCfgTy> partitionCfg;
 	std::vector<partitionCfgTy> completePartitionCfg;
-	std::vector<arrayInfoCfgTy> arrayInfoCfg;
 
 	partitionCfgMapTy partitionCfgMap;
 	partitionCfgMapTy completePartitionCfgMap;
+	arrayInfoCfgMapTy arrayInfoCfgMap;
 
 	void appendToPipeliningCfg(std::string funcName, unsigned loopNo, unsigned loopLevel);
 	void appendToUnrollingCfg(std::string funcName, unsigned loopNo, unsigned loopLevel, int lineNo, uint64_t unrollFactor);
@@ -240,10 +237,10 @@ public:
 	const std::vector<unrollingCfgTy> &getUnrollingCfg() const { return unrollingCfg; }
 	const std::vector<partitionCfgTy> &getPartitionCfg() const { return partitionCfg; }
 	const std::vector<partitionCfgTy> &getCompletePartitionCfg() const { return completePartitionCfg; }
-	const std::vector<arrayInfoCfgTy> &getArrayInfoCfg() const { return arrayInfoCfg; }
 
 	const partitionCfgMapTy &getPartitionCfgMap() const { return partitionCfgMap; }
 	const partitionCfgMapTy &getCompletePartitionCfgMap() const { return completePartitionCfgMap; }
+	const arrayInfoCfgMapTy &getArrayInfoCfgMap() const { return arrayInfoCfgMap; }
 };
 
 class LimitedQueue {

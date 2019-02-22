@@ -45,16 +45,16 @@ DynamicDatapath::DynamicDatapath(
 #endif
 	VERBOSE_PRINT(errs() << "[][][][dynamicDatapath] Analysing DDDG for loop \"" << loopName << "\"\n");
 
-#if 0
 	initBaseAddress();
 
-	if(args.showPostOptDDDG)
+#if 0
+	if(args.showPreOptDDDG)
 		dumpGraph();
 
 	numCycles = fpgaEstimation();
+#endif
 
 	VERBOSE_PRINT(errs() << "[][][][dynamicDatapath] Finished\n");
-#endif
 }
 
 DynamicDatapath::~DynamicDatapath() {}
@@ -82,11 +82,11 @@ void DynamicDatapath::printDatabase() {
 	for(std::tie(vi, viEnd) = vertices(graph); vi != viEnd; vi++)
 		errs() << "-- " << vertexToName[*vi] << "\n";
 	errs() << "-- ------------\n";
-	errs() << "-- edgeToParamID\n";
+	errs() << "-- edgeToWeight\n";
 	EdgeIterator ei, eiEnd;
 	for(std::tie(ei, eiEnd) = edges(graph); ei != eiEnd; ei++)
-		errs() << "-- " << std::to_string(edgeToParamID[*ei]) << "\n";
-	errs() << "-- -------------\n";
+		errs() << "-- " << std::to_string(edgeToWeight[*ei]) << "\n";
+	errs() << "-- ------------\n";
 	errs() << "-- functionNames\n";
 	for(auto const &x : functionNames)
 		errs() << "-- " << x << "\n";

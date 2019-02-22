@@ -1,7 +1,7 @@
 include_directories( ${ZLIB_INCLUDE_DIRS} )
 
 add_llvm_library(BuildDDDGlib
-	NodeLatency.cpp
+	HardwareProfile.cpp
 	ColorWriter.cpp
 	DynamicDatapath.cpp
 	BaseDatapath.cpp
@@ -12,7 +12,6 @@ add_llvm_library(BuildDDDGlib
 	Registers.cpp
 	opcodes.cpp
 	generic_func.cpp
-	fpga_resources.cpp
 	
 	LINK_LIBS
 	${ZLIB_LIBRARY}

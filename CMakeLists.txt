@@ -85,8 +85,8 @@ add_llvm_tool(lin-analyzer
 	)
 	
 target_link_libraries(lin-analyzer
-	Auxlib
 	LLVMLinProfiler
+	Auxlib
 	BuildDDDGlib
 	#${ZLIB_LIBRARY}
 	)

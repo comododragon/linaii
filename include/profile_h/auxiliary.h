@@ -61,6 +61,8 @@ std::string appendDepthToLoopName(std::string loopName, unsigned depth);
 std::tuple<std::string, unsigned> parseLoopName(std::string loopName);
 std::tuple<std::string, unsigned, unsigned> parseWholeLoopName(std::string wholeLoopName);
 
+unsigned nextPowerOf2(unsigned x);
+
 // TODO: REMOVER ISSO AQUI SOB DEMANDA
 extern std::string inputFileName;
 extern std::string inputPath;

@@ -210,7 +210,7 @@ void ParsedTraceContainer::appendToLineNoList(int elem) {
 	}
 }
 
-void ParsedTraceContainer::appendToMemoryTraceList(int elem, int64_t elem2, unsigned elem3) {
+void ParsedTraceContainer::appendToMemoryTraceList(int key, int64_t elem, unsigned elem2) {
 	assert(!locked && "This container is locked, no modification permitted");
 	assert(!keepAliveRead && "This container is open for read, no modification permitted");
 
@@ -220,7 +220,7 @@ void ParsedTraceContainer::appendToMemoryTraceList(int elem, int64_t elem2, unsi
 			assert(memoryTraceFile != Z_NULL && "Could not open memory trace file for write");
 		}
 
-		gzprintf(memoryTraceFile, "%d,%ld,%u\n", elem, elem2, elem3);
+		gzprintf(memoryTraceFile, "%d,%ld,%u\n", key, elem, elem2);
 
 		if(!keepAliveWrite) {
 			gzclose(memoryTraceFile);
@@ -228,7 +228,7 @@ void ParsedTraceContainer::appendToMemoryTraceList(int elem, int64_t elem2, unsi
 		}
 	}
 	else {
-		memoryTraceList.push_back(std::make_tuple(elem, elem2, elem3));
+		memoryTraceList.insert(std::make_pair(key, std::make_pair(elem, elem2)));
 	}
 }
 
@@ -388,7 +388,7 @@ const std::vector<int> &ParsedTraceContainer::getLineNoList() {
 	return lineNoList;
 }
 
-const std::vector<std::tuple<int, int64_t, unsigned>> &ParsedTraceContainer::getMemoryTraceList() {
+const std::unordered_map<int, std::pair<int64_t, unsigned>> &ParsedTraceContainer::getMemoryTraceList() {
 	if(compressed) {
 		assert(!keepAliveWrite && "This container is open for write, no reading permitted");
 
@@ -408,7 +408,7 @@ const std::vector<std::tuple<int, int64_t, unsigned>> &ParsedTraceContainer::get
 			int64_t elem2;
 			unsigned elem3;
 			sscanf(buffer, "%d,%ld,%u\n", &elem, &elem2, &elem3);
-			memoryTraceList.push_back(std::make_tuple(elem, elem2, elem3));
+			memoryTraceList.insert(std::make_pair(elem, std::make_pair(elem2, elem3)));
 		}
 
 		if(!keepAliveRead) {
@@ -555,21 +555,13 @@ void DDDGBuilder::buildInitialDDDG() {
 
 	writeDDDG();
 
-	VERBOSE_PRINT(errs() << "\t\tNumber of nodes: " << std::to_string(getNumNodes()) << "\n");
-	VERBOSE_PRINT(errs() << "\t\tNumber of edges: " << std::to_string(getNumEdges()) << "\n");
+	VERBOSE_PRINT(errs() << "\t\tNumber of nodes: " << std::to_string(datapath->getNumNodes()) << "\n");
+	VERBOSE_PRINT(errs() << "\t\tNumber of edges: " << std::to_string(datapath->getNumEdges()) << "\n");
 	VERBOSE_PRINT(errs() << "\t\tNumber of register dependencies: " << std::to_string(getNumOfRegisterDependencies()) << "\n");
 	VERBOSE_PRINT(errs() << "\t\tNumber of memory dependencies: " << std::to_string(getNumOfMemoryDependencies()) << "\n");
 	VERBOSE_PRINT(errs() << "\t\tDDDG build finished\n");
 
 	// TODO: write graph property csv?
-}
-
-unsigned DDDGBuilder::getNumEdges() {
-	return registerEdgeTable.size() + memoryEdgeTable.size();
-}
-
-unsigned DDDGBuilder::getNumNodes() {
-	return numOfInstructions + 1;
 }
 
 unsigned DDDGBuilder::getNumOfRegisterDependencies() {

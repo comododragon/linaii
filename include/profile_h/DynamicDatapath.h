@@ -20,7 +20,7 @@ public:
 		std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
 		std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
 		FutureCache *future,
-		uint64_t asapII
+		bool enablePipelining, uint64_t asapII
 	);
 #else
 	DynamicDatapath(
@@ -31,7 +31,7 @@ public:
 	DynamicDatapath(
 		std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
 		std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
-		uint64_t asapII
+		bool enablePipelining, uint64_t asapII
 	);
 #endif
 

@@ -89,6 +89,16 @@ std::tuple<std::string, unsigned, unsigned> parseWholeLoopName(std::string whole
 	return std::make_tuple(funcName, loopNo, loopLevel);
 }
 
+unsigned nextPowerOf2(unsigned x) {
+	x--;
+	x |= (x >> 1);
+	x |= (x >> 2);
+	x |= (x >> 4);
+	x |= (x >> 8);
+	x |= (x >> 16);
+	return x++;
+}
+
 ConfigurationManager::ConfigurationManager(std::string kernelName) : kernelName(kernelName) { }
 
 void ConfigurationManager::appendToPipeliningCfg(std::string funcName, unsigned loopNo, unsigned loopLevel) {
@@ -250,9 +260,16 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 
 				uint64_t loopBound = found2->second;
 
+#if 0
 				// TODO: This is a silent error/warning. Is this correct (i.e. nothing should be performed apart from informing the user)?
 				if(!loopBound)
 					VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Variable loop bound found for \"" << wholeLoopName2 << "\", pipelining not supported in current version\n");
+#else
+				// XXX: Changed to an error instead of warning. By detecting a variable loop bound when pipelining and putting a 0
+				// for unroll factor, DDDGBuilder is not able to construct the interval used for DDDG construction, leading to a 0-sized graph,
+				// which in original code leads to errors regarding reading the .gz files such as dynamic_funcid.gz
+				assert(loopBound && "Pipeline requested on a loop containing nested loops with variable bounds. Not supported in current version");
+#endif
 
 				wholeLoopName2CompUnrollFactorMap.insert(std::make_pair(wholeLoopName2, loopBound));
 			}	

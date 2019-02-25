@@ -107,6 +107,8 @@ void XilinxHardwareProfile::calculateRequiredResources(
 	std::unordered_map<int, std::pair<std::string, int64_t>> &baseAddress,
 	std::map<uint64_t, std::vector<unsigned>> &maxTimesNodesMap
 ) {
+	clear();
+
 	// XXX: In current implementation, only floating point operations are considered
 	unsigned fAddSubTotalCount = 0;
 	unsigned fMulTotalCount = 0;

@@ -4,13 +4,13 @@
 DynamicDatapath::DynamicDatapath(
 	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
 	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor, FutureCache *future
-) : BaseDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, future, 0) {
+) : BaseDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, future, false, 0) {
 	VERBOSE_PRINT(errs() << "[][][][dynamicDatapath] Analysing DDDG for loop \"" << loopName << "\"\n");
 #else
 DynamicDatapath::DynamicDatapath(
 	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
 	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor
-) : BaseDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, 0) {
+) : BaseDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, false, 0) {
 	VERBOSE_PRINT(errs() << "[][][][dynamicDatapath] Analysing DDDG for loop \"" << loopName << "\"\n");
 #endif
 
@@ -31,8 +31,8 @@ DynamicDatapath::DynamicDatapath(
 	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
 	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
 	FutureCache *future,
-	uint64_t asapII
-) : BaseDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, future, asapII) {
+	bool enablePipelining, uint64_t asapII
+) : BaseDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, future, enablePipelining, asapII) {
 	if(future && future->isComputed())
 		VERBOSE_PRINT(errs() << "[][][][dynamicDatapath] Using computed cache from previous dynamic datapath constructions\n");
 
@@ -40,19 +40,17 @@ DynamicDatapath::DynamicDatapath(
 DynamicDatapath::DynamicDatapath(
 	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
 	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
-	uint64_t asapII
-) : BaseDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, asapII) {
+	bool enablePipelining, uint64_t asapII
+) : BaseDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, enablePipelining, asapII) {
 #endif
 	VERBOSE_PRINT(errs() << "[][][][dynamicDatapath] Analysing DDDG for loop \"" << loopName << "\"\n");
 
 	initBaseAddress();
 
-#if 0
 	if(args.showPreOptDDDG)
 		dumpGraph();
 
 	numCycles = fpgaEstimation();
-#endif
 
 	VERBOSE_PRINT(errs() << "[][][][dynamicDatapath] Finished\n");
 }
@@ -99,5 +97,21 @@ void DynamicDatapath::printDatabase() {
 	for(auto const &x : noPartitionArrayName)
 		errs() << "-- " << x << "\n";
 	errs() << "-- --------------------\n";
+	errs() << "-- dynamicMemoryOps\n";
+	for(auto const &x : dynamicMemoryOps)
+		errs() << "-- " << x << "\n";
+	errs() << "-- ----------------\n";
+	errs() << "-- asapScheduledTime\n";
+	for(auto const &x : asapScheduledTime)
+		errs() << "-- " << std::to_string(x) << "\n";
+	errs() << "-- -----------------\n";
+	errs() << "-- alapScheduledTime\n";
+	for(auto const &x : alapScheduledTime)
+		errs() << "-- " << std::to_string(x) << "\n";
+	errs() << "-- -----------------\n";
+	errs() << "-- cPathNodes\n";
+	for(auto const &x : cPathNodes)
+		errs() << "-- " << std::to_string(x) << "\n";
+	errs() << "-- ----------\n";
 }
 #endif

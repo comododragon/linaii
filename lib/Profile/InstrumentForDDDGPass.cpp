@@ -904,9 +904,9 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 		VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Building dynamic datapath\n");
 
 #ifdef USE_FUTURE
-		DynamicDatapath DD(kernelName, CM, &summaryFile, loopName, targetLoopLevel, unrollFactor, &future, recII);
+		DynamicDatapath DD(kernelName, CM, &summaryFile, loopName, targetLoopLevel, unrollFactor, &future, enablePipelining, recII);
 #else
-		DynamicDatapath DD(kernelName, CM, &summaryFile, loopName, targetLoopLevel, unrollFactor, recII);
+		DynamicDatapath DD(kernelName, CM, &summaryFile, loopName, targetLoopLevel, unrollFactor, enablePipelining, recII);
 #endif
 
 		// TODO: Retrieve results from DD and print WITHOUT VERBOSE

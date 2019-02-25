@@ -4,6 +4,7 @@
 #include <sstream>
 
 #include "llvm/Support/GraphWriter.h"
+#include "profile_h/colors.h"
 #include "profile_h/opcodes.h"
 
 #ifdef USE_FUTURE
@@ -11,18 +12,21 @@ BaseDatapath::BaseDatapath(
 	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
 	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
 	FutureCache *future,
-	uint64_t asapII
+	bool enablePipelining, uint64_t asapII
 ) :
 	kernelName(kernelName), CM(CM), summaryFile(summaryFile),
 	loopName(loopName), loopLevel(loopLevel), loopUnrollFactor(loopUnrollFactor),
-	PC(kernelName), future(future), asapII(asapII)
+	PC(kernelName), future(future), enablePipelining(enablePipelining), asapII(asapII)
 {
 #else
 BaseDatapath::BaseDatapath(
 	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
 	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
-	uint64_t asapII
-) : kernelName(kernelName), CM(CM), summaryFile(summaryFile), loopName(loopName), loopLevel(loopLevel), loopUnrollFactor(loopUnrollFactor), PC(kernelName), asapII(asapII) {
+	bool enablePipelining, uint64_t asapII
+) :
+	kernelName(kernelName), CM(CM), summaryFile(summaryFile),
+	loopName(loopName), loopLevel(loopLevel), loopUnrollFactor(loopUnrollFactor),
+	PC(kernelName), enablePipelining(enablePipelining), asapII(asapII) {
 #endif
 	builder = nullptr;
 	profile = nullptr;
@@ -39,7 +43,7 @@ BaseDatapath::BaseDatapath(
 	builder = new DDDGBuilder(this, PC);
 #endif
 	builder->buildInitialDDDG();
-	numOfTotalNodes = builder->getNumNodes();
+	numOfTotalNodes = getNumNodes();
 	delete builder;
 	builder = nullptr;
 
@@ -87,6 +91,14 @@ unsigned BaseDatapath::getTargetLoopLevel() const {
 
 uint64_t BaseDatapath::getTargetLoopUnrollFactor() const {
 	return loopUnrollFactor;
+}
+
+unsigned BaseDatapath::getNumNodes() const {
+	return boost::num_vertices(graph);
+}
+
+unsigned BaseDatapath::getNumEdges() const {
+	return boost::num_edges(graph);
 }
 
 void BaseDatapath::insertMicroop(int microop) {
@@ -189,7 +201,7 @@ void BaseDatapath::initBaseAddress() {
 }
 
 uint64_t BaseDatapath::fpgaEstimationOneMoreSubtraceForRecIICalculation() {
-	VERBOSE_PRINT(errs() << "\tStarting calculation of RecII calculation\n");
+	VERBOSE_PRINT(errs() << "\tStarting RecII calculation\n");
 
 	VERBOSE_PRINT(errs() << "\tRemoving induction dependencies\n");
 	removeInductionDependencies();
@@ -227,6 +239,64 @@ uint64_t BaseDatapath::fpgaEstimationOneMoreSubtraceForRecIICalculation() {
 	//std::tuple<uint64_t, uint64_t> alapResult = alapScheduling(asapResult);
 
 	return std::get<0>(asapResult);
+}
+
+uint64_t BaseDatapath::fpgaEstimation() {
+	VERBOSE_PRINT(errs() << "\tStarting IL and II calculation\n");
+
+	VERBOSE_PRINT(errs() << "\tRemoving induction dependencies\n");
+	removeInductionDependencies();
+#if 0
+	// XXX: a csv containing the instruction distribution was generated here. Since it is not used, it was not refactored
+	VERBOSE_PRINT(errs() << "\tCalculating instruction distribution\n");
+	calculateInstructionDistribution();
+	// XXX: some data structures containing the parallelism profile of the DDDG were generated here, but apparently not used
+	// XXX: Vertex2TimestampMap, parallelism_profile and instInlevels
+	VERBOSE_PRINT(errs() << "\tCalculating parallelism profile of the DDDG\n");
+	calculateParallelismProfileDDDG();
+#endif
+	VERBOSE_PRINT(errs() << "\tRemoving PHI nodes\n");
+	removePhiNodes();
+
+	if(args.fSBOpt) {
+		VERBOSE_PRINT(errs() << "\tOptimising store buffers\n");
+		enableStoreBufferOptimisation();
+	}
+
+	// Put the node latency using selected architecture as edge weights in the graph
+	VERBOSE_PRINT(errs() << "\tUpdating DDDG edges with operation latencies according to selected hardware\n");
+	//EdgeWeightMap edgeWeightMap = boost::get(boost::edge_weight, graph);
+	EdgeIterator edgei, edgeEnd;
+	for(std::tie(edgei, edgeEnd) = boost::edges(graph); edgei != edgeEnd; edgei++) {
+		uint8_t weight = edgeToWeight[*edgei];
+
+		// XXX: Up to this point no control edges were added so far, I think...
+		if(EDGE_CONTROL == weight) {
+			boost::put(boost::edge_weight, graph, *edgei, 0);
+		}
+		else {
+			unsigned nodeID = vertexToName[boost::source(*edgei, graph)];
+			unsigned opcode = microops.at(nodeID);
+			unsigned latency = profile->getLatency(opcode);
+			boost::put(boost::edge_weight, graph, *edgei, latency);
+		}
+	}
+
+	// XXX: In the original code, the following stuff happens here before asap:
+	// XXX: readArrayInfo
+	// XXX: readPipeliningConfig, updating enable_pipeline global attribute of this graph
+
+	VERBOSE_PRINT(errs() << "\tStarting ASAP scheduling\n");
+	std::tuple<uint64_t, uint64_t> asapResult = asapScheduling();
+
+	VERBOSE_PRINT(errs() << "\tStarting ALAP scheduling\n");
+	alapScheduling(asapResult);
+
+	VERBOSE_PRINT(errs() << "\tIdentifying critical paths\n");
+	identifyCriticalPaths();
+
+	VERBOSE_PRINT(errs() << "\tStarting resource-constrained scheduling\n");
+	uint64_t rcIL = rcScheduling();
 }
 
 void BaseDatapath::removeInductionDependencies() {
@@ -391,6 +461,47 @@ void BaseDatapath::enableStoreBufferOptimisation() {
 	updateRemoveDDDGNodes(nodesToRemove);
 }
 
+void BaseDatapath::initScratchpadPartitions() {
+	// TODO: Null-scratchpads for arrays without partition are created here
+
+	// TODO: Scratchpads for arrays with partition are created here
+
+	const ConfigurationManager::partitionCfgMapTy &partitionMap = CM.getPartitionCfgMap();
+	const std::unordered_map<int, std::pair<int64_t, unsigned>> &memoryTraceList = PC.getMemoryTraceList();
+
+	for(unsigned nodeID = 0; nodeID < numOfTotalNodes; nodeID++) {
+		if(!isMemoryOp(microops.at(nodeID)) || baseAddress.end() == baseAddress.find(nodeID))
+			continue;
+
+		std::string label = baseAddress[nodeID].first;
+		int64_t address = baseAddress[nodeID].second;
+
+		ConfigurationManager::partitionCfgMapTy::const_iterator found = partitionMap.find(label);
+		if(found != partitionMap.end()) {
+			unsigned type = found->second->type;
+			uint64_t size = found->second->size;
+			uint64_t pFactor = found->second->pFactor;
+
+			if(1 == pFactor)
+				continue;
+
+			uint64_t absAddress = memoryTraceList.at(nodeID).first;
+			unsigned dataSize = memoryTraceList.at(nodeID).second >> 3;
+			uint64_t relAddr = (absAddress - address) / dataSize;
+
+			int64_t finalAddress;
+			if(ConfigurationManager::partitionCfgTy::PARTITION_TYPE_BLOCK == type)
+				finalAddress = std::ceil(nextPowerOf2(size) / pFactor);
+			else if(ConfigurationManager::partitionCfgTy::PARTITION_TYPE_CYCLIC == type)
+				finalAddress = relAddr % pFactor;
+			else
+				assert(false && "Invalid partition type found");
+
+			baseAddress[nodeID] = std::make_pair(label, finalAddress);
+		}
+	}
+}
+
 std::string BaseDatapath::constructUniqueID(std::string funcID, std::string instID, std::string bbID) {
 #ifdef LEGACY_SEPARATOR
 	return funcID + "-" + instID + "-" + bbID;
@@ -405,7 +516,7 @@ std::tuple<uint64_t, uint64_t> BaseDatapath::asapScheduling() {
 	uint64_t maxCycles = 0, maxScheduledTime = 0;
 	//EdgeWeightMap edgeWeightMap = boost::get(boost::edge_weight, graph);
 
-	nodeScheduledTime.assign(numOfTotalNodes, 0);
+	asapScheduledTime.assign(numOfTotalNodes, 0);
 
 	std::map<uint64_t, std::vector<unsigned>> maxTimesNodesMap;
 
@@ -413,7 +524,7 @@ std::tuple<uint64_t, uint64_t> BaseDatapath::asapScheduling() {
 		Vertex currNode = nameToVertex[nodeID];
 
 		if(!boost::in_degree(currNode, graph)) {
-			nodeScheduledTime[currNode] = 0;
+			asapScheduledTime[currNode] = 0;
 			continue;
 		}
 
@@ -421,19 +532,22 @@ std::tuple<uint64_t, uint64_t> BaseDatapath::asapScheduling() {
 		InEdgeIterator inEdgei, inEdgeEnd;
 		for(std::tie(inEdgei, inEdgeEnd) = boost::in_edges(currNode, graph); inEdgei != inEdgeEnd; inEdgei++) {
 			unsigned parentNodeID = vertexToName[boost::source(*inEdgei, graph)];
-			unsigned currNodeStartTime = nodeScheduledTime[parentNodeID] + edgeToWeight[*inEdgei];
+			unsigned currNodeStartTime = asapScheduledTime[parentNodeID] + edgeToWeight[*inEdgei];
 			if(currNodeStartTime > maxCurrStartTime)
 				maxCurrStartTime = currNodeStartTime;
 		}
-		nodeScheduledTime[nodeID] = maxCurrStartTime;
+		asapScheduledTime[nodeID] = maxCurrStartTime;
 
 		maxTimesNodesMap[maxCurrStartTime].push_back(nodeID);
 	}
 
+	// XXX: Tenho a impressao de que esse cálculo nao é necessário aqui ainda, por isso comentei
+#if 0
 	const ConfigurationManager::arrayInfoCfgMapTy &arrayInfoCfgMap = CM.getArrayInfoCfgMap();
 	profile->calculateRequiredResources(microops, arrayInfoCfgMap, baseAddress, maxTimesNodesMap);
+#endif
 
-	std::vector<uint64_t>::iterator found = std::max_element(nodeScheduledTime.begin(), nodeScheduledTime.end());
+	std::vector<uint64_t>::iterator found = std::max_element(asapScheduledTime.begin(), asapScheduledTime.end());
 	maxScheduledTime = *found;
 
 	uint64_t maxLatency = 0;
@@ -452,6 +566,8 @@ std::tuple<uint64_t, uint64_t> BaseDatapath::asapScheduling() {
 	std::map<uint64_t, std::vector<unsigned>>().swap(maxTimesNodesMap);
 
 	VERBOSE_PRINT(errs() << "\t\tLatency: " << std::to_string(maxCycles) << "\n");
+	// TODO: Report desativado por ora, já que o resource scheduling foi desativado
+#if 0
 	if(XilinxHardwareProfile *fpgaProfile = dynamic_cast<XilinxHardwareProfile *>(profile)) {
 		VERBOSE_PRINT(errs() << "\t\tDSPs: " << std::to_string(fpgaProfile->resourcesGetDSPs()) << "\n");
 		VERBOSE_PRINT(errs() << "\t\tFFs: " << std::to_string(fpgaProfile->resourcesGetFFs()) << "\n");
@@ -463,13 +579,92 @@ std::tuple<uint64_t, uint64_t> BaseDatapath::asapScheduling() {
 	VERBOSE_PRINT(errs() << "\t\tfDiv units: " << std::to_string(profile->fDivGetAmount()) << "\n");
 	for(auto &it : arrayInfoCfgMap)
 		VERBOSE_PRINT(errs() << "\t\tNumber of partitions for array \"" << it.first << "\": " << std::to_string(profile->arrayGetNumOfPartitions(it.first)) << "\n");
+#endif
 	VERBOSE_PRINT(errs() << "\t\tfASAP scheduling finished\n");
 
 	return std::make_tuple(maxCycles, maxLatency);
 }
 
+void BaseDatapath::alapScheduling(std::tuple<uint64_t, uint64_t> asapResult) {
+	VERBOSE_PRINT(errs() << "\t\tALAP scheduling started\n");
+
+	alapScheduledTime.assign(numOfTotalNodes, 0);
+
+	std::map<uint64_t, std::vector<unsigned>> minTimesNodesMap;
+
+	// XXX: nodeID is incremented by 1 here, so that we can use unsigned (otherwise exit condition would be i < 0)
+	for(unsigned nodeIDp = numOfTotalNodes; nodeIDp; nodeIDp--) {
+		unsigned nodeID = nodeIDp - 1;
+		Vertex currNode = nameToVertex[nodeID];
+
+		if(!boost::out_degree(currNode, graph)) {
+			alapScheduledTime[nodeID] = 0;
+			continue;
+		}
+
+		unsigned minCurrStartTime = std::get<1>(asapResult);
+		OutEdgeIterator outEdgei, outEdgeEnd;
+		for(std::tie(outEdgei, outEdgeEnd) = boost::out_edges(currNode, graph); outEdgei != outEdgeEnd; outEdgei++) {
+			unsigned childNodeID = vertexToName[boost::target(*outEdgei, graph)];
+			unsigned currNodeStartTime = alapScheduledTime[childNodeID] - edgeToWeight[*outEdgei];
+
+			if(currNodeStartTime < minCurrStartTime)
+				minCurrStartTime = currNodeStartTime;
+		}
+		alapScheduledTime[nodeID] = minCurrStartTime;
+
+		minTimesNodesMap[minCurrStartTime].push_back(nodeID);
+	}
+
+	const ConfigurationManager::arrayInfoCfgMapTy &arrayInfoCfgMap = CM.getArrayInfoCfgMap();
+	profile->calculateRequiredResources(microops, arrayInfoCfgMap, baseAddress, minTimesNodesMap);
+
+	// XXX: Precisa desse clear?
+	std::map<uint64_t, std::vector<unsigned>>().swap(minTimesNodesMap);
+
+	if(XilinxHardwareProfile *fpgaProfile = dynamic_cast<XilinxHardwareProfile *>(profile)) {
+		VERBOSE_PRINT(errs() << "\t\tDSPs: " << std::to_string(fpgaProfile->resourcesGetDSPs()) << "\n");
+		VERBOSE_PRINT(errs() << "\t\tFFs: " << std::to_string(fpgaProfile->resourcesGetFFs()) << "\n");
+		VERBOSE_PRINT(errs() << "\t\tLUTs: " << std::to_string(fpgaProfile->resourcesGetLUTs()) << "\n");
+	}
+	VERBOSE_PRINT(errs() << "\t\tfAdd units: " << std::to_string(profile->fAddGetAmount()) << "\n");
+	VERBOSE_PRINT(errs() << "\t\tfSub units: " << std::to_string(profile->fSubGetAmount()) << "\n");
+	VERBOSE_PRINT(errs() << "\t\tfMul units: " << std::to_string(profile->fMulGetAmount()) << "\n");
+	VERBOSE_PRINT(errs() << "\t\tfDiv units: " << std::to_string(profile->fDivGetAmount()) << "\n");
+	for(auto &it : arrayInfoCfgMap)
+		VERBOSE_PRINT(errs() << "\t\tNumber of partitions for array \"" << it.first << "\": " << std::to_string(profile->arrayGetNumOfPartitions(it.first)) << "\n");
+	VERBOSE_PRINT(errs() << "\t\tfALAP scheduling finished\n");
+}
+
+void BaseDatapath::identifyCriticalPaths() {
+	cPathNodes.clear();
+	assert(
+		asapScheduledTime.size() && alapScheduledTime.size() &&
+		(asapScheduledTime.size() == alapScheduledTime.size()) &&
+		"ASAP and/or ALAP scheduled times for nodes not generated or generated incorrectly (forgot to call asapScheduling() and/or alapScheduling()?)"
+	);
+
+	for(unsigned nodeID = 0; nodeID < numOfTotalNodes; nodeID++) {
+		if(asapScheduledTime[nodeID] == alapScheduledTime[nodeID])
+			cPathNodes.push_back(nodeID);
+	}
+}
+
+uint64_t BaseDatapath::rcScheduling() {
+	VERBOSE_PRINT(errs() << "\t\tResource-constrained scheduling started\n");
+
+	assert(asapScheduledTime.size() && alapScheduledTime.size() && cPathNodes.size() && "ASAP, ALAP and/or critical path list not generated");
+
+	// XXX: completePartition() initialised a vector of registers (a class named Registers). This class is composed of a counter of loads
+	// and stores. However, such information is never used, so there is no point on generating such structure.
+	//completePartition();
+	initScratchpadPartitions();
+	// XXX: I have a feeling that scratchpadPartition() is also useless. Therefore I am not implementing (for now of course)
+	
+}
+
 void BaseDatapath::dumpGraph() {
-	std::string graphFileName(kernelName + "_" + loopName + "_graph.dot");
+	std::string graphFileName(loopName + "_graph.dot");
 	std::ofstream out(graphFileName);
 
 	std::vector<std::string> functionNames;
@@ -483,16 +678,15 @@ void BaseDatapath::dumpGraph() {
 
 		functionNames.push_back(functionName);
 	}
-	write_graphviz(
-		out, graph,
-		ColorWriter(graph, vertexToName, PC.getCurrBBList(), functionNames, microops, bbFuncNamePair2lpNameLevelPairMap),
-		EdgeColorWriter(graph, edgeToWeight)
-	);
+
+	ColorWriter colorWriter(graph, vertexToName, PC.getCurrBBList(), functionNames, microops, bbFuncNamePair2lpNameLevelPairMap);
+	EdgeColorWriter edgeColorWriter(graph, edgeToWeight);
+	write_graphviz(out, graph, colorWriter, edgeColorWriter);
 
 	out.close();
 
-	GraphProgram::Name program = GraphProgram::DOT;
-	DisplayGraph(graphFileName, true, program);
+	//GraphProgram::Name program = GraphProgram::DOT;
+	//DisplayGraph(graphFileName, true, program);
 }
 
 #if 0
@@ -6662,3 +6856,102 @@ void BaseDatapath::tokenizeString(std::string input,
   }
 }
 #endif
+
+BaseDatapath::ColorWriter::ColorWriter(
+	Graph &graph,
+	VertexNameMap &vertexNameMap,
+	const std::vector<std::string> &bbNames,
+	const std::vector<std::string> &funcNames,
+	std::vector<int> &opcodes,
+	llvm::bbFuncNamePair2lpNameLevelPairMapTy &bbFuncNamePair2lpNameLevelPairMap
+) : graph(graph), vertexNameMap(vertexNameMap), bbNames(bbNames), funcNames(funcNames), opcodes(opcodes), bbFuncNamePair2lpNameLevelPairMap(bbFuncNamePair2lpNameLevelPairMap) { }
+
+template<class VE> void BaseDatapath::ColorWriter::operator()(std::ostream &out, const VE &v) const {
+	unsigned nodeID = vertexNameMap[v];
+
+	assert(nodeID < bbNames.size() && "Node ID out of bounds (bbNames)");
+	assert(nodeID < funcNames.size() && "Node ID out of bounds (funcNames)");
+	assert(nodeID < opcodes.size() && "Node ID out of bounds (opcodes)");
+
+	std::string bbName = bbNames.at(nodeID);
+	std::string funcName = funcNames.at(nodeID);
+	llvm::bbFuncNamePairTy bbFuncPair = std::make_pair(bbName, funcName);
+
+	llvm::bbFuncNamePair2lpNameLevelPairMapTy::iterator found = bbFuncNamePair2lpNameLevelPairMap.find(bbFuncPair);
+	if(found != bbFuncNamePair2lpNameLevelPairMap.end()) {
+		std::string colorString = "color=";
+		switch((ColorEnum) std::get<1>(parseLoopName(found->second.first))) {
+			case RED: colorString += "red"; break;
+			case GREEN: colorString += "green"; break;
+			case BLUE: colorString += "blue"; break;
+			case CYAN: colorString += "cyan"; break;
+			case GOLD: colorString += "gold"; break;
+			case HOTPINK: colorString += "hotpink"; break;
+			case NAVY: colorString += "navy"; break;
+			case ORANGE: colorString += "orange"; break;
+			case OLIVEDRAB: colorString += "olivedrab"; break;
+			case MAGENTA: colorString += "magenta"; break;
+			default: colorString += "black"; break;
+		}
+
+		int op = opcodes.at(nodeID);
+		if(isBranchOp(op)) {
+			out << "[style=filled " << colorString << " label=\"{" << nodeID << " | br}\"]";
+		}
+		else if(isLoadOp(op)) {
+			out << "[shape=polygon sides=5 peripheries=2 " << colorString << " label=\"{" << nodeID << " | ld}\"]";
+		}
+		else if(isStoreOp(op)) {
+			out << "[shape=polygon sides=4 peripheries=2 " << colorString << " label=\"{" << nodeID << " | st}\"]";
+		}
+		else if(isAddOp(op)) {
+			out << "[" << colorString << " label=\"{" << nodeID << " | add}\"]";
+		}
+		else if(isMulOp(op)) {
+			out << "[" << colorString << " label=\"{" << nodeID << " | mul}\"]";
+		}
+		else if(isIndexOp(op)) {
+			out << "[" << colorString << " label=\"{" << nodeID << " | index}\"]";
+		}
+		else if(isFloatOp(op)) {
+			if(isFAddOp(op)) {
+				out << "[shape=diamond " << colorString << " label=\"{" << nodeID << " | fadd}\"]";
+			}
+			if(isFSubOp(op)) {
+				out << "[shape=diamond " << colorString << " label=\"{" << nodeID << " | fsub}\"]";
+			}
+			if(isFMulOp(op)) {
+				out << "[shape=diamond " << colorString << " label=\"{" << nodeID << " | fmul}\"]";
+			}
+			if(isFDivOp(op)) {
+				out << "[shape=diamond " << colorString << " label=\"{" << nodeID << " | fdiv}\"]";
+			}
+			if(isFCmpOp(op)) {
+				out << "[shape=diamond " << colorString << " label=\"{" << nodeID << " | fcmp}\"]";
+			}
+		}
+		else if(isPhiOp(op)) {
+			out << "[shape=polygon sides=4 style=filled color=gold label=\"{" << nodeID << " | phi}\"]";
+		}
+		else if(isBitOp(op)) {
+			out << "[" << colorString << " label=\"{" << nodeID << " | bit}\"]";
+		}
+		else if(isCallOp(op)) {
+			out << "[" << colorString << " label=\"{" << nodeID << " | call}\"]";
+		}
+		else {
+			out << "[" << colorString << "]";
+		}
+	}
+}
+
+BaseDatapath::EdgeColorWriter::EdgeColorWriter(Graph &graph, EdgeWeightMap &edgeWeightMap) : graph(graph), edgeWeightMap(edgeWeightMap) { }
+
+template<class VE> void BaseDatapath::EdgeColorWriter::operator()(std::ostream &out, const VE &e) const {
+	unsigned weight = edgeWeightMap[e];
+
+	if(BaseDatapath::EDGE_CONTROL == weight)
+		out << "[color=red label=" << weight << "]";
+	else
+		out << "[color=black label=" << weight << "]";
+}

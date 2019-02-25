@@ -425,13 +425,13 @@ public:
 		std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
 		std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
 		FutureCache *future,
-		uint64_t asapII
+		bool enablePipelining, uint64_t asapII
 	);
 #else
 	BaseDatapath(
 		std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
 		std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
-		uint64_t asapII
+		bool enablePipelining, uint64_t asapII
 	);
 #endif
 
@@ -440,6 +440,8 @@ public:
 	std::string getTargetLoopName() const;
 	unsigned getTargetLoopLevel() const;
 	uint64_t getTargetLoopUnrollFactor() const;
+	unsigned getNumNodes() const;
+	unsigned getNumEdges() const;
 
 	void insertMicroop(int microop);
 	void insertDDDGEdge(unsigned from, unsigned to, uint8_t paramID);
@@ -457,6 +459,7 @@ protected:
 		EDGE_PIPE = 201
 	};
 
+	bool enablePipelining;
 	uint64_t asapII;
 	uint64_t numCycles;
 
@@ -483,20 +486,58 @@ protected:
 	// TODO: check its purpose
   	std::unordered_set<std::string> dynamicMemoryOps;
 	// Vector with scheduled times for each node
-	std::vector<uint64_t> nodeScheduledTime;
+	std::vector<uint64_t> asapScheduledTime;
+	std::vector<uint64_t> alapScheduledTime;
+	// Vector with nodes on the critical path
+	std::vector<unsigned> cPathNodes;
 
 	void initBaseAddress();
 
-	uint64_t fpgaEstimation();
 	uint64_t fpgaEstimationOneMoreSubtraceForRecIICalculation();
+	uint64_t fpgaEstimation();
 
 	void removeInductionDependencies();
 	void removePhiNodes();
 	void enableStoreBufferOptimisation();
+	void initScratchpadPartitions();
 
 	std::tuple<uint64_t, uint64_t> asapScheduling();
+	void alapScheduling(std::tuple<uint64_t, uint64_t> asapResult);
+	void identifyCriticalPaths();
+	uint64_t rcScheduling();
 
 	void dumpGraph();
+
+	class ColorWriter {
+		Graph &graph;
+		VertexNameMap &vertexNameMap;
+		const std::vector<std::string> &bbNames;
+		const std::vector<std::string> &funcNames;
+		std::vector<int> &opcodes;
+		llvm::bbFuncNamePair2lpNameLevelPairMapTy &bbFuncNamePair2lpNameLevelPairMap;
+
+	public:
+		ColorWriter(
+			Graph &graph,
+			VertexNameMap &vertexNameMap,
+			const std::vector<std::string> &bbNames,
+			const std::vector<std::string> &funcNames,
+			std::vector<int> &opcodes,
+			llvm::bbFuncNamePair2lpNameLevelPairMapTy &bbFuncNamePair2lpNameLevelPairMap
+		);
+
+		template<class VE> void operator()(std::ostream &out, const VE &v) const;
+	};
+
+	class EdgeColorWriter {
+		Graph &graph;
+		EdgeWeightMap &edgeWeightMap;
+
+	public:
+		EdgeColorWriter(Graph &graph, EdgeWeightMap &edgeWeightMap);
+
+		template<class VE> void operator()(std::ostream &out, const VE &e) const;
+	};
 
 #if 0
   //Change graph.
@@ -931,37 +972,6 @@ private:
 
 	arrayName2memEfficiencyTy arrayName2memeff;
 #endif
-};
-
-class ColorWriter {
-	Graph &graph;
-	VertexNameMap &vertexNameMap;
-	const std::vector<std::string> &bbNames;
-	const std::vector<std::string> &funcNames;
-	std::vector<int> &opcodes;
-	llvm::bbFuncNamePair2lpNameLevelPairMapTy &bbFuncNamePair2lpNameLevelPairMap;
-
-public:
-	ColorWriter(
-		Graph &graph,
-		VertexNameMap &vertexNameMap,
-		const std::vector<std::string> &bbNames,
-		const std::vector<std::string> &funcNames,
-		std::vector<int> &opcodes,
-		llvm::bbFuncNamePair2lpNameLevelPairMapTy &bbFuncNamePair2lpNameLevelPairMap
-	);
-
-	template <class VE> void operator()(std::ostream &out, const VE &v) const;
-};
-
-class EdgeColorWriter {
-	Graph &graph;
-	EdgeWeightMap &edgeWeightMap;
-
-public:
-	EdgeColorWriter(Graph &graph, EdgeWeightMap &edgeWeightMap);
-
-	template<class VE> void operator()(std::ostream &out, const VE &e) const;
 };
 
 #if 0

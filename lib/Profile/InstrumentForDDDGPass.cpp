@@ -884,6 +884,12 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 #endif
 		unsigned recII = 0;
 
+		// TODO: if actualUnrollFactor != unrollFactor, both dynamicdapataths will calculate the same recII at the end of the
+		// asapScheduling. Therefore, it may not be necessary to calculate it twice
+		// we could change this if condition to something like if(enablePipelining && unrollFactor != actualUnrollFactor
+		// and then create some logic inside fpgaEstimation() to check if it should use the recII calculated just after asapScheduling
+		// (the case where unroll factors are the same) or to use the recII provided at the construction of the DD (the case where
+		// the unrolls are not the same)
 		// Get recurrence-constrained II
 		if(enablePipelining) {
 			VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Building dynamic datapath for recurrence-constrained II calculation\n");

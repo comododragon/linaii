@@ -43,6 +43,7 @@
 // comparison and also portability
 #define LEGACY_SEPARATOR
 //#define GLOBAL_SEPARATOR "~"
+#define CHECK_VISITED_NODES
 
 extern ArgPack args;
 #ifdef PROGRESSIVE_TRACE_CURSOR

@@ -211,13 +211,13 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 		else if(!type.compare("partition")) {
 			std::string rest = line.substr(tagPos + 1);
 
-			tagPos = line.find(",");
+			tagPos = rest.find(",");
 			if(std::string::npos == tagPos)
 				break;
 
 			std::string partitionType = rest.substr(0, tagPos);
 
-			if(!type.compare("complete"))
+			if(!partitionType.compare("complete"))
 				completePartitionCfgStr.push_back(line);
 			else
 				partitionCfgStr.push_back(line);

@@ -43,7 +43,13 @@ BaseDatapath::BaseDatapath(
 	builder = new DDDGBuilder(this, PC);
 #endif
 	builder->buildInitialDDDG();
-	numOfTotalNodes = getNumNodes();
+	// TODO: I think this is a bug. microops.size() is one element bigger than the DDDG. This happens
+	// because on parseTraceLineFromTo, an additional instruction is added do microops, but its parameters
+	// are not evaluated. Therefore no edges are created and this orphan node apparently does not affect the
+	// program. The correct in IMHO would be numOfTotalNodes = getNumNodes();
+	// But I'm keeping the original code for now for comparison purposes
+	numOfTotalNodes = microops.size();
+	//numOfTotalNodes = getNumNodes();
 	delete builder;
 	builder = nullptr;
 
@@ -485,21 +491,188 @@ void BaseDatapath::initScratchpadPartitions() {
 			if(1 == pFactor)
 				continue;
 
-			uint64_t absAddress = memoryTraceList.at(nodeID).first;
+			int64_t absAddress = memoryTraceList.at(nodeID).first;
 			unsigned dataSize = memoryTraceList.at(nodeID).second >> 3;
-			uint64_t relAddr = (absAddress - address) / dataSize;
+			int64_t relAddress = (absAddress - address) / dataSize;
 
 			int64_t finalAddress;
 			if(ConfigurationManager::partitionCfgTy::PARTITION_TYPE_BLOCK == type)
 				finalAddress = std::ceil(nextPowerOf2(size) / pFactor);
 			else if(ConfigurationManager::partitionCfgTy::PARTITION_TYPE_CYCLIC == type)
-				finalAddress = relAddr % pFactor;
+				finalAddress = relAddress % pFactor;
 			else
 				assert(false && "Invalid partition type found");
 
-			baseAddress[nodeID] = std::make_pair(label, finalAddress);
+			// TODO: This is really odd. According to original code, only the label is updated, inserting this information about partitions
+			// However. There is a FIXME comment just above stating that the address does not change. Should I see this as a bug? If
+			// Positive, obviously the problem is that finalAddress is being assigned to the wrong place
+			// By the way, is this necessary at all? Will find out as I keep refactoring...
+#ifdef LEGACY_SEPARATOR
+			baseAddress[nodeID] = std::make_pair(label + "-" + std::to_string(finalAddress), address);
+#else
+			baseAddress[nodeID] = std::make_pair(label + GLOBAL_SEPARATOR + std::to_string(finalAddress), address);
+#endif
+			// XXX: The code that I have the feeling to be the right one
+			//baseAddress[nodeID] = std::make_pair(label, finalAddress);
 		}
 	}
+}
+
+void BaseDatapath::optimiseDDDG() {
+	if(args.fMemDisambuigOpt)
+		performMemoryDisambiguation();
+
+	// XXX: Couldn't this be just changed to if(args.fSLR)?
+	if(!args.fNoSLROpt) {
+		loopName2levelUnrollVecMapTy::iterator found = loopName2levelUnrollVecMap.find(loopName);
+		assert(found != loopName2levelUnrollVecMap.end() && "Loop not found in loopName2levelUnrollVecMap");
+		std::vector<unsigned> unrollFactors = found->second;
+		wholeloopName2loopBoundMapTy::iterator found2 = wholeloopName2loopBoundMap.find(appendDepthToLoopName(loopName, unrollFactors.size()));
+		assert(found2 != wholeloopName2loopBoundMap.end() && "Loop not found in wholeloopName2loopBoundMap");
+		uint64_t innermostBound = found2->second;
+
+		if(args.fSLROpt || unrollFactors.back() == innermostBound)
+			removeSharedLoads();
+	}
+
+	if(args.fRSROpt)
+		removeRepeatedStores();
+
+	if(args.fTHRIntOpt)
+		reduceTreeHeightInteger();
+
+	if(args.fTHRFloatOpt)
+		reduceTreeHeightFloat();
+}
+
+void BaseDatapath::performMemoryDisambiguation() {
+	std::unordered_multimap<std::string, std::string> pairPerLoad;
+	std::unordered_set<std::string> pairedStore;
+	std::vector<std::pair<std::string, std::string>> storeLoadPair;
+	const std::vector<std::string> &dynamicMethodID = PC.getFuncList();
+	const std::vector<std::string> &instID = PC.getInstIDList();
+	const std::vector<std::string> &prevBB = PC.getPrevBBList();
+
+	std::vector<Vertex> topologicalSortedNodes;
+	boost::topological_sort(graph, std::back_inserter(topologicalSortedNodes));
+
+	// Nodes with no incoming edges first
+	for(auto vi = topologicalSortedNodes.rbegin(); vi != topologicalSortedNodes.rend(); vi++) {
+		unsigned nodeID = vertexToName[*vi];
+		int microop = microops.at(nodeID);
+
+		if(!isStoreOp(microop))
+			continue;
+
+		OutEdgeIterator outEdgei, outEdgeEnd;
+		for(std::tie(outEdgei, outEdgeEnd) = boost::out_edges(*vi, graph); outEdgei != outEdgeEnd; outEdgei++) {
+			unsigned childID = vertexToName[boost::target(*outEdgei, graph)];
+			int childMicroop = microops.at(childID);
+
+			if(!isLoadOp(childMicroop))
+				continue;
+
+			std::string nodeDynamicMethodID = dynamicMethodID.at(nodeID);
+			std::string childDynamicMethodID = dynamicMethodID.at(childID);
+
+			if(nodeDynamicMethodID.compare(childDynamicMethodID))
+				continue;
+
+			std::string storeUniqueID = constructUniqueID(nodeDynamicMethodID, instID.at(nodeID), prevBB.at(nodeID));
+			std::string loadUniqueID = constructUniqueID(childDynamicMethodID, instID.at(childID), prevBB.at(childID));
+
+			if(std::find(storeLoadPair.begin(), storeLoadPair.end(), std::make_pair(storeUniqueID, loadUniqueID)) != storeLoadPair.end())
+				continue;
+
+			storeLoadPair.push_back(std::make_pair(storeUniqueID, loadUniqueID));
+			pairedStore.insert(storeUniqueID);
+
+			bool storeFound = false;
+			auto loadRange = pairPerLoad.equal_range(loadUniqueID);
+			for(auto it = loadRange.first; it != loadRange.second; it++) {
+				if(!storeUniqueID.compare(it->second)) {
+					storeFound = true;
+					break;
+				}
+			}
+
+			if(!storeFound)
+				pairPerLoad.insert(std::make_pair(loadUniqueID, storeUniqueID));
+		}
+	}
+
+	if(!storeLoadPair.size())
+		return;
+
+	std::vector<edgeTy> edgesToAdd;
+	std::unordered_map<std::string, unsigned> lastStore;
+
+	for(unsigned nodeID = 0; nodeID < numOfTotalNodes; nodeID++) {
+		int microop = microops.at(nodeID);
+
+		if(!isMemoryOp(microop))
+			continue;
+
+		std::string uniqueID = constructUniqueID(dynamicMethodID.at(nodeID), instID.at(nodeID), prevBB.at(nodeID));
+
+		if(isStoreOp(microop)) {
+			std::unordered_set<std::string>::iterator found = pairedStore.find(uniqueID);
+			if(pairedStore.end() == found)
+				continue;
+
+			lastStore[uniqueID] = nodeID;
+		}
+		else {
+			assert(isLoadOp(microop) && "isMemoryOp() is true but isStoreOp() and isLoadOp() are false");
+
+			auto loadRange = pairPerLoad.equal_range(uniqueID);
+			if(1 == std::distance(loadRange.first, loadRange.second))
+				continue;
+
+			for(auto it = loadRange.first; it != loadRange.second; it++) {
+				assert(pairedStore.find(it->second) != pairedStore.end() && "Store that was paired not found in pairedStore");
+
+				std::unordered_map<std::string, unsigned>::iterator found = lastStore.find(it->second);
+
+				if(lastStore.end() == found)
+					continue;
+
+				unsigned prevStoreID = found->second;
+				if(!edgeExists(prevStoreID, nodeID)) {
+					// TODO: GIVE A MEANINGFUL NAME TO THIS EDGE WEIGHT??
+					// TODO: GIVE A MEANINGFUL NAME TO THIS EDGE WEIGHT??
+					// TODO: GIVE A MEANINGFUL NAME TO THIS EDGE WEIGHT??
+					// TODO: GIVE A MEANINGFUL NAME TO THIS EDGE WEIGHT??
+					// TODO: GIVE A MEANINGFUL NAME TO THIS EDGE WEIGHT??
+					edgesToAdd.push_back({prevStoreID, nodeID, 255});
+					// TODO: THIS SEEMS LIKE A BUG!!!! it is already a unique ID and we are appending one more element to it
+					// TODO: THIS SEEMS LIKE A BUG!!!! it is already a unique ID and we are appending one more element to it
+					// TODO: THIS SEEMS LIKE A BUG!!!! it is already a unique ID and we are appending one more element to it
+					// TODO: THIS SEEMS LIKE A BUG!!!! it is already a unique ID and we are appending one more element to it
+					// TODO: THIS SEEMS LIKE A BUG!!!! it is already a unique ID and we are appending one more element to it
+					// TODO: THIS SEEMS LIKE A BUG!!!! it is already a unique ID and we are appending one more element to it
+					// TODO: THIS SEEMS LIKE A BUG!!!! it is already a unique ID and we are appending one more element to it
+					// TODO: THIS SEEMS LIKE A BUG!!!! it is already a unique ID and we are appending one more element to it
+					// TODO: THIS SEEMS LIKE A BUG!!!! it is already a unique ID and we are appending one more element to it
+					dynamicMemoryOps.insert(it->second + "-" + prevBB.at(prevStoreID));
+					dynamicMemoryOps.insert(it->first + "-" + prevBB.at(nodeID));
+				}
+			}
+		}
+	}
+	updateAddDDDGEdges(edgesToAdd);
+}
+
+void BaseDatapath::removeSharedLoads() {
+}
+
+void BaseDatapath::removeRepeatedStores() {
+}
+
+void BaseDatapath::reduceTreeHeightInteger() {
+}
+
+void BaseDatapath::reduceTreeHeightFloat() {
 }
 
 std::string BaseDatapath::constructUniqueID(std::string funcID, std::string instID, std::string bbID) {
@@ -519,24 +692,38 @@ std::tuple<uint64_t, uint64_t> BaseDatapath::asapScheduling() {
 	asapScheduledTime.assign(numOfTotalNodes, 0);
 
 	std::map<uint64_t, std::vector<unsigned>> maxTimesNodesMap;
+#ifdef CHECK_VISITED_NODES
+	std::set<unsigned> visitedNodes;
+#endif
 
 	for(unsigned nodeID = 0; nodeID < numOfTotalNodes; nodeID++) {
 		Vertex currNode = nameToVertex[nodeID];
 
+		// Set scheduled time to 0 to root nodes
 		if(!boost::in_degree(currNode, graph)) {
 			asapScheduledTime[currNode] = 0;
+#ifdef CHECK_VISITED_NODES
+			visitedNodes.insert(nodeID);
+#endif
 			continue;
 		}
 
 		unsigned maxCurrStartTime = 0;
 		InEdgeIterator inEdgei, inEdgeEnd;
+		// Evaluate all incoming edges. Save the largest incoming time considering scheduled time of parents + the edge weight
 		for(std::tie(inEdgei, inEdgeEnd) = boost::in_edges(currNode, graph); inEdgei != inEdgeEnd; inEdgei++) {
 			unsigned parentNodeID = vertexToName[boost::source(*inEdgei, graph)];
+#ifdef CHECK_VISITED_NODES
+			assert(visitedNodes.find(parentNodeID) != visitedNodes.end() && "Node was not yet visited!");
+#endif
 			unsigned currNodeStartTime = asapScheduledTime[parentNodeID] + edgeToWeight[*inEdgei];
 			if(currNodeStartTime > maxCurrStartTime)
 				maxCurrStartTime = currNodeStartTime;
 		}
 		asapScheduledTime[nodeID] = maxCurrStartTime;
+#ifdef CHECK_VISITED_NODES
+		visitedNodes.insert(nodeID);
+#endif
 
 		maxTimesNodesMap[maxCurrStartTime].push_back(nodeID);
 	}
@@ -547,9 +734,13 @@ std::tuple<uint64_t, uint64_t> BaseDatapath::asapScheduling() {
 	profile->calculateRequiredResources(microops, arrayInfoCfgMap, baseAddress, maxTimesNodesMap);
 #endif
 
+	// Find the path with the maximum scheduled time
 	std::vector<uint64_t>::iterator found = std::max_element(asapScheduledTime.begin(), asapScheduledTime.end());
 	maxScheduledTime = *found;
 
+	// The maximum scheduled time does not consider the latency of the last node. If there is more
+	// than one path with the same maximum scheduled time, check which generates the largest
+	// latency
 	uint64_t maxLatency = 0;
 	for(auto &it : maxTimesNodesMap[maxScheduledTime]) {
 		unsigned opcode = microops.at(it);
@@ -582,7 +773,7 @@ std::tuple<uint64_t, uint64_t> BaseDatapath::asapScheduling() {
 #endif
 	VERBOSE_PRINT(errs() << "\t\tfASAP scheduling finished\n");
 
-	return std::make_tuple(maxCycles, maxLatency);
+	return std::make_tuple(maxCycles, maxScheduledTime);
 }
 
 void BaseDatapath::alapScheduling(std::tuple<uint64_t, uint64_t> asapResult) {
@@ -591,31 +782,46 @@ void BaseDatapath::alapScheduling(std::tuple<uint64_t, uint64_t> asapResult) {
 	alapScheduledTime.assign(numOfTotalNodes, 0);
 
 	std::map<uint64_t, std::vector<unsigned>> minTimesNodesMap;
+#ifdef CHECK_VISITED_NODES
+	std::set<unsigned> visitedNodes;
+#endif
 
 	// XXX: nodeID is incremented by 1 here, so that we can use unsigned (otherwise exit condition would be i < 0)
-	for(unsigned nodeIDp = numOfTotalNodes; nodeIDp; nodeIDp--) {
-		unsigned nodeID = nodeIDp - 1;
+	for(unsigned nodeID = numOfTotalNodes - 1; nodeID + 1; nodeID--) {
+		//unsigned nodeID = nodeIDp - 1;
 		Vertex currNode = nameToVertex[nodeID];
 
+		// Set scheduled time to maximum time from ASAP to leaf nodes
 		if(!boost::out_degree(currNode, graph)) {
-			alapScheduledTime[nodeID] = 0;
+			alapScheduledTime[nodeID] = std::get<1>(asapResult);
+#ifdef CHECK_VISITED_NODES
+			visitedNodes.insert(nodeID);
+#endif
 			continue;
 		}
 
+		// Initialise minimum time with the result of ASAP
 		unsigned minCurrStartTime = std::get<1>(asapResult);
 		OutEdgeIterator outEdgei, outEdgeEnd;
+		// Evaluate all outcoming edges. Save the smallest outcoming time considering scheduled time of childs - the edge weight
 		for(std::tie(outEdgei, outEdgeEnd) = boost::out_edges(currNode, graph); outEdgei != outEdgeEnd; outEdgei++) {
 			unsigned childNodeID = vertexToName[boost::target(*outEdgei, graph)];
+#ifdef CHECK_VISITED_NODES
+			assert(visitedNodes.find(childNodeID) != visitedNodes.end() && "Node was not yet visited!");
+#endif
 			unsigned currNodeStartTime = alapScheduledTime[childNodeID] - edgeToWeight[*outEdgei];
-
 			if(currNodeStartTime < minCurrStartTime)
 				minCurrStartTime = currNodeStartTime;
 		}
 		alapScheduledTime[nodeID] = minCurrStartTime;
+#ifdef CHECK_VISITED_NODES
+		visitedNodes.insert(nodeID);
+#endif
 
 		minTimesNodesMap[minCurrStartTime].push_back(nodeID);
 	}
 
+	// Calculate required resources for current scheduling, without imposing any restrictions
 	const ConfigurationManager::arrayInfoCfgMapTy &arrayInfoCfgMap = CM.getArrayInfoCfgMap();
 	profile->calculateRequiredResources(microops, arrayInfoCfgMap, baseAddress, minTimesNodesMap);
 
@@ -633,7 +839,7 @@ void BaseDatapath::alapScheduling(std::tuple<uint64_t, uint64_t> asapResult) {
 	VERBOSE_PRINT(errs() << "\t\tfDiv units: " << std::to_string(profile->fDivGetAmount()) << "\n");
 	for(auto &it : arrayInfoCfgMap)
 		VERBOSE_PRINT(errs() << "\t\tNumber of partitions for array \"" << it.first << "\": " << std::to_string(profile->arrayGetNumOfPartitions(it.first)) << "\n");
-	VERBOSE_PRINT(errs() << "\t\tfALAP scheduling finished\n");
+	VERBOSE_PRINT(errs() << "\t\tALAP scheduling finished\n");
 }
 
 void BaseDatapath::identifyCriticalPaths() {
@@ -644,6 +850,8 @@ void BaseDatapath::identifyCriticalPaths() {
 		"ASAP and/or ALAP scheduled times for nodes not generated or generated incorrectly (forgot to call asapScheduling() and/or alapScheduling()?)"
 	);
 
+	// After calculating ASAP and ALAP, the critical path is defined by the nodes that have the same scheduled time on both
+	// (i.e. no operation mobility / slack)
 	for(unsigned nodeID = 0; nodeID < numOfTotalNodes; nodeID++) {
 		if(asapScheduledTime[nodeID] == alapScheduledTime[nodeID])
 			cPathNodes.push_back(nodeID);
@@ -658,9 +866,13 @@ uint64_t BaseDatapath::rcScheduling() {
 	// XXX: completePartition() initialised a vector of registers (a class named Registers). This class is composed of a counter of loads
 	// and stores. However, such information is never used, so there is no point on generating such structure.
 	//completePartition();
+	// XXX: initScratchpadPartitions also created some data structure that apparently is not used.
+	// I've implemented only part of it, where it messes with the baseAddress. However the logic is quite strange
+	// and I still question myself if it'll be useful at any point at all
+	VERBOSE_PRINT(errs() << "\t\tUpdating base address database\n");
 	initScratchpadPartitions();
-	// XXX: I have a feeling that scratchpadPartition() is also useless. Therefore I am not implementing (for now of course)
-	
+	VERBOSE_PRINT(errs() << "\t\tOptimising DDDG\n");
+	optimiseDDDG();
 }
 
 void BaseDatapath::dumpGraph() {

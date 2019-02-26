@@ -53,6 +53,10 @@ DynamicDatapath::DynamicDatapath(
 	numCycles = fpgaEstimation();
 
 	VERBOSE_PRINT(errs() << "[][][][dynamicDatapath] Finished\n");
+
+#ifdef DBG_PRINT_ALL
+	printDatabase();
+#endif
 }
 
 DynamicDatapath::~DynamicDatapath() {}

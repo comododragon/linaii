@@ -500,6 +500,12 @@ protected:
 	void removePhiNodes();
 	void enableStoreBufferOptimisation();
 	void initScratchpadPartitions();
+	void optimiseDDDG();
+	void performMemoryDisambiguation();
+	void removeSharedLoads();
+	void removeRepeatedStores();
+	void reduceTreeHeightInteger();
+	void reduceTreeHeightFloat();
 
 	std::tuple<uint64_t, uint64_t> asapScheduling();
 	void alapScheduling(std::tuple<uint64_t, uint64_t> asapResult);

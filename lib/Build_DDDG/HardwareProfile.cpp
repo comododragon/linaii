@@ -13,15 +13,38 @@ HardwareProfile *HardwareProfile::createInstance() {
 	}
 }
 
-void XilinxHardwareProfile::clear() {
+void HardwareProfile::clear() {
 	arrayNameToNumOfPartitions.clear();
-	usedDSP = 0;
-	usedFF = 0;
-	usedLUT = 0;
 	fAddCount = 0;
 	fSubCount = 0;
 	fMulCount = 0;
 	fDivCount = 0;
+}
+
+void HardwareProfile::constrainHardware(const ConfigurationManager::arrayInfoCfgMapTy &arrayInfoCfgMap) {
+	this->arrayInfoCfgMap = &arrayInfoCfgMap;
+	isConstrained = true;
+
+	limitedBy.clear();
+	fAddThreshold = INFINITE_RESOURCES;
+	fSubThreshold = INFINITE_RESOURCES;
+	fMulThreshold = INFINITE_RESOURCES;
+	fDivThreshold = INFINITE_RESOURCES;
+	if(!(args.fNoFPUThresOpt)) {
+		thresholdSet = true;
+		setThresholdWithCurrentUsage();
+	}
+
+	clear();
+}
+
+void XilinxHardwareProfile::clear() {
+	HardwareProfile::clear();
+
+	usedDSP = 0;
+	usedFF = 0;
+	usedLUT = 0;
+	usedBRAM18k = 0;
 }
 
 unsigned XilinxHardwareProfile::getLatency(unsigned opcode) {
@@ -190,6 +213,54 @@ void XilinxHardwareProfile::calculateRequiredResources(
 	}
 }
 
+void XilinxHardwareProfile::setThresholdWithCurrentUsage() {
+	assert(isConstrained && "This hardware profile is not resource-constrained");
+
+	unsigned totalDSP = fAddCount * DSP_FADD + fSubCount * DSP_FSUB + fMulCount * DSP_FMUL + fDivCount * DSP_FDIV;
+
+	if(totalDSP > maxDSP) {
+		float scale = (float) totalDSP / (float) maxDSP;
+		fAddThreshold = (unsigned) std::ceil((float) fAddCount / scale);
+		fSubThreshold = (unsigned) std::ceil((float) fSubCount / scale);
+		fMulThreshold = (unsigned) std::ceil((float) fMulCount / scale);
+		fDivThreshold = (unsigned) std::ceil((float) fDivCount / scale);
+
+		std::vector<unsigned> scaledValues;
+		scaledValues.push_back(fAddThreshold * DSP_FADD);
+		scaledValues.push_back(fSubThreshold * DSP_FSUB);
+		scaledValues.push_back(fMulThreshold * DSP_FMUL);
+		scaledValues.push_back(fDivThreshold * DSP_FDIV);
+
+		unsigned maxValue = *std::max_element(scaledValues.begin(), scaledValues.end());
+
+		if(maxValue == fAddThreshold * DSP_FADD)
+			limitedBy.insert(LIMITED_BY_FADD);
+		if(maxValue == fSubThreshold * DSP_FSUB)
+			limitedBy.insert(LIMITED_BY_FSUB);
+		if(maxValue == fMulThreshold * DSP_FMUL)
+			limitedBy.insert(LIMITED_BY_FMUL);
+		if(maxValue == fDivThreshold * DSP_FDIV)
+			limitedBy.insert(LIMITED_BY_FDIV);
+	}
+	else {
+		fAddThreshold = fAddCount? fAddCount : INFINITE_RESOURCES;
+		fSubThreshold = fSubCount? fSubCount : INFINITE_RESOURCES;
+		fAddThreshold = fMulCount? fMulCount : INFINITE_RESOURCES;
+		fAddThreshold = fDivCount? fDivCount : INFINITE_RESOURCES;
+	}
+}
+
+void XilinxHardwareProfile::setBRAM18kUsage() {
+	// TODO PAREI AQUI
+}
+
+void XilinxHardwareProfile::constrainHardware(const ConfigurationManager::arrayInfoCfgMapTy &arrayInfoCfgMap) {
+	setResourceLimits();
+	setBRAM18kUsage();
+
+	HardwareProfile::constrainHardware(arrayInfoCfgMap);
+}
+
 void XilinxHardwareProfile::arrayAddPartition(std::string arrayName) {
 	std::map<std::string, unsigned>::iterator found = arrayNameToNumOfPartitions.find(arrayName);
 	if(arrayNameToNumOfPartitions.end() == found)
@@ -229,4 +300,34 @@ void XilinxHardwareProfile::fDivAddUnit() {
 	usedFF += FF_FDIV;
 	usedLUT += LUT_FDIV;
 	fDivCount++;
+}
+
+void XilinxVC707HardwareProfile::setResourceLimits() {
+	if(args.fNoFPUThresOpt) {
+		maxDSP = HardwareProfile::INFINITE_RESOURCES;
+		maxFF = HardwareProfile::INFINITE_RESOURCES;
+		maxLUT = HardwareProfile::INFINITE_RESOURCES;
+		maxBRAM18k = HardwareProfile::INFINITE_RESOURCES;
+	}
+	else {
+		maxDSP = MAX_DSP;
+		maxFF = MAX_FF;
+		maxLUT = MAX_LUT;
+		maxBRAM18k = MAX_BRAM18K;
+	}
+}
+
+void XilinxZC702HardwareProfile::setResourceLimits() {
+	if(args.fNoFPUThresOpt) {
+		maxDSP = HardwareProfile::INFINITE_RESOURCES;
+		maxFF = HardwareProfile::INFINITE_RESOURCES;
+		maxLUT = HardwareProfile::INFINITE_RESOURCES;
+		maxBRAM18k = HardwareProfile::INFINITE_RESOURCES;
+	}
+	else {
+		maxDSP = MAX_DSP;
+		maxFF = MAX_FF;
+		maxLUT = MAX_LUT;
+		maxBRAM18k = MAX_BRAM18K;
+	}
 }

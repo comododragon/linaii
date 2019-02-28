@@ -30,8 +30,6 @@
 
 #include "profile_h/ArgPack.h"
 
-#define INFINITE_HARDWARE 999999999
-
 #define BUFF_STR_SZ 1024
 
 #define FILE_TRACE_SUFFIX "_trace.bc"

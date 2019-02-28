@@ -1,19 +1,35 @@
 #ifndef HARDWAREPROFILE_H
 #define HARDWAREPROFILE_H
 
+#include <set>
+
 #include "profile_h/auxiliary.h"
 
 using namespace llvm;
 
 class HardwareProfile {
 protected:
+	const unsigned INFINITE_RESOURCES = 999999999;
+
 	std::map<std::string, unsigned> arrayNameToNumOfPartitions;
 	unsigned fAddCount, fSubCount, fMulCount, fDivCount;
+	unsigned fAddThreshold, fSubThreshold, fMulThreshold, fDivThreshold;
+	const ConfigurationManager::arrayInfoCfgMapTy *arrayInfoCfgMap;
+	bool isConstrained;
+	bool thresholdSet;
+	std::set<int> limitedBy;
 
 public:
+	enum {
+		LIMITED_BY_FADD,
+		LIMITED_BY_FSUB,
+		LIMITED_BY_FMUL,
+		LIMITED_BY_FDIV
+	};
+
 	virtual ~HardwareProfile() { }
 	static HardwareProfile *createInstance();
-	virtual void clear() = 0;
+	virtual void clear();
 
 	virtual unsigned getLatency(unsigned opcode) = 0;
 	virtual void calculateRequiredResources(
@@ -22,6 +38,11 @@ public:
 		std::unordered_map<int, std::pair<std::string, int64_t>> &baseAddress,
 		std::map<uint64_t, std::vector<unsigned>> &maxTimesNodesMap
 	) = 0;
+	virtual void setResourceLimits() = 0;
+	virtual void setThresholdWithCurrentUsage() = 0;
+	virtual void constrainHardware(const ConfigurationManager::arrayInfoCfgMapTy &arrayInfoCfgMap);
+
+	std::set<int> getConstrainedUnits() { return limitedBy; }
 
 	virtual void arrayAddPartition(std::string arrayName) = 0;
 	virtual unsigned arrayGetNumOfPartitions(std::string arrayName) = 0;
@@ -78,7 +99,9 @@ class XilinxHardwareProfile : public HardwareProfile {
 		LUT_FDIV = 994
 	};
 
-	unsigned usedDSP, usedFF, usedLUT;
+protected:
+	unsigned maxDSP, maxFF, maxLUT, maxBRAM18k;
+	unsigned usedDSP, usedFF, usedLUT, usedBRAM18k;
 
 public:
 	void clear();
@@ -90,6 +113,9 @@ public:
 		std::unordered_map<int, std::pair<std::string, int64_t>> &baseAddress,
 		std::map<uint64_t, std::vector<unsigned>> &maxTimesNodesMap
 	);
+	void setThresholdWithCurrentUsage();
+	void setBRAM18kUsage();
+	void constrainHardware(const ConfigurationManager::arrayInfoCfgMapTy &arrayInfoCfgMap);
 
 	void arrayAddPartition(std::string arrayName);
 	unsigned arrayGetNumOfPartitions(std::string arrayName);
@@ -104,9 +130,27 @@ public:
 };
 
 class XilinxVC707HardwareProfile : public XilinxHardwareProfile {
+	enum {
+		MAX_DSP = 2800,
+		MAX_FF = 607200,
+		MAX_LUT = 303600,
+		MAX_BRAM18K = 2060
+	};
+
+public:
+	void setResourceLimits();
 };
 
 class XilinxZC702HardwareProfile : public XilinxHardwareProfile {
+	enum {
+		MAX_DSP = 220,
+		MAX_FF = 106400,
+		MAX_LUT = 53200,
+		MAX_BRAM18K = 280
+	};
+
+public:
+	void setResourceLimits();
 };
 
 #endif

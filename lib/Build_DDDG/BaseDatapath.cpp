@@ -7,6 +7,28 @@
 #include "profile_h/colors.h"
 #include "profile_h/opcodes.h"
 
+void BaseDatapath::findMinimumRankPair(std::pair<unsigned, unsigned> &pair, std::map<unsigned, unsigned> rankMap) {
+	unsigned minRank = numOfTotalNodes;
+
+	for(auto &it : rankMap) {
+		unsigned nodeRank = it.second;
+		if(nodeRank < minRank) {
+			pair.first = it.first;
+			minRank = nodeRank;
+		}
+	}
+
+	minRank = numOfTotalNodes;
+
+	for(auto &it : rankMap) {
+		unsigned nodeRank = it.second;
+		if(it.first != pair.first && nodeRank < minRank) {
+			pair.second = it.first;
+			minRank = nodeRank;
+		}
+	}
+}
+
 #ifdef USE_FUTURE
 BaseDatapath::BaseDatapath(
 	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
@@ -519,19 +541,26 @@ void BaseDatapath::initScratchpadPartitions() {
 }
 
 void BaseDatapath::optimiseDDDG() {
+	// NOTE: Test memory disambiguation
 	if(args.fMemDisambuigOpt)
 		performMemoryDisambiguation();
 
-	// XXX: Couldn't this be just changed to if(args.fSLR)?
 	if(!args.fNoSLROpt) {
-		loopName2levelUnrollVecMapTy::iterator found = loopName2levelUnrollVecMap.find(loopName);
-		assert(found != loopName2levelUnrollVecMap.end() && "Loop not found in loopName2levelUnrollVecMap");
-		std::vector<unsigned> unrollFactors = found->second;
-		wholeloopName2loopBoundMapTy::iterator found2 = wholeloopName2loopBoundMap.find(appendDepthToLoopName(loopName, unrollFactors.size()));
-		assert(found2 != wholeloopName2loopBoundMap.end() && "Loop not found in wholeloopName2loopBoundMap");
-		uint64_t innermostBound = found2->second;
+		bool activate = args.fSLROpt;
 
-		if(args.fSLROpt || unrollFactors.back() == innermostBound)
+		if(!activate) {
+			// If both --fno-slr and --f-slr are omitted, lin-analyzer will activate it if the inntermost loop is fully unrolled
+			loopName2levelUnrollVecMapTy::iterator found = loopName2levelUnrollVecMap.find(loopName);
+			assert(found != loopName2levelUnrollVecMap.end() && "Loop not found in loopName2levelUnrollVecMap");
+			std::vector<unsigned> unrollFactors = found->second;
+			wholeloopName2loopBoundMapTy::iterator found2 = wholeloopName2loopBoundMap.find(appendDepthToLoopName(loopName, unrollFactors.size()));
+			assert(found2 != wholeloopName2loopBoundMap.end() && "Loop not found in wholeloopName2loopBoundMap");
+			uint64_t innermostBound = found2->second;
+
+			activate = unrollFactors.back() == innermostBound;
+		}
+
+		if(activate)
 			removeSharedLoads();
 	}
 
@@ -539,16 +568,16 @@ void BaseDatapath::optimiseDDDG() {
 		removeRepeatedStores();
 
 	if(args.fTHRIntOpt)
-		reduceTreeHeightInteger();
+		reduceTreeHeight(isAssociative);
 
 	if(args.fTHRFloatOpt)
-		reduceTreeHeightFloat();
+		reduceTreeHeight(isFAssociative);
 }
 
 void BaseDatapath::performMemoryDisambiguation() {
-	std::unordered_multimap<std::string, std::string> pairPerLoad;
+	std::unordered_multimap<std::string, std::string> loadStorePairs;
 	std::unordered_set<std::string> pairedStore;
-	std::vector<std::pair<std::string, std::string>> storeLoadPair;
+	//std::set<std::pair<std::string, std::string>> loadStorePair;
 	const std::vector<std::string> &dynamicMethodID = PC.getFuncList();
 	const std::vector<std::string> &instID = PC.getInstIDList();
 	const std::vector<std::string> &prevBB = PC.getPrevBBList();
@@ -561,9 +590,11 @@ void BaseDatapath::performMemoryDisambiguation() {
 		unsigned nodeID = vertexToName[*vi];
 		int microop = microops.at(nodeID);
 
+		// Only look for store nodes
 		if(!isStoreOp(microop))
 			continue;
 
+		// Look for subsequent loads
 		OutEdgeIterator outEdgei, outEdgeEnd;
 		for(std::tie(outEdgei, outEdgeEnd) = boost::out_edges(*vi, graph); outEdgei != outEdgeEnd; outEdgei++) {
 			unsigned childID = vertexToName[boost::target(*outEdgei, graph)];
@@ -575,33 +606,36 @@ void BaseDatapath::performMemoryDisambiguation() {
 			std::string nodeDynamicMethodID = dynamicMethodID.at(nodeID);
 			std::string childDynamicMethodID = dynamicMethodID.at(childID);
 
+			// Ignore if dynamic function names are different (either functions are different or different executions)
 			if(nodeDynamicMethodID.compare(childDynamicMethodID))
 				continue;
 
 			std::string storeUniqueID = constructUniqueID(nodeDynamicMethodID, instID.at(nodeID), prevBB.at(nodeID));
 			std::string loadUniqueID = constructUniqueID(childDynamicMethodID, instID.at(childID), prevBB.at(childID));
 
-			if(std::find(storeLoadPair.begin(), storeLoadPair.end(), std::make_pair(storeUniqueID, loadUniqueID)) != storeLoadPair.end())
-				continue;
-
-			storeLoadPair.push_back(std::make_pair(storeUniqueID, loadUniqueID));
+			// Store this load-store pair to the set
+			//loadStorePair.push_back(std::make_pair(loadUniqueID, storeUniqueID));
+			// Mark this store as paired
 			pairedStore.insert(storeUniqueID);
 
+			// Find in all loads with this ID if any is paired with this store. If not, add it
 			bool storeFound = false;
-			auto loadRange = pairPerLoad.equal_range(loadUniqueID);
+			auto loadRange = loadStorePairs.equal_range(loadUniqueID);
 			for(auto it = loadRange.first; it != loadRange.second; it++) {
 				if(!storeUniqueID.compare(it->second)) {
 					storeFound = true;
 					break;
 				}
 			}
-
 			if(!storeFound)
-				pairPerLoad.insert(std::make_pair(loadUniqueID, storeUniqueID));
+				loadStorePairs.insert(std::make_pair(loadUniqueID, storeUniqueID));
 		}
 	}
 
-	if(!storeLoadPair.size())
+	//if(!loadStorePair.size())
+	//	return;
+	// Return if no pairing happened
+	if(!loadStorePairs.size())
 		return;
 
 	std::vector<edgeTy> edgesToAdd;
@@ -610,22 +644,25 @@ void BaseDatapath::performMemoryDisambiguation() {
 	for(unsigned nodeID = 0; nodeID < numOfTotalNodes; nodeID++) {
 		int microop = microops.at(nodeID);
 
+		// Only consider loads and stores
 		if(!isMemoryOp(microop))
 			continue;
 
 		std::string uniqueID = constructUniqueID(dynamicMethodID.at(nodeID), instID.at(nodeID), prevBB.at(nodeID));
 
+		// Store node
 		if(isStoreOp(microop)) {
-			std::unordered_set<std::string>::iterator found = pairedStore.find(uniqueID);
-			if(pairedStore.end() == found)
+			// Ignore non-paired stores
+			if(pairedStore.end() == pairedStore.find(uniqueID))
 				continue;
 
+			// Mark this as the last store so far
 			lastStore[uniqueID] = nodeID;
 		}
+		// Load node
 		else {
-			assert(isLoadOp(microop) && "isMemoryOp() is true but isStoreOp() and isLoadOp() are false");
-
-			auto loadRange = pairPerLoad.equal_range(uniqueID);
+			// If there is only one load-store pair, there is no ambiguity
+			auto loadRange = loadStorePairs.equal_range(uniqueID);
 			if(1 == std::distance(loadRange.first, loadRange.second))
 				continue;
 
@@ -633,10 +670,10 @@ void BaseDatapath::performMemoryDisambiguation() {
 				assert(pairedStore.find(it->second) != pairedStore.end() && "Store that was paired not found in pairedStore");
 
 				std::unordered_map<std::string, unsigned>::iterator found = lastStore.find(it->second);
-
 				if(lastStore.end() == found)
 					continue;
 
+				// Create a dependency for this load-store pair
 				unsigned prevStoreID = found->second;
 				if(!edgeExists(prevStoreID, nodeID)) {
 					// TODO: GIVE A MEANINGFUL NAME TO THIS EDGE WEIGHT??
@@ -645,15 +682,13 @@ void BaseDatapath::performMemoryDisambiguation() {
 					// TODO: GIVE A MEANINGFUL NAME TO THIS EDGE WEIGHT??
 					// TODO: GIVE A MEANINGFUL NAME TO THIS EDGE WEIGHT??
 					edgesToAdd.push_back({prevStoreID, nodeID, 255});
-					// TODO: THIS SEEMS LIKE A BUG!!!! it is already a unique ID and we are appending one more element to it
-					// TODO: THIS SEEMS LIKE A BUG!!!! it is already a unique ID and we are appending one more element to it
-					// TODO: THIS SEEMS LIKE A BUG!!!! it is already a unique ID and we are appending one more element to it
-					// TODO: THIS SEEMS LIKE A BUG!!!! it is already a unique ID and we are appending one more element to it
-					// TODO: THIS SEEMS LIKE A BUG!!!! it is already a unique ID and we are appending one more element to it
-					// TODO: THIS SEEMS LIKE A BUG!!!! it is already a unique ID and we are appending one more element to it
-					// TODO: THIS SEEMS LIKE A BUG!!!! it is already a unique ID and we are appending one more element to it
-					// TODO: THIS SEEMS LIKE A BUG!!!! it is already a unique ID and we are appending one more element to it
-					// TODO: THIS SEEMS LIKE A BUG!!!! it is already a unique ID and we are appending one more element to it
+					// TODO: THIS SEEMS LIKE A BUG!!!! it->[first|second] is already a unique ID and we are appending one more element to it
+					// TODO: THIS SEEMS LIKE A BUG!!!! it->[first|second] is already a unique ID and we are appending one more element to it
+					// TODO: THIS SEEMS LIKE A BUG!!!! it->[first|second] is already a unique ID and we are appending one more element to it
+					// TODO: THIS SEEMS LIKE A BUG!!!! it->[first|second] is already a unique ID and we are appending one more element to it
+					// TODO: THIS SEEMS LIKE A BUG!!!! it->[first|second] is already a unique ID and we are appending one more element to it
+					// TODO: THIS SEEMS LIKE A BUG!!!! it->[first|second] is already a unique ID and we are appending one more element to it
+					// TODO: THIS SEEMS LIKE A BUG!!!! it->[first|second] is already a unique ID and we are appending one more element to it
 					dynamicMemoryOps.insert(it->second + "-" + prevBB.at(prevStoreID));
 					dynamicMemoryOps.insert(it->first + "-" + prevBB.at(nodeID));
 				}
@@ -664,15 +699,216 @@ void BaseDatapath::performMemoryDisambiguation() {
 }
 
 void BaseDatapath::removeSharedLoads() {
+	const std::unordered_map<int, std::pair<int64_t, unsigned>> &memoryTraceList = PC.getMemoryTraceList();
+	std::set<Edge> edgesToRemove;
+	std::vector<edgeTy> edgesToAdd;
+	std::unordered_map<int64_t, unsigned> loadedAddresses;
+
+	for(unsigned nodeID = 0; nodeID < numOfTotalNodes; nodeID++) {
+		if(nameToVertex.end() == nameToVertex.find(nodeID))
+			continue;
+
+		if(!boost::degree(nameToVertex[nodeID], graph))
+			continue;
+
+		int microop = microops.at(nodeID);
+		if(!isMemoryOp(microop))
+			continue;
+
+		// From this point only active store and loads are considered
+
+		std::unordered_map<int, std::pair<int64_t, unsigned>>::const_iterator found = memoryTraceList.find(nodeID);
+		assert(found != memoryTraceList.end() && "Storage operation found with no memory trace element");
+		std::unordered_map<int64_t, unsigned>::iterator found2 = loadedAddresses.find(found->second.first);
+
+		// Address is loaded
+		if(found2 != loadedAddresses.end()) {
+			// If this is store, unload address
+			if(isStoreOp(microop)) {
+				loadedAddresses.erase(found2);
+			}
+			// This is a load. Since address is already loaded, this is a shared load
+			else if(isLoadOp(microop)) {
+				microops.at(nodeID) = LLVM_IR_Move;
+				unsigned prevLoadID = found2->second;
+
+				// Disconnect this load, and connect its childs to the previous load
+				OutEdgeIterator outEdgei, outEdgeEnd;
+				for(std::tie(outEdgei, outEdgeEnd) = boost::out_edges(nameToVertex[nodeID], graph); outEdgei != outEdgeEnd; outEdgei++) {
+					unsigned childID = vertexToName[boost::target(*outEdgei, graph)];
+					if(!edgeExists(prevLoadID, childID))
+						edgesToAdd.push_back({prevLoadID, childID, edgeToWeight[*outEdgei]});
+					edgesToRemove.insert(*outEdgei);
+				}
+				InEdgeIterator inEdgei, inEdgeEnd;
+				for(std::tie(inEdgei, inEdgeEnd) = boost::in_edges(nameToVertex[nodeID], graph); inEdgei != inEdgeEnd; inEdgei++)
+					edgesToRemove.insert(*inEdgei);
+			}
+		}
+		// Address is not loaded and this is a load op, mark address as loaded
+		else if(isLoadOp(microop)) {
+			loadedAddresses.insert(std::make_pair(found->second.first, nodeID));
+		}
+	}
+
+	updateRemoveDDDGEdges(edgesToRemove);
+	updateAddDDDGEdges(edgesToAdd);
 }
 
 void BaseDatapath::removeRepeatedStores() {
+	const std::unordered_map<int, std::pair<int64_t, unsigned>> &memoryTraceList = PC.getMemoryTraceList();
+	const std::vector<std::string> &dynamicMethodID = PC.getFuncList();
+	const std::vector<std::string> &instID = PC.getInstIDList();
+	const std::vector<std::string> &prevBB = PC.getPrevBBList();
+	std::unordered_map<int64_t, unsigned> addressStoreMap;
+
+	for(unsigned nodeID = numOfTotalNodes - 1; nodeID + 1; nodeID--) {
+		if(nameToVertex.end() == nameToVertex.find(nodeID))
+			continue;
+
+		if(!boost::degree(nameToVertex[nodeID], graph))
+			continue;
+
+		if(!isStoreOp(microops.at(nodeID)))
+			continue;
+
+		// From this point only active stores are considered
+
+		int64_t nodeAddress = memoryTraceList.at(nodeID).first;
+		std::unordered_map<int64_t, unsigned>::iterator found = addressStoreMap.find(nodeAddress);
+		// This is the first time a store to this address is found, so we save it
+		if(addressStoreMap.end() == found) {
+			addressStoreMap[nodeAddress] = nodeID;
+		}
+		// This is not the first time a store is found to this address
+		else {
+			std::string storeUniqueID = constructUniqueID(dynamicMethodID.at(nodeID), instID.at(nodeID), prevBB.at(nodeID));
+
+			// If there is no ambiguity related to this store, we convert it to a silent store
+			if(dynamicMemoryOps.end() == dynamicMemoryOps.find(storeUniqueID) && !boost::out_degree(nameToVertex[nodeID], graph))
+				microops.at(nodeID) = LLVM_IR_SilentStore;
+		}
+	}
 }
 
-void BaseDatapath::reduceTreeHeightInteger() {
-}
+void BaseDatapath::reduceTreeHeight(bool (&isAssociativeFunc)(unsigned)) {
+	std::vector<bool> visited(numOfTotalNodes, false);
+	std::set<Edge> edgesToRemove;
+	std::vector<edgeTy> edgesToAdd;
 
-void BaseDatapath::reduceTreeHeightFloat() {
+	for(unsigned int nodeID = numOfTotalNodes - 1; nodeID + 1; nodeID--) {
+		if(nameToVertex.end() == nameToVertex.find(nodeID) || !boost::degree(nameToVertex[nodeID], graph))
+			continue;
+
+		if(visited.at(nodeID) || !isAssociativeFunc(microops.at(nodeID)))
+			continue;
+
+		visited.at(nodeID) = true;
+
+		std::list<unsigned> nodes;
+		std::vector<Edge> edgesToRemoveTmp;
+		std::vector<std::pair<unsigned, bool>> leaves;
+		std::vector<unsigned> associativeChain;
+
+		associativeChain.push_back(nodeID);
+		for(unsigned i = 0; i < associativeChain.size(); i++) {
+			unsigned chainNodeID = associativeChain.at(i);
+			int chainNodeMicroop = microops.at(chainNodeID);
+
+			if(isAssociativeFunc(chainNodeMicroop)) {
+				visited.at(chainNodeID) = true;
+				unsigned numOfChainParents = 0;
+
+				InEdgeIterator inEdgei, inEdgeEnd;
+				for(std::tie(inEdgei, inEdgeEnd) = boost::in_edges(nameToVertex[chainNodeID], graph); inEdgei != inEdgeEnd; inEdgei++) {
+					unsigned parentID = vertexToName[boost::source(*inEdgei, graph)];
+
+					if(isBranchOp(microops.at(parentID)))
+						continue;
+
+					numOfChainParents++;
+				}
+
+				if(2 == numOfChainParents) {
+					nodes.push_front(chainNodeID);
+
+					for(std::tie(inEdgei, inEdgeEnd) = boost::in_edges(nameToVertex[chainNodeID], graph); inEdgei != inEdgeEnd; inEdgei++) {
+						Vertex parentNode = boost::source(*inEdgei, graph);
+						unsigned parentID = vertexToName[parentNode];
+						assert(parentID < chainNodeID && "Parent node has larger ID than its child");
+
+						int parentMicroop = microops.at(parentID);
+
+						if(isBranchOp(parentMicroop))
+							continue;
+
+						edgesToRemoveTmp.push_back(*inEdgei);
+
+						visited.at(parentID) = true;
+
+						if(!isAssociativeFunc(parentMicroop)) {
+							leaves.push_back(std::make_pair(parentID, false));
+						}
+						else {
+							int numOfChildren = 0;
+							OutEdgeIterator outEdgei, outEdgeEnd;
+							for(std::tie(outEdgei, outEdgeEnd) = boost::out_edges(parentNode, graph); outEdgei != outEdgeEnd; outEdgei++) {
+								if(edgeToWeight[*outEdgei] != BaseDatapath::EDGE_CONTROL)
+									numOfChildren++;
+							}
+
+							if(1 == numOfChildren)
+								associativeChain.push_back(parentID);
+							else
+								leaves.push_back(std::make_pair(parentID, false));
+						}
+					}
+				}
+				else {
+					leaves.push_back(std::make_pair(chainNodeID, false));
+				}
+			}
+			else {
+				leaves.push_back(std::make_pair(chainNodeID, false));
+			}
+		}
+
+		if(nodes.size() < 3)
+			continue;
+
+		for(auto &it : edgesToRemoveTmp)
+			edgesToRemove.insert(it);
+
+		std::map<unsigned, unsigned> rankMap;
+
+		for(auto &it : leaves)
+			rankMap[it.first] = (it.second)? numOfTotalNodes : 0;
+
+		for(auto &it : nodes) {
+			std::pair<unsigned, unsigned> nodePair;
+
+			if(2 == rankMap.size()) {
+				nodePair.first = rankMap.begin()->first;
+				nodePair.second = (++(rankMap.begin()))->first;
+			}
+			else {
+				findMinimumRankPair(nodePair, rankMap);
+			}
+
+			assert(nodePair.first != numOfTotalNodes && nodePair.second != numOfTotalNodes);
+
+			// TODO: maybe a meaningful weight here?
+			edgesToAdd.push_back({nodePair.first, it, 1});
+			edgesToAdd.push_back({nodePair.second, it, 1});
+
+			rankMap[it] = std::max(rankMap[nodePair.first], rankMap[nodePair.second]) + 1;
+			rankMap.erase(nodePair.first);
+			rankMap.erase(nodePair.second);
+		}
+	}
+
+	updateRemoveDDDGEdges(edgesToRemove);
+	updateAddDDDGEdges(edgesToAdd);
 }
 
 std::string BaseDatapath::constructUniqueID(std::string funcID, std::string instID, std::string bbID) {
@@ -873,10 +1109,33 @@ uint64_t BaseDatapath::rcScheduling() {
 	initScratchpadPartitions();
 	VERBOSE_PRINT(errs() << "\t\tOptimising DDDG\n");
 	optimiseDDDG();
+
+	if(args.showPostOptDDDG)
+		dumpGraph(true);
+
+	rcScheduledTime.assign(numOfTotalNodes, 0);
+
+	profile->constrainHardware(CM.getArrayInfoCfgMap());
+
+	// TODO: FOR DEBUG ONLY
+	// TODO: FOR DEBUG ONLY
+	// TODO: FOR DEBUG ONLY
+	// TODO: FOR DEBUG ONLY
+	std::set<int> limitedUnitTypes = profile->getConstrainedUnits();
+	errs() << ">>>>> Constrained by: ";
+	if(limitedUnitTypes.count(HardwareProfile::LIMITED_BY_FADD))
+		errs() << "fadd ";
+	if(limitedUnitTypes.count(HardwareProfile::LIMITED_BY_FSUB))
+		errs() << "fsub ";
+	if(limitedUnitTypes.count(HardwareProfile::LIMITED_BY_FMUL))
+		errs() << "fmul ";
+	if(limitedUnitTypes.count(HardwareProfile::LIMITED_BY_FDIV))
+		errs() << "fdiv ";
+	errs() << "\n";
 }
 
-void BaseDatapath::dumpGraph() {
-	std::string graphFileName(loopName + "_graph.dot");
+void BaseDatapath::dumpGraph(bool isOptimised) {
+	std::string graphFileName(loopName + (isOptimised? "_graph_opt.dot" : "_graph.dot"));
 	std::ofstream out(graphFileName);
 
 	std::vector<std::string> functionNames;

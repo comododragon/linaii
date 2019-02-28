@@ -419,6 +419,8 @@ class BaseDatapath {
 #endif
 	HardwareProfile *profile;
 
+	void findMinimumRankPair(std::pair<unsigned, unsigned> &pair, std::map<unsigned, unsigned> rankMap);
+
 public:
 #ifdef USE_FUTURE
 	BaseDatapath(
@@ -488,6 +490,7 @@ protected:
 	// Vector with scheduled times for each node
 	std::vector<uint64_t> asapScheduledTime;
 	std::vector<uint64_t> alapScheduledTime;
+	std::vector<uint64_t> rcScheduledTime;
 	// Vector with nodes on the critical path
 	std::vector<unsigned> cPathNodes;
 
@@ -504,15 +507,14 @@ protected:
 	void performMemoryDisambiguation();
 	void removeSharedLoads();
 	void removeRepeatedStores();
-	void reduceTreeHeightInteger();
-	void reduceTreeHeightFloat();
+	void reduceTreeHeight(bool (&isAssociativeFunc)(unsigned));
 
 	std::tuple<uint64_t, uint64_t> asapScheduling();
 	void alapScheduling(std::tuple<uint64_t, uint64_t> asapResult);
 	void identifyCriticalPaths();
 	uint64_t rcScheduling();
 
-	void dumpGraph();
+	void dumpGraph(bool isOptimised = false);
 
 	class ColorWriter {
 		Graph &graph;

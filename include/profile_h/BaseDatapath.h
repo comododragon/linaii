@@ -405,6 +405,110 @@ private:
 #endif
 
 class BaseDatapath {
+public:
+	class RCScheduler {
+		typedef std::list<std::pair<unsigned, uint64_t>> nodeTickTy;
+		typedef std::list<unsigned> selectedListTy;
+		typedef std::map<unsigned, unsigned> executingMapTy;
+
+		const std::vector<int> &microops;
+		const Graph &graph;
+		unsigned numOfTotalNodes;
+		const std::unordered_map<unsigned, Vertex> &nameToVertex;
+		const VertexNameMap &vertexToName;
+		HardwareProfile &profile;
+		const std::unordered_map<int, std::pair<std::string, int64_t>> &baseAddress;
+		const std::vector<uint64_t> &asap;
+		const std::vector<uint64_t> &alap;
+		std::vector<uint64_t> &rc;
+
+		std::vector<unsigned> numParents;
+		std::vector<bool> finalIsolated;
+		unsigned totalConnectedNodes;
+		unsigned scheduledNodeCount;
+		uint64_t cycleTick;
+
+		nodeTickTy startingNodes;
+
+		nodeTickTy fAddReady;
+		nodeTickTy fSubReady;
+		nodeTickTy fMulReady;
+		nodeTickTy fDivReady;
+		nodeTickTy fCmpReady;
+		nodeTickTy loadReady;
+		nodeTickTy storeReady;
+		nodeTickTy intOpReady;
+		nodeTickTy callReady;
+		nodeTickTy othersReady;
+
+		selectedListTy fAddSelected;
+		selectedListTy fSubSelected;
+		selectedListTy fMulSelected;
+		selectedListTy fDivSelected;
+		selectedListTy fCmpSelected;
+		selectedListTy loadSelected;
+		selectedListTy storeSelected;
+		selectedListTy intOpSelected;
+		selectedListTy callSelected;
+
+		executingMapTy fAddExecuting;
+		executingMapTy fSubExecuting;
+		executingMapTy fMulExecuting;
+		executingMapTy fDivExecuting;
+		executingMapTy intOpExecuting;
+
+		bool dummyAllocate() { return true; }
+		static bool compareReadyByALAP(const std::pair<unsigned, uint64_t> &first, const std::pair<unsigned, uint64_t> &second) { return first.second < second.second; }
+
+		void assignReady();
+		void select();
+
+		void pushReady(unsigned nodeID, uint64_t tick);
+		void trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocate)() = nullptr);
+		void trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocateMem)(std::string));
+	public:
+		RCScheduler(
+			const std::vector<int> &microops,
+			const Graph &graph, unsigned numOfTotalNodes,
+			const std::unordered_map<unsigned, Vertex> &nameToVertex, const VertexNameMap &vertexToName,
+			HardwareProfile &profile, const std::unordered_map<int, std::pair<std::string, int64_t>> &baseAddress,
+			const std::vector<uint64_t> &asap, const std::vector<uint64_t> &alap, std::vector<uint64_t> &rc
+		);
+		void schedule();
+	};
+
+	class ColorWriter {
+		Graph &graph;
+		VertexNameMap &vertexNameMap;
+		const std::vector<std::string> &bbNames;
+		const std::vector<std::string> &funcNames;
+		std::vector<int> &opcodes;
+		llvm::bbFuncNamePair2lpNameLevelPairMapTy &bbFuncNamePair2lpNameLevelPairMap;
+
+	public:
+		ColorWriter(
+			Graph &graph,
+			VertexNameMap &vertexNameMap,
+			const std::vector<std::string> &bbNames,
+			const std::vector<std::string> &funcNames,
+			std::vector<int> &opcodes,
+			llvm::bbFuncNamePair2lpNameLevelPairMapTy &bbFuncNamePair2lpNameLevelPairMap
+		);
+
+		template<class VE> void operator()(std::ostream &out, const VE &v) const;
+	};
+
+	class EdgeColorWriter {
+		Graph &graph;
+		EdgeWeightMap &edgeWeightMap;
+
+	public:
+		EdgeColorWriter(Graph &graph, EdgeWeightMap &edgeWeightMap);
+
+		template<class VE> void operator()(std::ostream &out, const VE &e) const;
+	};
+
+private:
 	std::string kernelName;
 	ConfigurationManager &CM;
 	std::ostream *summaryFile;
@@ -515,37 +619,6 @@ protected:
 	uint64_t rcScheduling();
 
 	void dumpGraph(bool isOptimised = false);
-
-	class ColorWriter {
-		Graph &graph;
-		VertexNameMap &vertexNameMap;
-		const std::vector<std::string> &bbNames;
-		const std::vector<std::string> &funcNames;
-		std::vector<int> &opcodes;
-		llvm::bbFuncNamePair2lpNameLevelPairMapTy &bbFuncNamePair2lpNameLevelPairMap;
-
-	public:
-		ColorWriter(
-			Graph &graph,
-			VertexNameMap &vertexNameMap,
-			const std::vector<std::string> &bbNames,
-			const std::vector<std::string> &funcNames,
-			std::vector<int> &opcodes,
-			llvm::bbFuncNamePair2lpNameLevelPairMapTy &bbFuncNamePair2lpNameLevelPairMap
-		);
-
-		template<class VE> void operator()(std::ostream &out, const VE &v) const;
-	};
-
-	class EdgeColorWriter {
-		Graph &graph;
-		EdgeWeightMap &edgeWeightMap;
-
-	public:
-		EdgeColorWriter(Graph &graph, EdgeWeightMap &edgeWeightMap);
-
-		template<class VE> void operator()(std::ostream &out, const VE &e) const;
-	};
 
 #if 0
   //Change graph.

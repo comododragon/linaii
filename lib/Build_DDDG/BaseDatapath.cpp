@@ -1115,7 +1115,7 @@ uint64_t BaseDatapath::rcScheduling() {
 
 	rcScheduledTime.assign(numOfTotalNodes, 0);
 
-	profile->constrainHardware(CM.getArrayInfoCfgMap());
+	profile->constrainHardware(CM.getArrayInfoCfgMap(), CM.getPartitionCfgMap(), CM.getCompletePartitionCfgMap());
 
 	// TODO: FOR DEBUG ONLY
 	// TODO: FOR DEBUG ONLY
@@ -1132,6 +1132,9 @@ uint64_t BaseDatapath::rcScheduling() {
 	if(limitedUnitTypes.count(HardwareProfile::LIMITED_BY_FDIV))
 		errs() << "fdiv ";
 	errs() << "\n";
+
+	RCScheduler rcSched(microops, graph, numOfTotalNodes, nameToVertex, vertexToName, *profile, baseAddress, asapScheduledTime, alapScheduledTime, rcScheduledTime);
+	rcSched.schedule();
 }
 
 void BaseDatapath::dumpGraph(bool isOptimised) {
@@ -1158,6 +1161,221 @@ void BaseDatapath::dumpGraph(bool isOptimised) {
 
 	//GraphProgram::Name program = GraphProgram::DOT;
 	//DisplayGraph(graphFileName, true, program);
+}
+
+BaseDatapath::RCScheduler::RCScheduler(
+	const std::vector<int> &microops,
+	const Graph &graph, unsigned numOfTotalNodes,
+	const std::unordered_map<unsigned, Vertex> &nameToVertex, const VertexNameMap &vertexToName,
+	HardwareProfile &profile, const std::unordered_map<int, std::pair<std::string, int64_t>> &baseAddress,
+	const std::vector<uint64_t> &asap, const std::vector<uint64_t> &alap, std::vector<uint64_t> &rc
+) :
+	microops(microops),
+	graph(graph), numOfTotalNodes(numOfTotalNodes),
+	nameToVertex(nameToVertex), vertexToName(vertexToName),
+	profile(profile), baseAddress(baseAddress),
+	asap(asap), alap(alap), rc(rc)
+{
+	numParents.assign(numOfTotalNodes, 0);
+	finalIsolated.assign(numOfTotalNodes, true);
+	totalConnectedNodes = 0;
+	scheduledNodeCount = 0;
+	cycleTick = 0;
+
+	startingNodes.clear();
+
+	fAddReady.clear();
+	fSubReady.clear();
+	fMulReady.clear();
+	fDivReady.clear();
+	fCmpReady.clear();
+	loadReady.clear();
+	storeReady.clear();
+	intOpReady.clear();
+	callReady.clear();
+	othersReady.clear();
+
+	fAddSelected.clear();
+	fSubSelected.clear();
+	fMulSelected.clear();
+	fDivSelected.clear();
+	fCmpSelected.clear();
+	loadSelected.clear();
+	storeSelected.clear();
+	intOpSelected.clear();
+	callSelected.clear();
+
+	fAddExecuting.clear();
+	fSubExecuting.clear();
+	fMulExecuting.clear();
+	fDivExecuting.clear();
+	intOpExecuting.clear();
+
+	VertexIterator vi, vEnd;
+	for(std::tie(vi, vEnd) = boost::vertices(graph); vi != vEnd; vi++) {
+		unsigned currNodeID = vertexToName[*vi];
+
+		if(!boost::degree(*vi, graph))
+			continue;
+
+		unsigned inDegree = boost::in_degree(*vi, graph);
+		numParents[currNodeID] = inDegree;
+		totalConnectedNodes++;
+		finalIsolated[currNodeID] = false;
+
+		if(inDegree)
+			continue;
+
+		// From this point connected root nodes are considered
+
+		startingNodes.push_back(std::make_pair(currNodeID, alap[currNodeID]));
+	}
+}
+
+void BaseDatapath::RCScheduler::schedule() {
+	while(scheduledNodeCount != totalConnectedNodes) {
+		assignReady();
+		select();
+		// TODO: parei aqui. Falta implementar o setBRAM18K_usage (ver o todo parei aqui no HardwareProfile.cpp)
+		// porque isso tá faltando pra preencher as estruturas de dados usadas por loadTryAllocate e storeTryAllocate
+		// que sao usadas no select();
+		// Depois disso, falta o execute aqui embaixo, o restante do rcScheduling e o restante de fpgaEstimation
+		//execute();
+	}
+}
+
+void BaseDatapath::RCScheduler::assignReady() {
+	if(startingNodes.size()) {
+		startingNodes.sort(compareReadyByALAP);
+
+		while(startingNodes.size()) {
+			unsigned currNodeID = startingNodes.front().first;
+			uint64_t alapTime = startingNodes.front().second;
+			if(cycleTick == alapTime) {
+				pushReady(currNodeID, alapTime);
+				startingNodes.pop_front();
+			}
+			else {
+				break;
+			}
+		}
+	}
+
+	while(othersReady.size()) {
+		unsigned currNodeID = othersReady.front().first;
+		Vertex currVertex = nameToVertex.at(currNodeID);
+		othersReady.pop_front();
+		rc[currNodeID] = cycleTick;
+		scheduledNodeCount++;
+
+		OutEdgeIterator outEdgei, outEdgeEnd;
+		for(std::tie(outEdgei, outEdgeEnd) = boost::out_edges(currVertex, graph); outEdgei != outEdgeEnd; outEdgei++) {
+			Vertex childVertex = boost::target(*outEdgei, graph);
+			unsigned childNodeID = vertexToName[childVertex];
+			numParents[childNodeID]--;
+
+			if(!numParents[childNodeID] && finalIsolated[childNodeID])
+				pushReady(childNodeID, alap[childNodeID]);
+		}
+	}
+}
+
+void BaseDatapath::RCScheduler::select() {
+	trySelect(fAddReady, fAddSelected, &HardwareProfile::fAddTryAllocate);
+	trySelect(fSubReady, fSubSelected, &HardwareProfile::fSubTryAllocate);
+	trySelect(fMulReady, fMulSelected, &HardwareProfile::fMulTryAllocate);
+	trySelect(fCmpReady, fCmpSelected);
+	trySelect(loadReady, loadSelected, &HardwareProfile::loadTryAllocate);
+	trySelect(storeReady, storeSelected, &HardwareProfile::storeTryAllocate);
+	trySelect(intOpReady, intOpSelected);
+	trySelect(callReady, callSelected);
+}
+
+void BaseDatapath::RCScheduler::pushReady(unsigned nodeID, uint64_t tick) {
+	switch(microops.at(nodeID)) {
+		case LLVM_IR_FAdd:
+			fAddReady.push_back(std::make_pair(nodeID, tick));
+			break;
+		case LLVM_IR_FSub:
+			fSubReady.push_back(std::make_pair(nodeID, tick));
+			break;
+		case LLVM_IR_FMul:
+			fMulReady.push_back(std::make_pair(nodeID, tick));
+			break;
+		case LLVM_IR_FDiv:
+			fDivReady.push_back(std::make_pair(nodeID, tick));
+			break;
+		case LLVM_IR_FCmp:
+			fCmpReady.push_back(std::make_pair(nodeID, tick));
+			break;
+		case LLVM_IR_Load:
+			loadReady.push_back(std::make_pair(nodeID, tick));
+			break;
+		case LLVM_IR_Store:
+			storeReady.push_back(std::make_pair(nodeID, tick));
+			break;
+		case LLVM_IR_Add:
+		case LLVM_IR_Sub:
+		case LLVM_IR_Mul:
+		case LLVM_IR_UDiv:
+		case LLVM_IR_SDiv:
+			intOpReady.push_back(std::make_pair(nodeID, tick));
+			break;
+		case LLVM_IR_Call:
+			callReady.push_back(std::make_pair(nodeID, tick));
+			break;
+		default:
+			othersReady.push_back(std::make_pair(nodeID, tick));
+			break;
+	}
+}
+
+void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocate)()) {
+	if(ready.size()) {
+		selected.clear();
+
+		ready.sort(compareReadyByALAP);
+		size_t initialReadySize = ready.size();
+		for(unsigned i = 0; i < initialReadySize; i++) {
+			// If allocation is successful (i.e. there is one operation unit available), select this operation
+			if(!tryAllocate || (profile.*tryAllocate)()) {
+				unsigned nodeID = ready.front().first;
+				selected.push_back(nodeID);
+				ready.pop_front();
+				rc[nodeID] = cycleTick;
+			}
+			// Resource contention, not able to allocate now
+			else {
+				break;
+			}
+		}
+	}
+}
+
+void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocateMem)(std::string)) {
+	if(ready.size()) {
+		selected.clear();
+
+		ready.sort(compareReadyByALAP);
+		size_t initialReadySize = ready.size();
+		for(unsigned i = 0; i < initialReadySize; i++) {
+			unsigned nodeID = ready.front().first;
+
+			// Load/store resource allocation is based on the array name
+			std::string arrayPartitionName = baseAddress.at(nodeID).first;
+
+			// If allocation is successful (i.e. there is one operation unit available), select this operation
+			if((profile.*tryAllocateMem)(arrayPartitionName)) {
+				selected.push_back(nodeID);
+				ready.pop_front();
+				rc[nodeID] = cycleTick;
+			}
+			// Resource contention, not able to allocate now
+			else {
+				break;
+			}
+		}
+	}
 }
 
 #if 0

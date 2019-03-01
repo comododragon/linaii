@@ -11,10 +11,16 @@ class HardwareProfile {
 protected:
 	const unsigned INFINITE_RESOURCES = 999999999;
 
+	std::map<std::string, std::tuple<uint64_t, uint64_t, size_t>> arrayNameToConfig;
 	std::map<std::string, unsigned> arrayNameToNumOfPartitions;
+	std::map<std::string, unsigned> arrayNameToWritePortsPerPartition;
+	std::map<std::string, unsigned> arrayPartitionToReadPorts;
+	std::map<std::string, unsigned> arrayPartitionToReadPortsInUse;
+	std::map<std::string, unsigned> arrayPartitionToWritePorts;
+	std::map<std::string, unsigned> arrayPartitionToWritePortsInUse;
 	unsigned fAddCount, fSubCount, fMulCount, fDivCount;
+	unsigned fAddInUse, fSubInUse, fMulInUse, fDivInUse;
 	unsigned fAddThreshold, fSubThreshold, fMulThreshold, fDivThreshold;
-	const ConfigurationManager::arrayInfoCfgMapTy *arrayInfoCfgMap;
 	bool isConstrained;
 	bool thresholdSet;
 	std::set<int> limitedBy;
@@ -40,20 +46,37 @@ public:
 	) = 0;
 	virtual void setResourceLimits() = 0;
 	virtual void setThresholdWithCurrentUsage() = 0;
-	virtual void constrainHardware(const ConfigurationManager::arrayInfoCfgMapTy &arrayInfoCfgMap);
+	virtual void setMemoryCurrentUsage(
+		const ConfigurationManager::arrayInfoCfgMapTy &arrayInfoCfgMap,
+		const ConfigurationManager::partitionCfgMapTy &partitionCfgMap,
+		const ConfigurationManager::partitionCfgMapTy &completePartitionCfgMap
+	) = 0;
+	virtual void constrainHardware(
+		const ConfigurationManager::arrayInfoCfgMapTy &arrayInfoCfgMap,
+		const ConfigurationManager::partitionCfgMapTy &partitionCfgMap,
+		const ConfigurationManager::partitionCfgMapTy &completePartitionCfgMap
+	);
 
 	std::set<int> getConstrainedUnits() { return limitedBy; }
 
 	virtual void arrayAddPartition(std::string arrayName) = 0;
 	virtual unsigned arrayGetNumOfPartitions(std::string arrayName) = 0;
-	virtual void fAddAddUnit() = 0;
+	virtual unsigned arrayGetMaximumPortsPerPartition() = 0;
+	virtual bool fAddAddUnit() = 0;
 	unsigned fAddGetAmount() { return fAddCount; }
-	virtual void fSubAddUnit() = 0;
+	virtual bool fSubAddUnit() = 0;
 	unsigned fSubGetAmount() { return fSubCount; }
-	virtual void fMulAddUnit() = 0;
+	virtual bool fMulAddUnit() = 0;
 	unsigned fMulGetAmount() { return fMulCount; }
-	virtual void fDivAddUnit() = 0;
+	virtual bool fDivAddUnit() = 0;
 	unsigned fDivGetAmount() { return fDivCount; }
+
+	bool fAddTryAllocate();
+	bool fSubTryAllocate();
+	bool fMulTryAllocate();
+	bool fDivTryAllocate();
+	bool loadTryAllocate(std::string arrayPartitionName);
+	bool storeTryAllocate(std::string arrayPartitionName);
 };
 
 class XilinxHardwareProfile : public HardwareProfile {
@@ -114,19 +137,29 @@ public:
 		std::map<uint64_t, std::vector<unsigned>> &maxTimesNodesMap
 	);
 	void setThresholdWithCurrentUsage();
-	void setBRAM18kUsage();
-	void constrainHardware(const ConfigurationManager::arrayInfoCfgMapTy &arrayInfoCfgMap);
+	void setMemoryCurrentUsage(
+		const ConfigurationManager::arrayInfoCfgMapTy &arrayInfoCfgMap,
+		const ConfigurationManager::partitionCfgMapTy &partitionCfgMap,
+		const ConfigurationManager::partitionCfgMapTy &completePartitionCfgMap
+	);
+	void constrainHardware(
+		const ConfigurationManager::arrayInfoCfgMapTy &arrayInfoCfgMap,
+		const ConfigurationManager::partitionCfgMapTy &partitionCfgMap,
+		const ConfigurationManager::partitionCfgMapTy &completePartitionCfgMap
+	);
 
 	void arrayAddPartition(std::string arrayName);
 	unsigned arrayGetNumOfPartitions(std::string arrayName);
-	void fAddAddUnit();
-	void fSubAddUnit();
-	void fMulAddUnit();
-	void fDivAddUnit();
+	unsigned arrayGetMaximumPortsPerPartition();
+	bool fAddAddUnit();
+	bool fSubAddUnit();
+	bool fMulAddUnit();
+	bool fDivAddUnit();
 
 	unsigned resourcesGetDSPs() { return usedDSP; }
 	unsigned resourcesGetFFs() { return usedFF; }
 	unsigned resourcesGetLUTs() { return usedLUT; }
+	unsigned resourcesGetBRAM18k() { return usedBRAM18k; }
 };
 
 class XilinxVC707HardwareProfile : public XilinxHardwareProfile {

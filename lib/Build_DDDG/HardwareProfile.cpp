@@ -21,9 +21,24 @@ void HardwareProfile::clear() {
 	fDivCount = 0;
 }
 
-void HardwareProfile::constrainHardware(const ConfigurationManager::arrayInfoCfgMapTy &arrayInfoCfgMap) {
-	this->arrayInfoCfgMap = &arrayInfoCfgMap;
+void HardwareProfile::constrainHardware(
+	const ConfigurationManager::arrayInfoCfgMapTy &arrayInfoCfgMap,
+	const ConfigurationManager::partitionCfgMapTy &partitionCfgMap,
+	const ConfigurationManager::partitionCfgMapTy &completePartitionCfgMap
+) {
 	isConstrained = true;
+
+	fAddInUse = 0;
+	fSubInUse = 0;
+	fMulInUse = 0;
+	fDivInUse = 0;
+
+	arrayNameToConfig.clear();
+	arrayNameToWritePortsPerPartition.clear();
+	arrayPartitionToReadPorts.clear();
+	arrayPartitionToReadPortsInUse.clear();
+	arrayPartitionToWritePorts.clear();
+	arrayPartitionToWritePortsInUse.clear();
 
 	limitedBy.clear();
 	fAddThreshold = INFINITE_RESOURCES;
@@ -35,7 +50,164 @@ void HardwareProfile::constrainHardware(const ConfigurationManager::arrayInfoCfg
 		setThresholdWithCurrentUsage();
 	}
 
+	setMemoryCurrentUsage(arrayInfoCfgMap, partitionCfgMap, completePartitionCfgMap);
+
 	clear();
+}
+
+bool HardwareProfile::fAddTryAllocate() {
+	assert(isConstrained && "This hardware profile is not resource-constrained");
+
+	// There are fAdd available for use, just allocate it
+	if(fAddInUse < fAddCount) {
+		fAddInUse++;
+		return true;
+	}
+	// All fAdd are in use, try to allocate a new unit
+	else {
+		if(thresholdSet && fAddCount) {
+			if(fAddCount >= fAddThreshold)
+				return false;
+		}
+
+		// Try to allocate a new unit
+		bool success = fAddAddUnit();
+		// If successful, mark this unit as allocated
+		if(success)
+			fAddInUse++;
+
+		return success;
+	}
+}
+
+bool HardwareProfile::fSubTryAllocate() {
+	assert(isConstrained && "This hardware profile is not resource-constrained");
+
+	// There are fSub available for use, just allocate it
+	if(fSubInUse < fSubCount) {
+		fSubInUse++;
+		return true;
+	}
+	// All fSub are in use, try to allocate a new unit
+	else {
+		if(thresholdSet && fSubCount) {
+			if(fSubCount >= fSubThreshold)
+				return false;
+		}
+
+		// Try to allocate a new unit
+		bool success = fSubAddUnit();
+		// If successful, mark this unit as allocated
+		if(success)
+			fSubInUse++;
+
+		return success;
+	}
+}
+
+bool HardwareProfile::fMulTryAllocate() {
+	assert(isConstrained && "This hardware profile is not resource-constrained");
+
+	// There are fMul available for use, just allocate it
+	if(fMulInUse < fMulCount) {
+		fMulInUse++;
+		return true;
+	}
+	// All fMul are in use, try to allocate a new unit
+	else {
+		if(thresholdSet && fMulCount) {
+			if(fMulCount >= fMulThreshold)
+				return false;
+		}
+
+		// Try to allocate a new unit
+		bool success = fMulAddUnit();
+		// If successful, mark this unit as allocated
+		if(success)
+			fMulInUse++;
+
+		return success;
+	}
+}
+
+bool HardwareProfile::fDivTryAllocate() {
+	assert(isConstrained && "This hardware profile is not resource-constrained");
+
+	// There are fDiv available for use, just allocate it
+	if(fDivInUse < fDivCount) {
+		fDivInUse++;
+		return true;
+	}
+	// All fDiv are in use, try to allocate a new unit
+	else {
+		if(thresholdSet && fDivCount) {
+			if(fDivCount >= fDivThreshold)
+				return false;
+		}
+
+		// Try to allocate a new unit
+		bool success = fDivAddUnit();
+		// If successful, mark this unit as allocated
+		if(success)
+			fDivInUse++;
+
+		return success;
+	}
+}
+
+bool HardwareProfile::loadTryAllocate(std::string arrayPartitionName) {
+	assert(isConstrained && "This hardware profile is not resource-constrained");
+
+	std::map<std::string, unsigned>::iterator found = arrayPartitionToReadPorts.find(arrayPartitionName);
+	std::map<std::string, unsigned>::iterator found2 = arrayPartitionToReadPortsInUse.find(arrayPartitionName);
+	assert(found != arrayPartitionToReadPorts.end() && "Array has no storage allocated for it");
+	assert(found2 != arrayPartitionToReadPortsInUse.end() && "Array has no storage allocated for it");
+
+	// All ports are being used, not able to allocate right now
+	if(found2->second >= found->second)
+		return false;
+
+	// Allocate a port
+	(found2->second)++;
+
+	return true;
+}
+
+bool HardwareProfile::storeTryAllocate(std::string arrayPartitionName) {
+	assert(isConstrained && "This hardware profile is not resource-constrained");
+
+	std::map<std::string, unsigned>::iterator found = arrayPartitionToWritePorts.find(arrayPartitionName);
+	std::map<std::string, unsigned>::iterator found2 = arrayPartitionToWritePortsInUse.find(arrayPartitionName);
+	assert(found != arrayPartitionToWritePorts.end() && "Array has no storage allocated for it");
+	assert(found2 != arrayPartitionToWritePortsInUse.end() && "Array has no storage allocated for it");
+
+	// All ports are being used
+	if(found2->second >= found->second) {
+		// If RW ports are enabled, attempt to allocate a new port
+		if(args.fRWRWMem && found->second < arrayGetMaximumPortsPerPartition()) {
+			(found->second)++;
+			(found2->second)++;
+
+#ifdef LEGACY_SEPARATOR
+			size_t tagPos = arrayPartitionName.find("-");
+#else
+			size_t tagPos = arrayPartitionName.find(GLOBAL_SEPARATOR);
+#endif
+			// TODO: euacho que isso funciona sem o if
+			(arrayNameToWritePortsPerPartition[arrayPartitionName.substr(0, tagPos)])++;
+
+			return true;
+		}
+		// Attempt to allocate a new port failed
+		else {
+			return false;
+		}
+	}
+
+	// Allocate a port
+	(found2->second)++;
+
+	return true;
 }
 
 void XilinxHardwareProfile::clear() {
@@ -250,15 +422,44 @@ void XilinxHardwareProfile::setThresholdWithCurrentUsage() {
 	}
 }
 
-void XilinxHardwareProfile::setBRAM18kUsage() {
-	// TODO PAREI AQUI
+void XilinxHardwareProfile::setMemoryCurrentUsage(
+	const ConfigurationManager::arrayInfoCfgMapTy &arrayInfoCfgMap,
+	const ConfigurationManager::partitionCfgMapTy &partitionCfgMap,
+	const ConfigurationManager::partitionCfgMapTy &completePartitionCfgMap
+) {
+	//arrayNameToWritePortsPerPartition.clear();
+	//arrayPartitionToReadPorts.clear();
+	//arrayParitionToReadPortsInUse.clear();
+	//arrayPartitionToWritePorts.clear();
+	//arrayPartitionToWritePortsInUse.clear();
+
+	for(auto &it : arrayInfoCfgMap) {
+		std::string arrayName = it.first;
+		uint64_t sizeInByte = it.second.totalSize;
+		size_t wordSizeInByte = it.second.wordSize;
+
+		ConfigurationManager::partitionCfgMapTy::const_iterator found = completePartitionCfgMap.find(arrayName);
+		ConfigurationManager::partitionCfgMapTy::const_iterator found2 = partitionCfgMap.find(arrayName);
+
+		if(found != completePartitionCfgMap.end())
+			arrayNameToConfig.insert(std::make_pair(arrayName, std::make_tuple(0, found->second->size, wordSizeInByte))); 
+		else if(found2 != partitionCfgMap.end())
+			arrayNameToConfig.insert(std::make_pair(arrayName, std::make_tuple(found2->second->pFactor, found2->second->size, found2->second->wordSize)));
+		else
+			arrayNameToConfig.insert(std::make_pair(arrayName, std::make_tuple(1, sizeInByte, wordSizeInByte)));
+	}
+
+	// TODO: parei aqui (aqui é o começo da função setBRAM18K_usage()
 }
 
-void XilinxHardwareProfile::constrainHardware(const ConfigurationManager::arrayInfoCfgMapTy &arrayInfoCfgMap) {
+void XilinxHardwareProfile::constrainHardware(
+	const ConfigurationManager::arrayInfoCfgMapTy &arrayInfoCfgMap,
+	const ConfigurationManager::partitionCfgMapTy &partitionCfgMap,
+	const ConfigurationManager::partitionCfgMapTy &completePartitionCfgMap
+) {
 	setResourceLimits();
-	setBRAM18kUsage();
 
-	HardwareProfile::constrainHardware(arrayInfoCfgMap);
+	HardwareProfile::constrainHardware(arrayInfoCfgMap, partitionCfgMap, completePartitionCfgMap);
 }
 
 void XilinxHardwareProfile::arrayAddPartition(std::string arrayName) {
@@ -274,32 +475,68 @@ unsigned XilinxHardwareProfile::arrayGetNumOfPartitions(std::string arrayName) {
 	return arrayNameToNumOfPartitions[arrayName];
 }
 
-void XilinxHardwareProfile::fAddAddUnit() {
+unsigned XilinxHardwareProfile::arrayGetMaximumPortsPerPartition() {
+	return PER_PARTITION_MAX_PORTS_W;
+}
+
+bool XilinxHardwareProfile::fAddAddUnit() {
+	// Hardware is constrained, we must first check if it is possible to add a new unit
+	if(isConstrained) {
+		if((usedDSP + DSP_FADD) > maxDSP || (usedFF + FF_FADD) > maxFF || (usedLUT + LUT_FADD) > maxLUT)
+			return false;
+	}
+
 	usedDSP += DSP_FADD;
 	usedFF += FF_FADD;
 	usedLUT += LUT_FADD;
 	fAddCount++;
+
+	return true;
 }
 
-void XilinxHardwareProfile::fSubAddUnit() {
+bool XilinxHardwareProfile::fSubAddUnit() {
+	// Hardware is constrained, we must first check if it is possible to add a new unit
+	if(isConstrained) {
+		if((usedDSP + DSP_FSUB) > maxDSP || (usedFF + FF_FSUB) > maxFF || (usedLUT + LUT_FSUB) > maxLUT)
+			return false;
+	}
+
 	usedDSP += DSP_FSUB;
 	usedFF += FF_FSUB;
 	usedLUT += LUT_FSUB;
 	fSubCount++;
+
+	return true;
 }
 
-void XilinxHardwareProfile::fMulAddUnit() {
+bool XilinxHardwareProfile::fMulAddUnit() {
+	// Hardware is constrained, we must first check if it is possible to add a new unit
+	if(isConstrained) {
+		if((usedDSP + DSP_FMUL) > maxDSP || (usedFF + FF_FMUL) > maxFF || (usedLUT + LUT_FMUL) > maxLUT)
+			return false;
+	}
+
 	usedDSP += DSP_FMUL;
 	usedFF += FF_FMUL;
 	usedLUT += LUT_FMUL;
 	fMulCount++;
+
+	return true;
 }
 
-void XilinxHardwareProfile::fDivAddUnit() {
+bool XilinxHardwareProfile::fDivAddUnit() {
+	// Hardware is constrained, we must first check if it is possible to add a new unit
+	if(isConstrained) {
+		if((usedDSP + DSP_FDIV) > maxDSP || (usedFF + FF_FDIV) > maxFF || (usedLUT + LUT_FDIV) > maxLUT)
+			return false;
+	}
+
 	usedDSP += DSP_FDIV;
 	usedFF += FF_FDIV;
 	usedLUT += LUT_FDIV;
 	fDivCount++;
+
+	return true;
 }
 
 void XilinxVC707HardwareProfile::setResourceLimits() {

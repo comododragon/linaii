@@ -99,6 +99,17 @@ unsigned nextPowerOf2(unsigned x) {
 	return x++;
 }
 
+uint64_t nextPowerOf2(uint64_t x) {
+	x--;
+	x |= (x >> 1);
+	x |= (x >> 2);
+	x |= (x >> 4);
+	x |= (x >> 8);
+	x |= (x >> 16);
+	x |= (x >> 32);
+	return x++;
+}
+
 ConfigurationManager::ConfigurationManager(std::string kernelName) : kernelName(kernelName) { }
 
 void ConfigurationManager::appendToPipeliningCfg(std::string funcName, unsigned loopNo, unsigned loopLevel) {

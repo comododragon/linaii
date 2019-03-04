@@ -455,17 +455,31 @@ public:
 		executingMapTy fSubExecuting;
 		executingMapTy fMulExecuting;
 		executingMapTy fDivExecuting;
+		executingMapTy fCmpExecuting;
+		executingMapTy loadExecuting;
+		executingMapTy storeExecuting;
 		executingMapTy intOpExecuting;
+		executingMapTy callExecuting;
 
 		bool dummyAllocate() { return true; }
 		static bool compareReadyByALAP(const std::pair<unsigned, uint64_t> &first, const std::pair<unsigned, uint64_t> &second) { return first.second < second.second; }
 
 		void assignReady();
 		void select();
+		void execute();
+		void release();
 
 		void pushReady(unsigned nodeID, uint64_t tick);
-		void trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocate)() = nullptr);
+		void trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocate)());
+		void trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocateInt)(unsigned));
 		void trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocateMem)(std::string));
+		void enqueueExecute(unsigned opcode, selectedListTy &selected, executingMapTy &executing, void (HardwareProfile::*release)());
+		void enqueueExecute(selectedListTy &selected, executingMapTy &executing, void (HardwareProfile::*releaseInt)(unsigned));
+		void enqueueExecute(unsigned opcde, selectedListTy &selected, executingMapTy &executing, void (HardwareProfile::*releaseMem)(std::string));
+		void tryRelease(unsigned opcode, executingMapTy &executing, void (HardwareProfile::*release)());
+		void tryRelease(executingMapTy &executing, void (HardwareProfile::*releaseInt)(unsigned));
+		void tryRelease(unsigned opcode, executingMapTy &executing, void (HardwareProfile::*releaseMem)(std::string));
+		void setDone(unsigned nodeID);
 	public:
 		RCScheduler(
 			const std::vector<int> &microops,

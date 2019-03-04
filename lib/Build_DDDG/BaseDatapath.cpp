@@ -1180,7 +1180,6 @@ BaseDatapath::RCScheduler::RCScheduler(
 	finalIsolated.assign(numOfTotalNodes, true);
 	totalConnectedNodes = 0;
 	scheduledNodeCount = 0;
-	cycleTick = 0;
 
 	startingNodes.clear();
 
@@ -1209,7 +1208,11 @@ BaseDatapath::RCScheduler::RCScheduler(
 	fSubExecuting.clear();
 	fMulExecuting.clear();
 	fDivExecuting.clear();
+	fCmpExecuting.clear();
+	loadExecuting.clear();
+	storeExecuting.clear();
 	intOpExecuting.clear();
+	callExecuting.clear();
 
 	VertexIterator vi, vEnd;
 	for(std::tie(vi, vEnd) = boost::vertices(graph); vi != vEnd; vi++) {
@@ -1233,14 +1236,11 @@ BaseDatapath::RCScheduler::RCScheduler(
 }
 
 void BaseDatapath::RCScheduler::schedule() {
-	while(scheduledNodeCount != totalConnectedNodes) {
+	for(cycleTick = 0; scheduledNodeCount != totalConnectedNodes; cycleTick++) {
 		assignReady();
 		select();
-		// TODO: parei aqui. Falta implementar o setBRAM18K_usage (ver o todo parei aqui no HardwareProfile.cpp)
-		// porque isso tá faltando pra preencher as estruturas de dados usadas por loadTryAllocate e storeTryAllocate
-		// que sao usadas no select();
-		// Depois disso, falta o execute aqui embaixo, o restante do rcScheduling e o restante de fpgaEstimation
-		//execute();
+		execute();
+		release();
 	}
 }
 
@@ -1263,20 +1263,9 @@ void BaseDatapath::RCScheduler::assignReady() {
 
 	while(othersReady.size()) {
 		unsigned currNodeID = othersReady.front().first;
-		Vertex currVertex = nameToVertex.at(currNodeID);
 		othersReady.pop_front();
 		rc[currNodeID] = cycleTick;
-		scheduledNodeCount++;
-
-		OutEdgeIterator outEdgei, outEdgeEnd;
-		for(std::tie(outEdgei, outEdgeEnd) = boost::out_edges(currVertex, graph); outEdgei != outEdgeEnd; outEdgei++) {
-			Vertex childVertex = boost::target(*outEdgei, graph);
-			unsigned childNodeID = vertexToName[childVertex];
-			numParents[childNodeID]--;
-
-			if(!numParents[childNodeID] && finalIsolated[childNodeID])
-				pushReady(childNodeID, alap[childNodeID]);
-		}
+		setDone(currNodeID);
 	}
 }
 
@@ -1284,11 +1273,36 @@ void BaseDatapath::RCScheduler::select() {
 	trySelect(fAddReady, fAddSelected, &HardwareProfile::fAddTryAllocate);
 	trySelect(fSubReady, fSubSelected, &HardwareProfile::fSubTryAllocate);
 	trySelect(fMulReady, fMulSelected, &HardwareProfile::fMulTryAllocate);
-	trySelect(fCmpReady, fCmpSelected);
+	trySelect(fDivReady, fDivSelected, &HardwareProfile::fDivTryAllocate);
+	trySelect(fCmpReady, fCmpSelected, &HardwareProfile::fCmpTryAllocate);
 	trySelect(loadReady, loadSelected, &HardwareProfile::loadTryAllocate);
 	trySelect(storeReady, storeSelected, &HardwareProfile::storeTryAllocate);
-	trySelect(intOpReady, intOpSelected);
-	trySelect(callReady, callSelected);
+	trySelect(intOpReady, intOpSelected, &HardwareProfile::intOpTryAllocate);
+	trySelect(callReady, callSelected, &HardwareProfile::callTryAllocate);
+}
+
+void BaseDatapath::RCScheduler::execute() {
+	enqueueExecute(LLVM_IR_FAdd, fAddSelected, fAddExecuting, &HardwareProfile::fAddRelease);
+	enqueueExecute(LLVM_IR_FSub, fSubSelected, fSubExecuting, &HardwareProfile::fSubRelease);
+	enqueueExecute(LLVM_IR_FMul, fMulSelected, fMulExecuting, &HardwareProfile::fMulRelease);
+	enqueueExecute(LLVM_IR_FDiv, fDivSelected, fDivExecuting, &HardwareProfile::fDivRelease);
+	enqueueExecute(LLVM_IR_FCmp, fCmpSelected, fCmpExecuting, &HardwareProfile::fCmpRelease);
+	enqueueExecute(LLVM_IR_Load, loadSelected, loadExecuting, &HardwareProfile::loadRelease);
+	enqueueExecute(LLVM_IR_Store, storeSelected, storeExecuting, &HardwareProfile::storeRelease);
+	enqueueExecute(intOpSelected, intOpExecuting, &HardwareProfile::intOpRelease);
+	enqueueExecute(LLVM_IR_Call, callSelected, callExecuting, &HardwareProfile::callRelease);
+}
+
+void BaseDatapath::RCScheduler::release() {
+	tryRelease(LLVM_IR_FAdd, fAddExecuting, &HardwareProfile::fAddRelease);
+	tryRelease(LLVM_IR_FSub, fSubExecuting, &HardwareProfile::fSubRelease);
+	tryRelease(LLVM_IR_FMul, fMulExecuting, &HardwareProfile::fMulRelease);
+	tryRelease(LLVM_IR_FDiv, fDivExecuting, &HardwareProfile::fDivRelease);
+	tryRelease(LLVM_IR_FCmp, fCmpExecuting, &HardwareProfile::fCmpRelease);
+	tryRelease(LLVM_IR_Load, loadExecuting, &HardwareProfile::loadRelease);
+	tryRelease(LLVM_IR_Store, storeExecuting, &HardwareProfile::storeRelease);
+	tryRelease(intOpExecuting, &HardwareProfile::intOpRelease);
+	tryRelease(LLVM_IR_Call, callExecuting, &HardwareProfile::callRelease);
 }
 
 void BaseDatapath::RCScheduler::pushReady(unsigned nodeID, uint64_t tick) {
@@ -1338,8 +1352,30 @@ void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &sel
 		size_t initialReadySize = ready.size();
 		for(unsigned i = 0; i < initialReadySize; i++) {
 			// If allocation is successful (i.e. there is one operation unit available), select this operation
-			if(!tryAllocate || (profile.*tryAllocate)()) {
+			if((profile.*tryAllocate)()) {
 				unsigned nodeID = ready.front().first;
+				selected.push_back(nodeID);
+				ready.pop_front();
+				rc[nodeID] = cycleTick;
+			}
+			// Resource contention, not able to allocate now
+			else {
+				break;
+			}
+		}
+	}
+}
+
+void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocateInt)(unsigned)) {
+	if(ready.size()) {
+		selected.clear();
+
+		ready.sort(compareReadyByALAP);
+		size_t initialReadySize = ready.size();
+		for(unsigned i = 0; i < initialReadySize; i++) {
+			unsigned nodeID = ready.front().first;
+			// If allocation is successful (i.e. there is one operation unit available), select this operation
+			if((profile.*tryAllocateInt)(microops.at(nodeID))) {
 				selected.push_back(nodeID);
 				ready.pop_front();
 				rc[nodeID] = cycleTick;
@@ -1375,6 +1411,140 @@ void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &sel
 				break;
 			}
 		}
+	}
+}
+
+void BaseDatapath::RCScheduler::enqueueExecute(unsigned opcode, selectedListTy &selected, executingMapTy &executing, void (HardwareProfile::*release)()) {
+	while(selected.size()) {
+		unsigned selectedNodeID = selected.front();
+		unsigned latency = profile.getSchedulingLatency(opcode);
+
+		if(latency <= 1)
+			setDone(selectedNodeID);
+		else
+			executing.insert(std::make_pair(selectedNodeID, latency));
+
+		selected.pop_front();
+
+		// If this operation is pipelined, we can release the unit
+		if(profile.isPipelined(opcode))
+			(profile.*release)();
+	}
+}
+
+void BaseDatapath::RCScheduler::enqueueExecute(selectedListTy &selected, executingMapTy &executing, void (HardwareProfile::*releaseInt)(unsigned)) {
+	while(selected.size()) {
+		unsigned selectedNodeID = selected.front();
+		unsigned opcode = microops.at(selectedNodeID);
+		unsigned latency = profile.getSchedulingLatency(opcode);
+
+		if(latency <= 1)
+			setDone(selectedNodeID);
+		else
+			executing.insert(std::make_pair(selectedNodeID, latency));
+			
+		selected.pop_front();
+
+		// If this operation is pipelined, we can release the unit
+		if(profile.isPipelined(opcode))
+			(profile.*releaseInt)(opcode);
+	}
+}
+
+void BaseDatapath::RCScheduler::enqueueExecute(unsigned opcode, selectedListTy &selected, executingMapTy &executing, void (HardwareProfile::*releaseMem)(std::string)) {
+	while(selected.size()) {
+		unsigned selectedNodeID = selected.front();
+		unsigned latency = profile.getSchedulingLatency(opcode);
+		std::string arrayName = baseAddress.at(selectedNodeID).first;
+
+		if(latency <= 1)
+			setDone(selectedNodeID);
+		else
+			executing.insert(std::make_pair(selectedNodeID, latency));
+
+		selected.pop_front();
+
+		if(profile.isPipelined(opcode))
+			(profile.*releaseMem)(arrayName);
+	}
+}
+
+void BaseDatapath::RCScheduler::tryRelease(unsigned opcode, executingMapTy &executing, void (HardwareProfile::*release)()) {
+	std::vector<unsigned> toErase;
+
+	for(auto &it: executing) {
+		unsigned executingNodeID = it.first;
+
+		// Decrease one cycle
+		(it.second)--;
+
+		if(!(it.second)) {
+			setDone(executingNodeID);
+			toErase.push_back(executingNodeID);
+			if(!(profile.isPipelined(opcode)))
+				(profile.*release)();
+		}
+	}
+
+	for(auto &it : toErase)
+		executing.erase(it);
+}
+
+void BaseDatapath::RCScheduler::tryRelease(executingMapTy &executing, void (HardwareProfile::*releaseInt)(unsigned)) {
+	std::vector<unsigned> toErase;
+
+	for(auto &it: executing) {
+		unsigned executingNodeID = it.first;
+
+		// Decrease one cycle
+		(it.second)--;
+
+		if(!(it.second)) {
+			unsigned opcode = microops.at(executingNodeID);
+			setDone(executingNodeID);
+			toErase.push_back(executingNodeID);
+			if(!(profile.isPipelined(opcode)))
+				(profile.*releaseInt)(opcode);
+		}
+	}
+
+	for(auto &it : toErase)
+		executing.erase(it);
+}
+
+void BaseDatapath::RCScheduler::tryRelease(unsigned opcode, executingMapTy &executing, void (HardwareProfile::*releaseMem)(std::string)) {
+	std::vector<unsigned> toErase;
+
+	for(auto &it: executing) {
+		unsigned executingNodeID = it.first;
+		std::string arrayName = baseAddress.at(executingNodeID).first;
+
+		// Decrease one cycle
+		(it.second)--;
+
+		if(!(it.second)) {
+			setDone(executingNodeID);
+			toErase.push_back(executingNodeID);
+			if(!(profile.isPipelined(opcode)))
+				(profile.*releaseMem)(arrayName);
+		}
+	}
+
+	for(auto &it : toErase)
+		executing.erase(it);
+}
+
+void BaseDatapath::RCScheduler::setDone(unsigned nodeID) {
+	scheduledNodeCount++;
+
+	OutEdgeIterator outEdgei, outEdgeEnd;
+	for(std::tie(outEdgei, outEdgeEnd) = boost::out_edges(nameToVertex.at(nodeID), graph); outEdgei != outEdgeEnd; outEdgei++) {
+		Vertex childVertex = boost::target(*outEdgei, graph);
+		unsigned childNodeID = vertexToName[childVertex];
+		numParents[childNodeID]--;
+
+		if(!numParents[childNodeID] && !finalIsolated[childNodeID])
+			pushReady(childNodeID, alap[childNodeID]);
 	}
 }
 

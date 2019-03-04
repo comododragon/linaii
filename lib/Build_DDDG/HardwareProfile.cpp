@@ -35,6 +35,7 @@ void HardwareProfile::constrainHardware(
 
 	arrayNameToConfig.clear();
 	arrayNameToWritePortsPerPartition.clear();
+	arrayNameToEfficiency.clear();
 	arrayPartitionToReadPorts.clear();
 	arrayPartitionToReadPortsInUse.clear();
 	arrayPartitionToWritePorts.clear();
@@ -50,9 +51,9 @@ void HardwareProfile::constrainHardware(
 		setThresholdWithCurrentUsage();
 	}
 
-	setMemoryCurrentUsage(arrayInfoCfgMap, partitionCfgMap, completePartitionCfgMap);
-
 	clear();
+
+	setMemoryCurrentUsage(arrayInfoCfgMap, partitionCfgMap, completePartitionCfgMap);
 }
 
 bool HardwareProfile::fAddTryAllocate() {
@@ -155,6 +156,11 @@ bool HardwareProfile::fDivTryAllocate() {
 	}
 }
 
+bool HardwareProfile::fCmpTryAllocate() {
+	// XXX: For now, fCmp is not constrained
+	return true;
+}
+
 bool HardwareProfile::loadTryAllocate(std::string arrayPartitionName) {
 	assert(isConstrained && "This hardware profile is not resource-constrained");
 
@@ -210,9 +216,65 @@ bool HardwareProfile::storeTryAllocate(std::string arrayPartitionName) {
 	return true;
 }
 
+bool HardwareProfile::intOpTryAllocate(unsigned opcode) {
+	// XXX: For now, int ops are not constrained
+	return true;
+}
+
+bool HardwareProfile::callTryAllocate() {
+	// XXX: For now, calls are not constrained
+	return true;
+}
+
+void HardwareProfile::fAddRelease() {
+	assert(fAddInUse && "Attempt to release fAdd unit when none is allocated");
+	fAddInUse--;
+}
+
+void HardwareProfile::fSubRelease() {
+	assert(fSubInUse && "Attempt to release fSub unit when none is allocated");
+	fSubInUse--;
+}
+
+void HardwareProfile::fMulRelease() {
+	assert(fMulInUse && "Attempt to release fMul unit when none is allocated");
+	fMulInUse--;
+}
+
+void HardwareProfile::fDivRelease() {
+	assert(fDivInUse && "Attempt to release fDiv unit when none is allocated");
+	fDivInUse--;
+}
+
+void HardwareProfile::fCmpRelease() {
+	assert(false && "fCmp is not constrained");
+}
+
+void HardwareProfile::loadRelease(std::string arrayPartitionName) {
+	std::map<std::string, unsigned>::iterator found = arrayPartitionToReadPortsInUse.find(arrayPartitionName);
+	assert(found != arrayPartitionToReadPortsInUse.end() && "No array/partition found with the provided name");
+	assert(found->second && "Attempt to release read port when none is allocated for this array/partition");
+	(found->second)--;
+}
+
+void HardwareProfile::storeRelease(std::string arrayPartitionName) {
+	std::map<std::string, unsigned>::iterator found = arrayPartitionToWritePortsInUse.find(arrayPartitionName);
+	assert(found != arrayPartitionToWritePortsInUse.end() && "No array/partition found with the provided name");
+	assert(found->second && "Attempt to release write port when none is allocated for this array/partition");
+	(found->second)--;
+}
+
+void HardwareProfile::intOpRelease(unsigned opcode) {
+	assert(false && "Integer ops are not constrained");
+}
+
+void HardwareProfile::callRelease() {
+	assert(false && "Calls are not constrained");
+}
 void XilinxHardwareProfile::clear() {
 	HardwareProfile::clear();
 
+	arrayNameToUsedBRAM18k.clear();
 	usedDSP = 0;
 	usedFF = 0;
 	usedLUT = 0;
@@ -293,6 +355,31 @@ unsigned XilinxHardwareProfile::getLatency(unsigned opcode) {
 			return LATENCY_FCMP;
 		default: 
 			return 0;
+	}
+}
+
+unsigned XilinxHardwareProfile::getSchedulingLatency(unsigned opcode) {
+	// Some nodes can have different latencies for execution and scheduling
+	// Load, for example, takes 2 cycles to finish but it can be enqueued at every cycle
+	if(LLVM_IR_Load == opcode)
+		return SCHEDULING_LATENCY_LOAD;
+	else
+		return getLatency(opcode);
+}
+
+bool XilinxHardwareProfile::isPipelined(unsigned opcode) {
+	switch(opcode) {
+		case LLVM_IR_FAdd:
+		case LLVM_IR_FSub:
+		case LLVM_IR_FMul:
+		case LLVM_IR_FDiv:
+		case LLVM_IR_Load:
+		case LLVM_IR_Store:
+			return true;
+		// TODO: fCmp, integer ops and call are here but because we are not constraining those resources!
+		// Perhaps if we constrain them, we shold double-check if they're pipelined or not
+		default: 
+			return false;
 	}
 }
 
@@ -427,12 +514,11 @@ void XilinxHardwareProfile::setMemoryCurrentUsage(
 	const ConfigurationManager::partitionCfgMapTy &partitionCfgMap,
 	const ConfigurationManager::partitionCfgMapTy &completePartitionCfgMap
 ) {
-	//arrayNameToWritePortsPerPartition.clear();
-	//arrayPartitionToReadPorts.clear();
-	//arrayParitionToReadPortsInUse.clear();
-	//arrayPartitionToWritePorts.clear();
-	//arrayPartitionToWritePortsInUse.clear();
+	const size_t size18kInBits = 18 * 1024;
+	// XXX: If a partition has less than this threshold, it is implemented as distributed RAM instead of BRAM
+	const size_t bramThresholdInBits = 512;
 
+	// Create array configuratiom map
 	for(auto &it : arrayInfoCfgMap) {
 		std::string arrayName = it.first;
 		uint64_t sizeInByte = it.second.totalSize;
@@ -449,7 +535,131 @@ void XilinxHardwareProfile::setMemoryCurrentUsage(
 			arrayNameToConfig.insert(std::make_pair(arrayName, std::make_tuple(1, sizeInByte, wordSizeInByte)));
 	}
 
-	// TODO: parei aqui (aqui é o começo da função setBRAM18K_usage()
+	// Attempt to allocate the BRAM18k resources without worrying with resources constraint
+	for(auto &it : arrayNameToConfig) {
+		std::string arrayName = it.first;
+		uint64_t numOfPartitions = std::get<0>(it.second);
+		uint64_t totalSizeInBytes = std::get<1>(it.second);
+
+		// Partial partitioning or no partition
+		if(numOfPartitions) {
+			float sizeInBitsPerPartition = (totalSizeInBytes << 3) / (float) numOfPartitions;
+			uint64_t numOfBRAM18kPerPartition = 0;
+			float efficiencyPerPartition = 1;
+
+			if(sizeInBitsPerPartition > bramThresholdInBits) {
+				numOfBRAM18kPerPartition = nextPowerOf2((uint64_t) std::ceil(sizeInBitsPerPartition / (float) size18kInBits));
+				efficiencyPerPartition = sizeInBitsPerPartition / (float) (numOfBRAM18kPerPartition * size18kInBits);
+			}
+
+			unsigned bram18kUsage = numOfPartitions * numOfBRAM18kPerPartition;
+			usedBRAM18k += bram18kUsage;
+			arrayNameToUsedBRAM18k.insert(std::make_pair(arrayName, bram18kUsage));
+			arrayNameToEfficiency.insert(std::make_pair(arrayName, efficiencyPerPartition));
+		}
+		// Complete partition
+		else {
+			// TODO: Complete partition splits array into registers, thus no BRAM is used
+			// However, LUTs and FF are used but are not being accounted here.
+			arrayNameToUsedBRAM18k.insert(std::make_pair(arrayName, 0));
+			arrayNameToEfficiency.insert(std::make_pair(arrayName, 0));
+		}
+
+		arrayAddPartitions(arrayName, numOfPartitions);
+		arrayNameToWritePortsPerPartition[arrayName] = PER_PARTITION_PORTS_W;
+	}
+
+	// BRAM18k setting with partitioning does not fit in current device, will attempt without partitioning
+	if(usedBRAM18k > maxBRAM18k) {
+		errs() << "WARNING: Current BRAM18k exceeds the available amount of selected board. Ignoring partitioning information\n";
+		usedBRAM18k = 0;
+		arrayNameToNumOfPartitions.clear();
+		arrayNameToUsedBRAM18k.clear();
+		arrayNameToEfficiency.clear();
+
+		for(auto &it : arrayNameToConfig) {
+			std::string arrayName = it.first;
+			uint64_t numOfPartitions = std::get<0>(it.second);
+			// TODO: THIS SEEMS A BUG!!! THE ORIGINAL CODE IS USING WORDSIZE AS THE TOTAL SIZE.
+			// keeping just for equality purposes, but this is very likely wrong!
+			uint64_t totalSizeInBytes = std::get<2>(it.second);
+			// TODO: The two following lines is what I consider the correct code
+			//uint64_t totalSizeInBytes = std::get<1>(it.second);
+			//size_t wordSizeInBytes = std::get<2>(it.second);
+
+			// Partial partitioning or no partition
+			if(numOfPartitions) {
+				float sizeInBits = (totalSizeInBytes << 3);
+				uint64_t numOfBRAM18k = nextPowerOf2((uint64_t) std::ceil(sizeInBits / (float) size18kInBits));
+				float efficiency = sizeInBits / (float) (numOfBRAM18k * size18kInBits);
+
+				usedBRAM18k += numOfBRAM18k;
+				arrayNameToUsedBRAM18k.insert(std::make_pair(arrayName, numOfBRAM18k));
+				arrayNameToEfficiency.insert(std::make_pair(arrayName, efficiency));
+				arrayPartitionToReadPorts.insert(std::make_pair(arrayName, PER_PARTITION_PORTS_R));
+				arrayPartitionToWritePorts.insert(std::make_pair(arrayName, PER_PARTITION_PORTS_W));
+			}
+			// Complete partition
+			else {
+				// TODO: Compared to the same code above, no "-register" string is added. Is this intentional or a bug???
+#ifdef LEGACY_SEPARATOR
+				arrayNameToUsedBRAM18k.insert(std::make_pair(arrayName + "-register", 0));
+				arrayNameToEfficiency.insert(std::make_pair(arrayName + "-register", 0));
+#else
+				arrayNameToUsedBRAM18k.insert(std::make_pair(arrayName + GLOBAL_SEPARATOR "register", 0));
+				arrayNameToEfficiency.insert(std::make_pair(arrayName + GLOBAL_SEPARATOR "register", 0));
+#endif
+				arrayPartitionToReadPorts.insert(std::make_pair(arrayName, INFINITE_RESOURCES));
+				arrayPartitionToWritePorts.insert(std::make_pair(arrayName, INFINITE_RESOURCES));
+			}
+
+			arrayPartitionToReadPortsInUse.insert(std::make_pair(arrayName, 0));
+			arrayPartitionToWritePortsInUse.insert(std::make_pair(arrayName, 0));
+		}
+
+		// TODO: This is a silent warning on the original code, but I'll put here as an error
+		assert(usedBRAM18k <= maxBRAM18k && "Current BRAM18k exceeds the available amount of selected board even with partitioning disabled");
+	}
+	// BRAM18k setting with partitioning fits in current device
+	else {
+		// XXX: I don't know if these clears are needed, but...
+		arrayPartitionToReadPorts.clear();
+		arrayPartitionToWritePorts.clear();
+
+		for(auto &it : arrayNameToConfig) {
+			std::string arrayName = it.first;
+			uint64_t numOfPartitions = std::get<0>(it.second);
+
+			// Partial partitioning
+			if(numOfPartitions > 1) {
+				for(unsigned i = 0; i < numOfPartitions; i++) {
+#ifdef LEGACY_SEPARATOR
+					std::string partitionName = arrayName + "-" + std::to_string(i);
+#else
+					std::string partitionName = arrayName + GLOBAL_SEPARATOR + std::to_string(i);
+#endif
+					arrayPartitionToReadPorts.insert(std::make_pair(partitionName, PER_PARTITION_PORTS_R));
+					arrayPartitionToWritePorts.insert(std::make_pair(partitionName, PER_PARTITION_PORTS_W));
+					arrayPartitionToReadPortsInUse.insert(std::make_pair(partitionName, 0));
+					arrayPartitionToWritePortsInUse.insert(std::make_pair(partitionName, 0));
+				}
+			}
+			// No partitioning
+			else if(numOfPartitions) {
+				arrayPartitionToReadPorts.insert(std::make_pair(arrayName, INFINITE_RESOURCES));
+				arrayPartitionToWritePorts.insert(std::make_pair(arrayName, INFINITE_RESOURCES));
+				arrayPartitionToReadPortsInUse.insert(std::make_pair(arrayName, 0));
+				arrayPartitionToWritePortsInUse.insert(std::make_pair(arrayName, 0));
+			}
+			// Complete partitioning
+			else {
+				arrayPartitionToReadPorts.insert(std::make_pair(arrayName, PER_PARTITION_PORTS_R));
+				arrayPartitionToWritePorts.insert(std::make_pair(arrayName, PER_PARTITION_PORTS_W));
+				arrayPartitionToReadPortsInUse.insert(std::make_pair(arrayName, 0));
+				arrayPartitionToWritePortsInUse.insert(std::make_pair(arrayName, 0));
+			}
+		}
+	}
 }
 
 void XilinxHardwareProfile::constrainHardware(
@@ -468,6 +678,14 @@ void XilinxHardwareProfile::arrayAddPartition(std::string arrayName) {
 		arrayNameToNumOfPartitions.insert(std::make_pair(arrayName, 1));
 	else
 		found->second++;
+}
+
+void XilinxHardwareProfile::arrayAddPartitions(std::string arrayName, unsigned amount) {
+	std::map<std::string, unsigned>::iterator found = arrayNameToNumOfPartitions.find(arrayName);
+	if(arrayNameToNumOfPartitions.end() == found)
+		arrayNameToNumOfPartitions.insert(std::make_pair(arrayName, amount));
+	else
+		found->second = amount;
 }
 
 unsigned XilinxHardwareProfile::arrayGetNumOfPartitions(std::string arrayName) {

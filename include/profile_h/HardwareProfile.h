@@ -14,6 +14,7 @@ protected:
 	std::map<std::string, std::tuple<uint64_t, uint64_t, size_t>> arrayNameToConfig;
 	std::map<std::string, unsigned> arrayNameToNumOfPartitions;
 	std::map<std::string, unsigned> arrayNameToWritePortsPerPartition;
+	std::map<std::string, unsigned> arrayNameToEfficiency;
 	std::map<std::string, unsigned> arrayPartitionToReadPorts;
 	std::map<std::string, unsigned> arrayPartitionToReadPortsInUse;
 	std::map<std::string, unsigned> arrayPartitionToWritePorts;
@@ -38,6 +39,8 @@ public:
 	virtual void clear();
 
 	virtual unsigned getLatency(unsigned opcode) = 0;
+	virtual unsigned getSchedulingLatency(unsigned opcode) = 0;
+	virtual bool isPipelined(unsigned opcode) = 0;
 	virtual void calculateRequiredResources(
 		std::vector<int> &microops,
 		const ConfigurationManager::arrayInfoCfgMapTy &arrayInfoCfgMap,
@@ -60,23 +63,38 @@ public:
 	std::set<int> getConstrainedUnits() { return limitedBy; }
 
 	virtual void arrayAddPartition(std::string arrayName) = 0;
+	virtual bool fAddAddUnit() = 0;
+	virtual bool fSubAddUnit() = 0;
+	virtual bool fMulAddUnit() = 0;
+	virtual bool fDivAddUnit() = 0;
+
 	virtual unsigned arrayGetNumOfPartitions(std::string arrayName) = 0;
 	virtual unsigned arrayGetMaximumPortsPerPartition() = 0;
-	virtual bool fAddAddUnit() = 0;
 	unsigned fAddGetAmount() { return fAddCount; }
-	virtual bool fSubAddUnit() = 0;
 	unsigned fSubGetAmount() { return fSubCount; }
-	virtual bool fMulAddUnit() = 0;
 	unsigned fMulGetAmount() { return fMulCount; }
-	virtual bool fDivAddUnit() = 0;
 	unsigned fDivGetAmount() { return fDivCount; }
 
 	bool fAddTryAllocate();
 	bool fSubTryAllocate();
 	bool fMulTryAllocate();
 	bool fDivTryAllocate();
+	bool fCmpTryAllocate();
 	bool loadTryAllocate(std::string arrayPartitionName);
 	bool storeTryAllocate(std::string arrayPartitionName);
+	bool intOpTryAllocate(unsigned opcode);
+	bool callTryAllocate();
+
+	void fAddRelease();
+	void fSubRelease();
+	void fMulRelease();
+	void fDivRelease();
+	void fCmpRelease();
+	void loadRelease(std::string arrayPartitionName);
+	void storeRelease(std::string arrayPartitionName);
+	void intOpRelease(unsigned opcode);
+	void callRelease();
+
 };
 
 class XilinxHardwareProfile : public HardwareProfile {
@@ -92,6 +110,9 @@ class XilinxHardwareProfile : public HardwareProfile {
 		LATENCY_FMUL32 = 4,
 		LATENCY_FDIV32 = 16,
 		LATENCY_FCMP = 1
+	};
+	enum {
+		SCHEDULING_LATENCY_LOAD = 1
 	};
 	// TODO: Couldn't we just glue the two enums below?
 	enum {
@@ -123,6 +144,7 @@ class XilinxHardwareProfile : public HardwareProfile {
 	};
 
 protected:
+	std::map<std::string, unsigned> arrayNameToUsedBRAM18k;
 	unsigned maxDSP, maxFF, maxLUT, maxBRAM18k;
 	unsigned usedDSP, usedFF, usedLUT, usedBRAM18k;
 
@@ -130,6 +152,8 @@ public:
 	void clear();
 
 	unsigned getLatency(unsigned opcode);
+	unsigned getSchedulingLatency(unsigned opcode);
+	bool isPipelined(unsigned opcode);
 	void calculateRequiredResources(
 		std::vector<int> &microops,
 		const ConfigurationManager::arrayInfoCfgMapTy &arrayInfoCfgMap,
@@ -149,6 +173,7 @@ public:
 	);
 
 	void arrayAddPartition(std::string arrayName);
+	void arrayAddPartitions(std::string arrayName, unsigned amount);
 	unsigned arrayGetNumOfPartitions(std::string arrayName);
 	unsigned arrayGetMaximumPortsPerPartition();
 	bool fAddAddUnit();

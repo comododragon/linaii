@@ -461,10 +461,13 @@ public:
 		executingMapTy intOpExecuting;
 		executingMapTy callExecuting;
 
-		bool dummyAllocate() { return true; }
-		static bool compareReadyByALAP(const std::pair<unsigned, uint64_t> &first, const std::pair<unsigned, uint64_t> &second) { return first.second < second.second; }
+		uint64_t rcIL;
+		std::string constrainedArrayName;
 
-		void assignReady();
+		bool dummyAllocate() { return true; }
+		static bool prioritiseSmallerALAP(const std::pair<unsigned, uint64_t> &first, const std::pair<unsigned, uint64_t> &second) { return first.second < second.second; }
+
+		void assignReadyStartingNodes();
 		void select();
 		void execute();
 		void release();
@@ -479,7 +482,8 @@ public:
 		void tryRelease(unsigned opcode, executingMapTy &executing, void (HardwareProfile::*release)());
 		void tryRelease(executingMapTy &executing, void (HardwareProfile::*releaseInt)(unsigned));
 		void tryRelease(unsigned opcode, executingMapTy &executing, void (HardwareProfile::*releaseMem)(std::string));
-		void setDone(unsigned nodeID);
+		void setScheduledAndAssignReadyChildren(unsigned nodeID);
+
 	public:
 		RCScheduler(
 			const std::vector<int> &microops,
@@ -488,7 +492,12 @@ public:
 			HardwareProfile &profile, const std::unordered_map<int, std::pair<std::string, int64_t>> &baseAddress,
 			const std::vector<uint64_t> &asap, const std::vector<uint64_t> &alap, std::vector<uint64_t> &rc
 		);
-		void schedule();
+
+		uint64_t schedule();
+		uint64_t getResIIMem();
+
+		uint64_t getIL() { return rcIL; }
+		std::string getConstrainedArray() { return constrainedArrayName; }
 	};
 
 	class ColorWriter {

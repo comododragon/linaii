@@ -56,6 +56,24 @@ void HardwareProfile::constrainHardware(
 	setMemoryCurrentUsage(arrayInfoCfgMap, partitionCfgMap, completePartitionCfgMap);
 }
 
+unsigned HardwareProfile::arrayGetNumOfPartitions(std::string arrayName) {
+	// XXX: If the arrayName doesn't exist, this access will add it automatically. Is this desired behaviour?
+	return arrayNameToNumOfPartitions[arrayName];
+}
+
+unsigned HardwareProfile::arrayGetPartitionReadPorts(std::string partitionName) {
+	std::map<std::string, unsigned>::iterator found = arrayPartitionToReadPorts.find(partitionName);
+	assert(found != arrayPartitionToReadPorts.end() && "Array has no storage allocated for it");
+	return found->second;
+}
+
+unsigned HardwareProfile::arrayGetPartitionWritePorts(std::string partitionName) {
+	std::map<std::string, unsigned>::iterator found = arrayPartitionToWritePorts.find(partitionName);
+	assert(found != arrayPartitionToWritePorts.end() && "Array has no storage allocated for it");
+	return found->second;
+}
+
+
 bool HardwareProfile::fAddTryAllocate() {
 	assert(isConstrained && "This hardware profile is not resource-constrained");
 
@@ -169,6 +187,14 @@ bool HardwareProfile::loadTryAllocate(std::string arrayPartitionName) {
 	assert(found != arrayPartitionToReadPorts.end() && "Array has no storage allocated for it");
 	assert(found2 != arrayPartitionToReadPortsInUse.end() && "Array has no storage allocated for it");
 
+	//std::cout << "~~ ~~ loadTryAllocate start\n";
+	//for(auto &it : arrayPartitionToReadPorts)
+	//	std::cout << "~~ ~~ " << it.first << " | " << std::to_string(it.second) << "\n";
+	//std::cout << "~~ ~~~\n";
+	//for(auto &it : arrayPartitionToReadPortsInUse)
+	//	std::cout << "~~ ~~ " << it.first << " | " << std::to_string(it.second) << "\n";
+	//std::cout << "~~ ~~ loadTryAllocate end\n";
+
 	// All ports are being used, not able to allocate right now
 	if(found2->second >= found->second)
 		return false;
@@ -187,10 +213,18 @@ bool HardwareProfile::storeTryAllocate(std::string arrayPartitionName) {
 	assert(found != arrayPartitionToWritePorts.end() && "Array has no storage allocated for it");
 	assert(found2 != arrayPartitionToWritePortsInUse.end() && "Array has no storage allocated for it");
 
+	//std::cout << "~~ ~~ storeTryAllocate start\n";
+	//for(auto &it : arrayPartitionToWritePorts)
+	//	std::cout << "~~ ~~ " << it.first << " | " << std::to_string(it.second) << "\n";
+	//std::cout << "~~ ~~~\n";
+	//for(auto &it : arrayPartitionToWritePortsInUse)
+	//	std::cout << "~~ ~~ " << it.first << " | " << std::to_string(it.second) << "\n";
+	//std::cout << "~~ ~~ storeTryAllocate end\n";
+
 	// All ports are being used
 	if(found2->second >= found->second) {
 		// If RW ports are enabled, attempt to allocate a new port
-		if(args.fRWRWMem && found->second < arrayGetMaximumPortsPerPartition()) {
+		if(args.fRWRWMem && found->second < arrayGetMaximumWritePortsPerPartition()) {
 			(found->second)++;
 			(found2->second)++;
 
@@ -251,6 +285,13 @@ void HardwareProfile::fCmpRelease() {
 }
 
 void HardwareProfile::loadRelease(std::string arrayPartitionName) {
+	//std::cout << "~~ ~~ loadRelease start\n";
+	//for(auto &it : arrayPartitionToReadPorts)
+	//	std::cout << "~~ ~~ " << it.first << " | " << std::to_string(it.second) << "\n";
+	//std::cout << "~~ ~~~\n";
+	//for(auto &it : arrayPartitionToReadPortsInUse)
+	//	std::cout << "~~ ~~ " << it.first << " | " << std::to_string(it.second) << "\n";
+	//std::cout << "~~ ~~ loadRelease end\n";
 	std::map<std::string, unsigned>::iterator found = arrayPartitionToReadPortsInUse.find(arrayPartitionName);
 	assert(found != arrayPartitionToReadPortsInUse.end() && "No array/partition found with the provided name");
 	assert(found->second && "Attempt to release read port when none is allocated for this array/partition");
@@ -258,6 +299,13 @@ void HardwareProfile::loadRelease(std::string arrayPartitionName) {
 }
 
 void HardwareProfile::storeRelease(std::string arrayPartitionName) {
+	//std::cout << "~~ ~~ storeRelease start\n";
+	//for(auto &it : arrayPartitionToWritePorts)
+	//	std::cout << "~~ ~~ " << it.first << " | " << std::to_string(it.second) << "\n";
+	//std::cout << "~~ ~~~\n";
+	//for(auto &it : arrayPartitionToWritePortsInUse)
+	//	std::cout << "~~ ~~ " << it.first << " | " << std::to_string(it.second) << "\n";
+	//std::cout << "~~ ~~ storeRelease end\n";
 	std::map<std::string, unsigned>::iterator found = arrayPartitionToWritePortsInUse.find(arrayPartitionName);
 	assert(found != arrayPartitionToWritePortsInUse.end() && "No array/partition found with the provided name");
 	assert(found->second && "Attempt to release write port when none is allocated for this array/partition");
@@ -504,8 +552,8 @@ void XilinxHardwareProfile::setThresholdWithCurrentUsage() {
 	else {
 		fAddThreshold = fAddCount? fAddCount : INFINITE_RESOURCES;
 		fSubThreshold = fSubCount? fSubCount : INFINITE_RESOURCES;
-		fAddThreshold = fMulCount? fMulCount : INFINITE_RESOURCES;
-		fAddThreshold = fDivCount? fDivCount : INFINITE_RESOURCES;
+		fMulThreshold = fMulCount? fMulCount : INFINITE_RESOURCES;
+		fDivThreshold = fDivCount? fDivCount : INFINITE_RESOURCES;
 	}
 }
 
@@ -547,7 +595,7 @@ void XilinxHardwareProfile::setMemoryCurrentUsage(
 			uint64_t numOfBRAM18kPerPartition = 0;
 			float efficiencyPerPartition = 1;
 
-			if(sizeInBitsPerPartition > bramThresholdInBits) {
+			if(sizeInBitsPerPartition > (float) bramThresholdInBits) {
 				numOfBRAM18kPerPartition = nextPowerOf2((uint64_t) std::ceil(sizeInBitsPerPartition / (float) size18kInBits));
 				efficiencyPerPartition = sizeInBitsPerPartition / (float) (numOfBRAM18kPerPartition * size18kInBits);
 			}
@@ -646,15 +694,15 @@ void XilinxHardwareProfile::setMemoryCurrentUsage(
 			}
 			// No partitioning
 			else if(numOfPartitions) {
-				arrayPartitionToReadPorts.insert(std::make_pair(arrayName, INFINITE_RESOURCES));
-				arrayPartitionToWritePorts.insert(std::make_pair(arrayName, INFINITE_RESOURCES));
+				arrayPartitionToReadPorts.insert(std::make_pair(arrayName, PER_PARTITION_PORTS_R));
+				arrayPartitionToWritePorts.insert(std::make_pair(arrayName, PER_PARTITION_PORTS_W));
 				arrayPartitionToReadPortsInUse.insert(std::make_pair(arrayName, 0));
 				arrayPartitionToWritePortsInUse.insert(std::make_pair(arrayName, 0));
 			}
 			// Complete partitioning
 			else {
-				arrayPartitionToReadPorts.insert(std::make_pair(arrayName, PER_PARTITION_PORTS_R));
-				arrayPartitionToWritePorts.insert(std::make_pair(arrayName, PER_PARTITION_PORTS_W));
+				arrayPartitionToReadPorts.insert(std::make_pair(arrayName, INFINITE_RESOURCES));
+				arrayPartitionToWritePorts.insert(std::make_pair(arrayName, INFINITE_RESOURCES));
 				arrayPartitionToReadPortsInUse.insert(std::make_pair(arrayName, 0));
 				arrayPartitionToWritePortsInUse.insert(std::make_pair(arrayName, 0));
 			}
@@ -688,12 +736,7 @@ void XilinxHardwareProfile::arrayAddPartitions(std::string arrayName, unsigned a
 		found->second = amount;
 }
 
-unsigned XilinxHardwareProfile::arrayGetNumOfPartitions(std::string arrayName) {
-	// XXX: If the arrayName doesn't exist, this access will add it automatically. Is this desired behaviour?
-	return arrayNameToNumOfPartitions[arrayName];
-}
-
-unsigned XilinxHardwareProfile::arrayGetMaximumPortsPerPartition() {
+unsigned XilinxHardwareProfile::arrayGetMaximumWritePortsPerPartition() {
 	return PER_PARTITION_MAX_PORTS_W;
 }
 

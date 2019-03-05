@@ -1135,6 +1135,9 @@ uint64_t BaseDatapath::rcScheduling() {
 
 	RCScheduler rcSched(microops, graph, numOfTotalNodes, nameToVertex, vertexToName, *profile, baseAddress, asapScheduledTime, alapScheduledTime, rcScheduledTime);
 	rcSched.schedule();
+	rcSched.getResIIMem();
+
+	// TODO: XXX = rcSched.getIL();?
 }
 
 void BaseDatapath::dumpGraph(bool isOptimised) {
@@ -1214,6 +1217,7 @@ BaseDatapath::RCScheduler::RCScheduler(
 	intOpExecuting.clear();
 	callExecuting.clear();
 
+	// Select root connected nodes to start scheduling
 	VertexIterator vi, vEnd;
 	for(std::tie(vi, vEnd) = boost::vertices(graph); vi != vEnd; vi++) {
 		unsigned currNodeID = vertexToName[*vi];
@@ -1229,59 +1233,215 @@ BaseDatapath::RCScheduler::RCScheduler(
 		if(inDegree)
 			continue;
 
-		// From this point connected root nodes are considered
+		// From this point only connected root nodes are considered
 
 		startingNodes.push_back(std::make_pair(currNodeID, alap[currNodeID]));
 	}
 }
 
-void BaseDatapath::RCScheduler::schedule() {
+uint64_t BaseDatapath::RCScheduler::schedule() {
 	for(cycleTick = 0; scheduledNodeCount != totalConnectedNodes; cycleTick++) {
-		assignReady();
+		//std::cout << "~~ start " << std::to_string(cycleTick) << "\n";
+		// Assign ready state to starting nodes (if any)
+		if(startingNodes.size())
+			assignReadyStartingNodes();
 		select();
 		execute();
 		release();
+		//std::cout << "~~ end " << std::to_string(cycleTick) << "\n";
+		//std::cout.flush();
 	}
+
+	rcIL = (args.fExtraScalar)? cycleTick + 1 : cycleTick - 1;
+
+	return rcIL;
 }
 
-void BaseDatapath::RCScheduler::assignReady() {
-	if(startingNodes.size()) {
-		startingNodes.sort(compareReadyByALAP);
+uint64_t BaseDatapath::RCScheduler::getResIIMem() {
+	const std::map<std::string, std::tuple<uint64_t, uint64_t, uint64_t>> &arrayConfig = profile.getArrayConfig();
 
-		while(startingNodes.size()) {
-			unsigned currNodeID = startingNodes.front().first;
-			uint64_t alapTime = startingNodes.front().second;
-			if(cycleTick == alapTime) {
-				pushReady(currNodeID, alapTime);
-				startingNodes.pop_front();
+	for(auto &it : arrayConfig) {
+		std::string arrayName = it.first;
+		uint64_t numOfPartitions = std::get<0>(it.second);
+
+		// Only partial partitioning
+		if(numOfPartitions > 1) {
+			for(unsigned i = 0; i < numOfPartitions; i++) {
+#ifdef LEGACY_SEPARATOR
+				std::string arrayPartitionName = arrayName + "-" + std::to_string(i);
+#else
+				std::string arrayPartitionName = arrayName + GLOBAL_SEPARATOR + std::to_string(i);
+#endif
+				arrayPartitionToPreviousSchedReadAssigned.insert(std::make_pair(arrayPartitionName, false));
+				arrayPartitionToPreviousSchedWriteAssigned.insert(std::make_pair(arrayPartitionName, false));
+				arrayPartitionToResII.insert(std::make_pair(arrayPartitionName, 0));
 			}
-			else {
-				break;
+		}
+		// Complete or no partitioning
+		else {
+			arrayPartitionToPreviousSchedReadAssigned.insert(std::make_pair(arrayName, false));
+			arrayPartitionToPreviousSchedWriteAssigned.insert(std::make_pair(arrayName, false));
+			arrayPartitionToResII.insert(std::make_pair(arrayName, 0));
+		}
+	}
+
+	for(unsigned nodeID = 0; nodeID < numOfTotalNodes; nodeID++)
+		rcToNodes[rc[nodeID]].push_back(nodeID);
+
+	for(auto &it : rcToNodes) {
+		uint64_t currentSched = it.first;
+
+		for(auto &it2 : it.second) {
+			unsigned opcode = microops.at(it);
+
+			if(!isMemoryOp(opcode))
+				continue;
+
+			// From this point only loads and stores are considered
+
+			std::string partitionName = baseAddress[it].first;
+#ifdef LEGACY_SEPARATOR
+			std::string arrayName = partitionName.substr(0, partitionName.find("-"));
+#else
+			std::string arrayName = partitionName.substr(0, partitionName.find(GLOBAL_SEPARATOR));
+#endif
+
+			if(isLoadOp(opcode)) {
+				// Complete partitioning, no need to analyse
+				if(!std::get<0>(arrayConfig[arrayName]))
+					continue;
+
+				arrayPartitionToNumOfReads[partitionName]++;
+
+				if(!arrayPartitionToPreviousSchedReadAssigned[partitionName]) {
+					arrayPartitionToPreviousSchedRead[partitionName] = currentSched;
+					arrayPartitionToPreviousSchedReadAssigned[partitionName] = true;
+				}
+
+				uint64_t prevSchedRead = arrayPartitionToPreviousSchedRead[partitionName];
+				if(prevSchedRead != currentSched) {
+					arrayPartitionToSchedReadDiffs[partitionName].push_back(currentRC - prevSchedRead);
+					arrayPartitionToPreviousSchedRead[partitionName] = currentSched;
+				}
+			}
+
+			if(isStoreOp(opcode)) {
+				// Complete partitioning, no need to analyse
+				if(!std::get<0>(arrayConfig[arrayName]))
+					continue;
+
+				arrayPartitionToNumOfWrites[partitionName]++;
+
+				if(!arrayPartitionToPreviousSchedWriteAssigned[partitionName]) {
+					arrayPartitionToPreviousSchedWrite[partitionName] = currentSched;
+					arrayPartitionToPreviousSchedWriteAssigned[partitionName] = true;
+				}
+
+				uint64_t prevSchedWrite = arrayPartitionToPreviousSchedWrite[partitionName];
+				if(prevSchedWrite != currentSched) {
+					arrayPartitionToSchedWriteDiffs[partitionName].push_back(currentRC - prevSchedWrite);
+					arrayPartitionToPreviousSchedWrite[partitionName] = currentSched;
+				}
 			}
 		}
 	}
 
-	while(othersReady.size()) {
-		unsigned currNodeID = othersReady.front().first;
-		othersReady.pop_front();
-		rc[currNodeID] = cycleTick;
-		setDone(currNodeID);
+	for(auto &it : arrayPartitionToResII) {
+		std::string partitionName = it.first;
+
+		// Analyse for read
+		uint64_t readII = 0;
+		std::map<std::string, uint64_t>::iterator found = arrayPartitionToNumOfReads.find(partitionName);
+		if(found != arrayPartitionToNumOfReads.end()) {
+			uint64_t numReads = found->second;
+			uint64_t numReadPorts = profile.arrayGetPartitionReadPorts(partitionName);
+
+			std::map<std::string, std::vector<uint64_t>>::iterator found2 = arrayPartitionToSchedReadDiffs.find(partitionName);
+			if(found2 != arrayPartitionToSchedReadDiffs.end()) {
+				//uint64_t minDiff = *(std::min_element(arrayPartitionToSchedReadDiffs.begin(), arrayPartitionToSchedReadDiffs.end()));
+				readII = std::ceil(numReads / (double) numReadPorts);
+			}
+		}
+
+		// Analyse for write
+		uint64_t writeII = 0;
+		std::map<std::string, uint64_t>::iterator found3 = arrayPartitionToNumOfWrites.find(partitionName);
+		if(found3 != arrayPartitionToNumOfWrites.end()) {
+			uint64_t numWrites = found3->second;
+			uint64_t numWritePorts = profile.arrayGetPartitionWritePorts(partitionName);
+
+			std::map<std::string, std::vector<uint64_t>>::iterator found4 = arrayPartitionToSchedWriteDiffs.find(partitionName);
+			if(found4 != arrayPartitionToSchedWriteDiffs.end()) {
+				uint64_t minDiff = *(std::min_element(arrayPartitionToSchedWriteDiffs.begin(), arrayPartitionToSchedWriteDiffs.end()));
+				writeII = std::ceil((numReads * minDiff) / (double) numWritePorts);
+			}
+			else {
+				writeII = std::ceil(numWrite / (double) numWritePorts);
+			}
+		}
+
+		it.second = (readII > writeII)? readII : writeII;
+	}
+
+	// TODO: parei aqui
+}
+
+void BaseDatapath::RCScheduler::assignReadyStartingNodes() {
+	// Sort nodes by their ALAP, smallest first (urgent nodes first)
+	startingNodes.sort(prioritiseSmallerALAP);
+
+	while(startingNodes.size()) {
+		unsigned currNodeID = startingNodes.front().first;
+		uint64_t alapTime = startingNodes.front().second;
+
+		// If the cycle tick equals to the node's ALAP time, this node has to be solved now!
+		if(cycleTick == alapTime) {
+			//std::cout << "~~ assigned ready: " << std::to_string(currNodeID) << "\n";
+			pushReady(currNodeID, alapTime);
+			startingNodes.pop_front();
+		}
+		// Since the list is sorted, if the if above fails, cycleTick < alapTime for
+		// all other cases, we don't need to analyse
+		else {
+			break;
+		}
 	}
 }
 
 void BaseDatapath::RCScheduler::select() {
+	//std::cout << "~~ finish latency0\n";
+	// Schedule/finish all instructions that we are not considering (i.e. latency 0)
+	while(othersReady.size()) {
+		unsigned currNodeID = othersReady.front().first;
+		//std::cout << "~~ done (others): " << std::to_string(currNodeID) << "\n";
+		othersReady.pop_front();
+		rc[currNodeID] = cycleTick;
+		setScheduledAndAssignReadyChildren(currNodeID);
+	}
+
+	// Attempt to allocate resources to the most urgent nodes
+	//std::cout << "~~ select fadd\n";
 	trySelect(fAddReady, fAddSelected, &HardwareProfile::fAddTryAllocate);
+	//std::cout << "~~ select fsub\n";
 	trySelect(fSubReady, fSubSelected, &HardwareProfile::fSubTryAllocate);
+	//std::cout << "~~ select fmul\n";
 	trySelect(fMulReady, fMulSelected, &HardwareProfile::fMulTryAllocate);
+	//std::cout << "~~ select fdiv\n";
 	trySelect(fDivReady, fDivSelected, &HardwareProfile::fDivTryAllocate);
+	//std::cout << "~~ select fcmp\n";
 	trySelect(fCmpReady, fCmpSelected, &HardwareProfile::fCmpTryAllocate);
+	//std::cout << "~~ select load\n";
 	trySelect(loadReady, loadSelected, &HardwareProfile::loadTryAllocate);
+	//std::cout << "~~ select store\n";
 	trySelect(storeReady, storeSelected, &HardwareProfile::storeTryAllocate);
+	//std::cout << "~~ select intOp\n";
 	trySelect(intOpReady, intOpSelected, &HardwareProfile::intOpTryAllocate);
+	//std::cout << "~~ select call\n";
 	trySelect(callReady, callSelected, &HardwareProfile::callTryAllocate);
 }
 
 void BaseDatapath::RCScheduler::execute() {
+	// Enqueue selected nodes for execution
 	enqueueExecute(LLVM_IR_FAdd, fAddSelected, fAddExecuting, &HardwareProfile::fAddRelease);
 	enqueueExecute(LLVM_IR_FSub, fSubSelected, fSubExecuting, &HardwareProfile::fSubRelease);
 	enqueueExecute(LLVM_IR_FMul, fMulSelected, fMulExecuting, &HardwareProfile::fMulRelease);
@@ -1294,6 +1454,7 @@ void BaseDatapath::RCScheduler::execute() {
 }
 
 void BaseDatapath::RCScheduler::release() {
+	// Try to release resources that are being held by executing nodes
 	tryRelease(LLVM_IR_FAdd, fAddExecuting, &HardwareProfile::fAddRelease);
 	tryRelease(LLVM_IR_FSub, fSubExecuting, &HardwareProfile::fSubRelease);
 	tryRelease(LLVM_IR_FMul, fMulExecuting, &HardwareProfile::fMulRelease);
@@ -1348,12 +1509,14 @@ void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &sel
 	if(ready.size()) {
 		selected.clear();
 
-		ready.sort(compareReadyByALAP);
+		// Sort nodes by their ALAP, smallest first (urgent nodes first)
+		ready.sort(prioritiseSmallerALAP);
 		size_t initialReadySize = ready.size();
 		for(unsigned i = 0; i < initialReadySize; i++) {
 			// If allocation is successful (i.e. there is one operation unit available), select this operation
 			if((profile.*tryAllocate)()) {
 				unsigned nodeID = ready.front().first;
+				std::cout << "~~ selected: " << std::to_string(nodeID) << "\n";
 				selected.push_back(nodeID);
 				ready.pop_front();
 				rc[nodeID] = cycleTick;
@@ -1370,12 +1533,14 @@ void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &sel
 	if(ready.size()) {
 		selected.clear();
 
-		ready.sort(compareReadyByALAP);
+		// Sort nodes by their ALAP, smallest first (urgent nodes first)
+		ready.sort(prioritiseSmallerALAP);
 		size_t initialReadySize = ready.size();
 		for(unsigned i = 0; i < initialReadySize; i++) {
 			unsigned nodeID = ready.front().first;
 			// If allocation is successful (i.e. there is one operation unit available), select this operation
 			if((profile.*tryAllocateInt)(microops.at(nodeID))) {
+				std::cout << "~~ selected (intOp): " << std::to_string(nodeID) << "\n";
 				selected.push_back(nodeID);
 				ready.pop_front();
 				rc[nodeID] = cycleTick;
@@ -1392,7 +1557,8 @@ void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &sel
 	if(ready.size()) {
 		selected.clear();
 
-		ready.sort(compareReadyByALAP);
+		// Sort nodes by their ALAP, smallest first (urgent nodes first)
+		ready.sort(prioritiseSmallerALAP);
 		size_t initialReadySize = ready.size();
 		for(unsigned i = 0; i < initialReadySize; i++) {
 			unsigned nodeID = ready.front().first;
@@ -1402,6 +1568,7 @@ void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &sel
 
 			// If allocation is successful (i.e. there is one operation unit available), select this operation
 			if((profile.*tryAllocateMem)(arrayPartitionName)) {
+				std::cout << "~~ selected (memory: " << arrayPartitionName << "): " << std::to_string(nodeID) << "\n";
 				selected.push_back(nodeID);
 				ready.pop_front();
 				rc[nodeID] = cycleTick;
@@ -1419,8 +1586,10 @@ void BaseDatapath::RCScheduler::enqueueExecute(unsigned opcode, selectedListTy &
 		unsigned selectedNodeID = selected.front();
 		unsigned latency = profile.getSchedulingLatency(opcode);
 
+		// Latency 0 or 1: this node was solved already. Set as scheduled and assign its children as ready
 		if(latency <= 1)
-			setDone(selectedNodeID);
+			setScheduledAndAssignReadyChildren(selectedNodeID);
+		// Multi-latency instruction: put into executing queue
 		else
 			executing.insert(std::make_pair(selectedNodeID, latency));
 
@@ -1438,8 +1607,10 @@ void BaseDatapath::RCScheduler::enqueueExecute(selectedListTy &selected, executi
 		unsigned opcode = microops.at(selectedNodeID);
 		unsigned latency = profile.getSchedulingLatency(opcode);
 
+		// Latency 0 or 1: this node was solved already. Set as scheduled and assign its children as ready
 		if(latency <= 1)
-			setDone(selectedNodeID);
+			setScheduledAndAssignReadyChildren(selectedNodeID);
+		// Multi-latency instruction: put into executing queue
 		else
 			executing.insert(std::make_pair(selectedNodeID, latency));
 			
@@ -1457,13 +1628,16 @@ void BaseDatapath::RCScheduler::enqueueExecute(unsigned opcode, selectedListTy &
 		unsigned latency = profile.getSchedulingLatency(opcode);
 		std::string arrayName = baseAddress.at(selectedNodeID).first;
 
+		// Latency 0 or 1: this node was solved already. Set as scheduled and assign its children as ready
 		if(latency <= 1)
-			setDone(selectedNodeID);
+			setScheduledAndAssignReadyChildren(selectedNodeID);
+		// Multi-latency instruction: put into executing queue
 		else
 			executing.insert(std::make_pair(selectedNodeID, latency));
 
 		selected.pop_front();
 
+		// If this operation is pipelined, we can release the unit
 		if(profile.isPipelined(opcode))
 			(profile.*releaseMem)(arrayName);
 	}
@@ -1478,9 +1652,12 @@ void BaseDatapath::RCScheduler::tryRelease(unsigned opcode, executingMapTy &exec
 		// Decrease one cycle
 		(it.second)--;
 
+		// All cycles were consumed, this operation is done, release resource
 		if(!(it.second)) {
-			setDone(executingNodeID);
+			setScheduledAndAssignReadyChildren(executingNodeID);
 			toErase.push_back(executingNodeID);
+
+			// If operation is pipelined, the resource was already released before
 			if(!(profile.isPipelined(opcode)))
 				(profile.*release)();
 		}
@@ -1499,10 +1676,13 @@ void BaseDatapath::RCScheduler::tryRelease(executingMapTy &executing, void (Hard
 		// Decrease one cycle
 		(it.second)--;
 
+		// All cycles were consumed, this operation is done, release resource
 		if(!(it.second)) {
 			unsigned opcode = microops.at(executingNodeID);
-			setDone(executingNodeID);
+			setScheduledAndAssignReadyChildren(executingNodeID);
 			toErase.push_back(executingNodeID);
+
+			// If operation is pipelined, the resource was already released before
 			if(!(profile.isPipelined(opcode)))
 				(profile.*releaseInt)(opcode);
 		}
@@ -1522,9 +1702,12 @@ void BaseDatapath::RCScheduler::tryRelease(unsigned opcode, executingMapTy &exec
 		// Decrease one cycle
 		(it.second)--;
 
+		// All cycles were consumed, this operation is done, release resource
 		if(!(it.second)) {
-			setDone(executingNodeID);
+			setScheduledAndAssignReadyChildren(executingNodeID);
 			toErase.push_back(executingNodeID);
+
+			// If operation is pipelined, the resource was already released before
 			if(!(profile.isPipelined(opcode)))
 				(profile.*releaseMem)(arrayName);
 		}
@@ -1534,7 +1717,7 @@ void BaseDatapath::RCScheduler::tryRelease(unsigned opcode, executingMapTy &exec
 		executing.erase(it);
 }
 
-void BaseDatapath::RCScheduler::setDone(unsigned nodeID) {
+void BaseDatapath::RCScheduler::setScheduledAndAssignReadyChildren(unsigned nodeID) {
 	scheduledNodeCount++;
 
 	OutEdgeIterator outEdgei, outEdgeEnd;
@@ -1543,6 +1726,7 @@ void BaseDatapath::RCScheduler::setDone(unsigned nodeID) {
 		unsigned childNodeID = vertexToName[childVertex];
 		numParents[childNodeID]--;
 
+		// Assign this child node as ready if all its parents were scheduled and it's not an isolated node
 		if(!numParents[childNodeID] && !finalIsolated[childNodeID])
 			pushReady(childNodeID, alap[childNodeID]);
 	}

@@ -117,5 +117,9 @@ void DynamicDatapath::printDatabase() {
 	for(auto const &x : cPathNodes)
 		errs() << "-- " << std::to_string(x) << "\n";
 	errs() << "-- ----------\n";
+	errs() << "-- rcScheduledTime\n";
+	for(auto const &x : rcScheduledTime)
+		errs() << "-- " << std::to_string(x) << "\n";
+	errs() << "-- ---------------\n";
 }
 #endif

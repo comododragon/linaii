@@ -2,6 +2,7 @@
 #define HARDWAREPROFILE_H
 
 #include <set>
+#include <iostream>
 
 #include "profile_h/auxiliary.h"
 
@@ -68,8 +69,11 @@ public:
 	virtual bool fMulAddUnit() = 0;
 	virtual bool fDivAddUnit() = 0;
 
-	virtual unsigned arrayGetNumOfPartitions(std::string arrayName) = 0;
-	virtual unsigned arrayGetMaximumPortsPerPartition() = 0;
+	unsigned arrayGetNumOfPartitions(std::string arrayName);
+	unsigned arrayGetPartitionReadPorts(std::string partitionName);
+	unsigned arrayGetPartitionWritePorts(std::string partitionName);
+	const std::map<std::string, std::tuple<uint64_t, uint64_t, size_t>> &arrayGetConfig() { return arrayNameToConfig; }
+	virtual unsigned arrayGetMaximumWritePortsPerPartition() = 0;
 	unsigned fAddGetAmount() { return fAddCount; }
 	unsigned fSubGetAmount() { return fSubCount; }
 	unsigned fMulGetAmount() { return fMulCount; }
@@ -174,8 +178,7 @@ public:
 
 	void arrayAddPartition(std::string arrayName);
 	void arrayAddPartitions(std::string arrayName, unsigned amount);
-	unsigned arrayGetNumOfPartitions(std::string arrayName);
-	unsigned arrayGetMaximumPortsPerPartition();
+	unsigned arrayGetMaximumWritePortsPerPartition();
 	bool fAddAddUnit();
 	bool fSubAddUnit();
 	bool fMulAddUnit();

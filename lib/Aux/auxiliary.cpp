@@ -96,7 +96,7 @@ unsigned nextPowerOf2(unsigned x) {
 	x |= (x >> 4);
 	x |= (x >> 8);
 	x |= (x >> 16);
-	return x++;
+	return x + 1;
 }
 
 uint64_t nextPowerOf2(uint64_t x) {
@@ -107,7 +107,7 @@ uint64_t nextPowerOf2(uint64_t x) {
 	x |= (x >> 8);
 	x |= (x >> 16);
 	x |= (x >> 32);
-	return x++;
+	return x + 1;
 }
 
 ConfigurationManager::ConfigurationManager(std::string kernelName) : kernelName(kernelName) { }

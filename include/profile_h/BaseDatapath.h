@@ -461,9 +461,6 @@ public:
 		executingMapTy intOpExecuting;
 		executingMapTy callExecuting;
 
-		uint64_t rcIL;
-		std::string constrainedArrayName;
-
 		bool dummyAllocate() { return true; }
 		static bool prioritiseSmallerALAP(const std::pair<unsigned, uint64_t> &first, const std::pair<unsigned, uint64_t> &second) { return first.second < second.second; }
 
@@ -494,10 +491,6 @@ public:
 		);
 
 		uint64_t schedule();
-		uint64_t getResIIMem();
-
-		uint64_t getIL() { return rcIL; }
-		std::string getConstrainedArray() { return constrainedArrayName; }
 	};
 
 	class ColorWriter {
@@ -620,6 +613,14 @@ protected:
 	std::vector<uint64_t> rcScheduledTime;
 	// Vector with nodes on the critical path
 	std::vector<unsigned> cPathNodes;
+	// Number of reads inside an array partition
+	std::map<std::string, uint64_t> arrayPartitionToNumOfReads;
+	// Number of writes inside an array partition
+	std::map<std::string, uint64_t> arrayPartitionToNumOfWrites;
+
+	// Optimisation counters
+	uint64_t sharedLoadsRemoved;
+	uint64_t repeatedStoresRemoved;
 
 	void initBaseAddress();
 
@@ -640,6 +641,8 @@ protected:
 	void alapScheduling(std::tuple<uint64_t, uint64_t> asapResult);
 	void identifyCriticalPaths();
 	uint64_t rcScheduling();
+	std::tuple<std::string, uint64_t> calculateResIIMem();
+	uint64_t calculateRecII(uint64_t currAsapII);
 
 	void dumpGraph(bool isOptimised = false);
 

@@ -100,6 +100,9 @@ BaseDatapath::BaseDatapath(
 
 	// Reset resource counting in profile
 	profile->clear();
+
+	sharedLoadsRemoved = 0;
+	repeatedStoresRemoved = 0;
 }
 
 BaseDatapath::~BaseDatapath() {
@@ -325,6 +328,63 @@ uint64_t BaseDatapath::fpgaEstimation() {
 
 	VERBOSE_PRINT(errs() << "\tStarting resource-constrained scheduling\n");
 	uint64_t rcIL = rcScheduling();
+
+	VERBOSE_PRINT(errs() << "\tGetting memory-constrained II\n");
+	std::tuple<std::string, uint64_t> resIIMem = calculateResIIMem();
+
+	VERBOSE_PRINT(errs() << "\tGetting hardware-constrained II\n");
+	std::tuple<std::string, uint64_t> resIIOp = profile->calculateResIIOp();
+
+
+	VERBOSE_PRINT(errs() << "\tGetting recurrence-constrained II\n");
+	uint64_t recII = calculateRecII(std::get<0>(asapResult));
+
+	uint64_t resII = (std::get<1>(resIIMem) > std::get<1>(resIIOp))? std::get<1>(resIIMem) : std::get<1>(resIIOp);
+	uint64_t maxII = (resII > recII)? resII : recII;
+
+#if 0
+	// If shared loads were not removed, remove it now to inform the user the impact of this optimisations
+	if(!sharedLoadsRemoved)
+		removeSharedLoads();
+
+	// TODO: Do the same with repeated stores?
+	if(!repeatedStoresRemoved)
+		removeRepeatedStores();
+#endif
+
+	if(XilinxHardwareProfile *fpgaProfile = dynamic_cast<XilinxHardwareProfile *>(profile)) {
+		VERBOSE_PRINT(errs() << "\tDSPs: " << std::to_string(fpgaProfile->resourcesGetDSPs()) << "\n");
+		VERBOSE_PRINT(errs() << "\tFFs: " << std::to_string(fpgaProfile->resourcesGetFFs()) << "\n");
+		VERBOSE_PRINT(errs() << "\tLUTs: " << std::to_string(fpgaProfile->resourcesGetLUTs()) << "\n");
+		VERBOSE_PRINT(errs() << "\tBRAM18k: " << std::to_string(fpgaProfile->resourcesGetBRAM18k()) << "\n");
+	}
+	VERBOSE_PRINT(errs() << "\tfAdd units: " << std::to_string(profile->fAddGetAmount()) << "\n");
+	VERBOSE_PRINT(errs() << "\tfSub units: " << std::to_string(profile->fSubGetAmount()) << "\n");
+	VERBOSE_PRINT(errs() << "\tfMul units: " << std::to_string(profile->fMulGetAmount()) << "\n");
+	VERBOSE_PRINT(errs() << "\tfDiv units: " << std::to_string(profile->fDivGetAmount()) << "\n");
+	for(auto &it : profile->arrayGetNumOfPartitions())
+		VERBOSE_PRINT(errs() << "\tNumber of partitions for array \"" << it.first << "\": " << std::to_string(it.second) << "\n");
+	for(auto &it : profile->arrayGetEfficiency())
+		VERBOSE_PRINT(errs() << "\tMemory efficiency for array \"" << it.first << "\": " << std::to_string(it.second) << "\n");
+	if(XilinxHardwareProfile *fpgaProfile = dynamic_cast<XilinxHardwareProfile *>(profile)) {
+		for(auto &it : fpgaProfile->arrayGetUsedBRAM18k())
+			VERBOSE_PRINT(errs() << "\tUsed BRAM18k for array \"" << it.first << "\": " << std::to_string(it.second) << "\n");
+	}
+	VERBOSE_PRINT(errs() << "\n\tIL: " << std::to_string(rcIL) << "\n");
+	VERBOSE_PRINT(errs() << "\tII: " << std::to_string(maxII) << "\n");
+	VERBOSE_PRINT(errs() << "\tRecII: " << std::to_string(recII) << "\n");
+	VERBOSE_PRINT(errs() << "\tResII: " << std::to_string(resII) << "\n");
+	VERBOSE_PRINT(errs() << "\tResIIMem: " << std::to_string(std::get<1>(resIIMem)) << " constrained by: " << std::get<0>(resIIMem) << "\n");
+	VERBOSE_PRINT(errs() << "\tResIIOp: " << std::to_string(std::get<1>(resIIOp)) << " constrained by: " << std::get<0>(resIIOp) << "\n");
+	if(sharedLoadsRemoved)
+		VERBOSE_PRINT(errs() << "\tNumber of shared loads detected: " << std::to_string(sharedLoadsRemoved) << "\n");
+	if(repeatedStoresRemoved)
+		VERBOSE_PRINT(errs() << "\tNumber of repeated stores detected: " << std::to_string(repeatedStoresRemoved) << "\n");
+
+#if 0
+	VERBOSE_PRINT(errs() << "\n\tCalculating maximum read/write per memory banks on arrays\n");
+	calculateMaxRWPerBank();
+#endif
 }
 
 void BaseDatapath::removeInductionDependencies() {
@@ -703,6 +763,7 @@ void BaseDatapath::removeSharedLoads() {
 	std::set<Edge> edgesToRemove;
 	std::vector<edgeTy> edgesToAdd;
 	std::unordered_map<int64_t, unsigned> loadedAddresses;
+	sharedLoadsRemoved = 0;
 
 	for(unsigned nodeID = 0; nodeID < numOfTotalNodes; nodeID++) {
 		if(nameToVertex.end() == nameToVertex.find(nodeID))
@@ -729,6 +790,7 @@ void BaseDatapath::removeSharedLoads() {
 			}
 			// This is a load. Since address is already loaded, this is a shared load
 			else if(isLoadOp(microop)) {
+				sharedLoadsRemoved++;
 				microops.at(nodeID) = LLVM_IR_Move;
 				unsigned prevLoadID = found2->second;
 
@@ -761,6 +823,7 @@ void BaseDatapath::removeRepeatedStores() {
 	const std::vector<std::string> &instID = PC.getInstIDList();
 	const std::vector<std::string> &prevBB = PC.getPrevBBList();
 	std::unordered_map<int64_t, unsigned> addressStoreMap;
+	repeatedStoresRemoved = 0;
 
 	for(unsigned nodeID = numOfTotalNodes - 1; nodeID + 1; nodeID--) {
 		if(nameToVertex.end() == nameToVertex.find(nodeID))
@@ -785,8 +848,10 @@ void BaseDatapath::removeRepeatedStores() {
 			std::string storeUniqueID = constructUniqueID(dynamicMethodID.at(nodeID), instID.at(nodeID), prevBB.at(nodeID));
 
 			// If there is no ambiguity related to this store, we convert it to a silent store
-			if(dynamicMemoryOps.end() == dynamicMemoryOps.find(storeUniqueID) && !boost::out_degree(nameToVertex[nodeID], graph))
+			if(dynamicMemoryOps.end() == dynamicMemoryOps.find(storeUniqueID) && !boost::out_degree(nameToVertex[nodeID], graph)) {
 				microops.at(nodeID) = LLVM_IR_SilentStore;
+				repeatedStoresRemoved++;
+			}
 		}
 	}
 }
@@ -1024,7 +1089,6 @@ void BaseDatapath::alapScheduling(std::tuple<uint64_t, uint64_t> asapResult) {
 
 	// XXX: nodeID is incremented by 1 here, so that we can use unsigned (otherwise exit condition would be i < 0)
 	for(unsigned nodeID = numOfTotalNodes - 1; nodeID + 1; nodeID--) {
-		//unsigned nodeID = nodeIDp - 1;
 		Vertex currNode = nameToVertex[nodeID];
 
 		// Set scheduled time to maximum time from ASAP to leaf nodes
@@ -1134,11 +1198,281 @@ uint64_t BaseDatapath::rcScheduling() {
 	errs() << "\n";
 
 	RCScheduler rcSched(microops, graph, numOfTotalNodes, nameToVertex, vertexToName, *profile, baseAddress, asapScheduledTime, alapScheduledTime, rcScheduledTime);
-	rcSched.schedule();
-	rcSched.getResIIMem();
+	uint64_t rcIL = rcSched.schedule();
 
-	// TODO: XXX = rcSched.getIL();?
+	VERBOSE_PRINT(errs() << "\t\tResource-constrained scheduling finished\n");
+	return rcIL;
 }
+
+std::tuple<std::string, uint64_t> BaseDatapath::calculateResIIMem() {
+	const std::map<std::string, std::tuple<uint64_t, uint64_t, uint64_t>> &arrayConfig = profile->arrayGetConfig();
+	std::map<std::string, bool> arrayPartitionToPreviousSchedReadAssigned;
+	std::map<std::string, bool> arrayPartitionToPreviousSchedWriteAssigned;
+	std::map<std::string, uint64_t> arrayPartitionToPreviousSchedRead;
+	std::map<std::string, uint64_t> arrayPartitionToPreviousSchedWrite;
+	std::map<std::string, uint64_t> arrayPartitionToResII;
+	std::map<std::string, std::vector<uint64_t>> arrayPartitionToSchedReadDiffs;
+	std::map<std::string, std::vector<uint64_t>> arrayPartitionToSchedWriteDiffs;
+
+	arrayPartitionToNumOfReads.clear();
+	arrayPartitionToNumOfWrites.clear();
+
+	for(auto &it : arrayConfig) {
+		std::string arrayName = it.first;
+		uint64_t numOfPartitions = std::get<0>(it.second);
+
+		// Only partial partitioning
+		if(numOfPartitions > 1) {
+			for(unsigned i = 0; i < numOfPartitions; i++) {
+#ifdef LEGACY_SEPARATOR
+				std::string arrayPartitionName = arrayName + "-" + std::to_string(i);
+#else
+				std::string arrayPartitionName = arrayName + GLOBAL_SEPARATOR + std::to_string(i);
+#endif
+				arrayPartitionToPreviousSchedReadAssigned.insert(std::make_pair(arrayPartitionName, false));
+				arrayPartitionToPreviousSchedWriteAssigned.insert(std::make_pair(arrayPartitionName, false));
+				arrayPartitionToResII.insert(std::make_pair(arrayPartitionName, 0));
+			}
+		}
+		// Complete or no partitioning
+		else {
+			arrayPartitionToPreviousSchedReadAssigned.insert(std::make_pair(arrayName, false));
+			arrayPartitionToPreviousSchedWriteAssigned.insert(std::make_pair(arrayName, false));
+			arrayPartitionToResII.insert(std::make_pair(arrayName, 0));
+		}
+	}
+
+	std::map<uint64_t, std::vector<unsigned>> rcToNodes;
+	for(unsigned nodeID = 0; nodeID < numOfTotalNodes; nodeID++)
+		rcToNodes[rcScheduledTime[nodeID]].push_back(nodeID);
+
+	for(auto &it : rcToNodes) {
+		uint64_t currentSched = it.first;
+
+		for(auto &it2 : it.second) {
+			unsigned opcode = microops.at(it2);
+
+			if(!isMemoryOp(opcode))
+				continue;
+
+			// From this point only loads and stores are considered
+
+			std::string partitionName = baseAddress.at(it2).first;
+#ifdef LEGACY_SEPARATOR
+			std::string arrayName = partitionName.substr(0, partitionName.find("-"));
+#else
+			std::string arrayName = partitionName.substr(0, partitionName.find(GLOBAL_SEPARATOR));
+#endif
+
+			if(isLoadOp(opcode)) {
+				// Complete partitioning, no need to analyse
+				if(!std::get<0>(arrayConfig.at(arrayName)))
+					continue;
+
+				arrayPartitionToNumOfReads[partitionName]++;
+
+				if(!arrayPartitionToPreviousSchedReadAssigned[partitionName]) {
+					arrayPartitionToPreviousSchedRead[partitionName] = currentSched;
+					arrayPartitionToPreviousSchedReadAssigned[partitionName] = true;
+				}
+
+				uint64_t prevSchedRead = arrayPartitionToPreviousSchedRead[partitionName];
+				if(prevSchedRead != currentSched) {
+					arrayPartitionToSchedReadDiffs[partitionName].push_back(currentSched - prevSchedRead);
+					arrayPartitionToPreviousSchedRead[partitionName] = currentSched;
+				}
+			}
+
+			if(isStoreOp(opcode)) {
+				// Complete partitioning, no need to analyse
+				if(!std::get<0>(arrayConfig.at(arrayName)))
+					continue;
+
+				arrayPartitionToNumOfWrites[partitionName]++;
+
+				if(!arrayPartitionToPreviousSchedWriteAssigned[partitionName]) {
+					arrayPartitionToPreviousSchedWrite[partitionName] = currentSched;
+					arrayPartitionToPreviousSchedWriteAssigned[partitionName] = true;
+				}
+
+				uint64_t prevSchedWrite = arrayPartitionToPreviousSchedWrite[partitionName];
+				if(prevSchedWrite != currentSched) {
+					arrayPartitionToSchedWriteDiffs[partitionName].push_back(currentSched - prevSchedWrite);
+					arrayPartitionToPreviousSchedWrite[partitionName] = currentSched;
+				}
+			}
+		}
+	}
+
+	for(auto &it : arrayPartitionToResII) {
+		std::string partitionName = it.first;
+
+		// Analyse for read
+		uint64_t readII = 0;
+		std::map<std::string, uint64_t>::iterator found = arrayPartitionToNumOfReads.find(partitionName);
+		if(found != arrayPartitionToNumOfReads.end()) {
+			uint64_t numReads = found->second;
+			uint64_t numReadPorts = profile->arrayGetPartitionReadPorts(partitionName);
+
+			std::map<std::string, std::vector<uint64_t>>::iterator found2 = arrayPartitionToSchedReadDiffs.find(partitionName);
+			if(found2 != arrayPartitionToSchedReadDiffs.end()) {
+				//uint64_t minDiff = *(std::min_element(arrayPartitionToSchedReadDiffs[partitionName].begin(), arrayPartitionToSchedReadDiffs[partitionName].end()));
+				readII = std::ceil(numReads / (double) numReadPorts);
+			}
+		}
+
+		// Analyse for write
+		uint64_t writeII = 0;
+		std::map<std::string, uint64_t>::iterator found3 = arrayPartitionToNumOfWrites.find(partitionName);
+		if(found3 != arrayPartitionToNumOfWrites.end()) {
+			uint64_t numWrites = found3->second;
+			uint64_t numWritePorts = profile->arrayGetPartitionWritePorts(partitionName);
+
+			std::map<std::string, std::vector<uint64_t>>::iterator found4 = arrayPartitionToSchedWriteDiffs.find(partitionName);
+			if(found4 != arrayPartitionToSchedWriteDiffs.end()) {
+				uint64_t minDiff = *(std::min_element(arrayPartitionToSchedWriteDiffs[partitionName].begin(), arrayPartitionToSchedWriteDiffs[partitionName].end()));
+				writeII = std::ceil((numWrites * minDiff) / (double) numWritePorts);
+			}
+			else {
+				writeII = std::ceil(numWrites / (double) numWritePorts);
+			}
+		}
+
+		it.second = (readII > writeII)? readII : writeII;
+	}
+
+	std::map<std::string, uint64_t>::iterator maxIt = std::max_element(arrayPartitionToResII.begin(), arrayPartitionToResII.end());
+
+	if(maxIt->second > 1)
+		return std::make_tuple(maxIt->first, maxIt->second);
+	else
+		return std::make_tuple("none", 1);
+}
+
+uint64_t BaseDatapath::calculateRecII(uint64_t currAsapII) {
+	if(enablePipelining) {
+		int64_t sub = (int64_t) (asapII - currAsapII);
+
+		assert((sub >= 0) && "Negative value found when calculating recII");
+
+		// XXX: Only floating point operations have this behaviour? If not, should we
+		// modify here if we ever consider other operations for rcScheduling?
+
+		// When loop pipelining is enabled, the registers between floating point units
+		// are removed. To improve estimation accuracy, we must subtract from recII
+		// the amount of floating point units used during the last "recII" cycles from
+		// the critical path
+		if(sub > 1) {
+			std::map<uint64_t, std::vector<unsigned>> asapToNodes;
+			for(auto &it : cPathNodes)
+				asapToNodes[asapScheduledTime.at(it)].push_back(it);
+
+			unsigned maxLatency = 1;
+			uint64_t fOpsFound = 0;
+			for(uint64_t timeStamp = currAsapII - sub; timeStamp <= currAsapII; timeStamp += maxLatency) {
+				std::map<uint64_t, std::vector<unsigned>>::iterator found = asapToNodes.find(timeStamp);
+				while(asapToNodes.end() == found) {
+					found = asapToNodes.find(++timeStamp);
+					assert(timeStamp < currAsapII && "Did not find any critical path nodes in the timestamp window search");
+				}
+
+				maxLatency = 1;
+				bool fOpFound = false;
+
+				for(auto &it : found->second) {
+					unsigned opcode = microops.at(it);
+
+					if(!isFloatOp(opcode))
+						continue;
+
+					unsigned latency = profile->getLatency(opcode);
+					if(latency > maxLatency)
+						maxLatency = latency;
+
+					fOpFound = true;
+				}
+
+				if(fOpFound)
+					fOpsFound++;
+			}
+
+			sub -= fOpsFound;
+			assert(sub >= 0 && "recII is now negative after adjusting with fOps");
+
+			return sub + 1;
+		}
+		else {
+			return 1;
+		}
+	}
+	else {
+		return 1;
+	}
+}
+
+#if 0
+void BaseDatapath::calculateMaxRWPerBank() {
+	const std::map<std::string, std::tuple<uint64_t, uint64_t, uint64_t>> &arrayNameToConfig = profile->arrayGetConfig();
+	std::map<std::string, uint64_t> arrayPartitionToNumOfOps;
+
+	for(auto &it : arrayNameToConfig) {
+		std::string arrayName = it.first;
+
+		arrayNameToAvgLoadPerBank.insert(std::make_pair(arrayName, 0));
+		arrayNameToAvgStorePerBank.insert(std::make_pair(arrayName, 0));
+	}
+
+	for(auto &it : arrayPartitionToNumOfReads) {
+		arrayPartitionToNumOfOps.insert(it);
+
+#ifdef LEGACY_SEPARATOR
+		std::string arrayName = partitionName.substr(0, partitionName.find("-"));
+#else
+		std::string arrayName = partitionName.substr(0, partitionName.find(GLOBAL_SEPARATOR));
+#endif
+
+		std::map<std::string, float> found = arrayPartitionToAvgLoadPerBank.find(arrayName);
+		assert(found != arrayPartitionToAvgLoadPerBank.end() && "Array not found in arrayPartitionToAvgLoadPerBank");
+
+		found->second += it.second;
+	}
+
+	for(auto &it : arrayPartitionToNumOfWrites) {
+		std::map<std::string, uint64_t> found = arrayPartitionToNumOfOps.find(it);
+		if(found != arrayPartitionToNumOfOps.end()) 
+			found->second += it.second;
+		else
+			arrayPartitionToNumOfOps.insert(it);
+
+#ifdef LEGACY_SEPARATOR
+		std::string arrayName = partitionName.substr(0, partitionName.find("-"));
+#else
+		std::string arrayName = partitionName.substr(0, partitionName.find(GLOBAL_SEPARATOR));
+#endif
+
+		std::map<std::string, float> found = arrayPartitionToAvgStorePerBank.find(arrayName);
+		assert(found != arrayPartitionToAvgStorePerBank.end() && "Array not found in arrayPartitionToAvgStorePerBank");
+
+		found->second += it.second;
+	}
+
+	for(auto &it : arrayPartitionToAvgLoadPerBank) {
+		uint64_t numOfPartitions = std::get<0>(arrayNameToConfig[it.first]);
+		if(numOfPartitions)
+			it.second /= (float) numOfPartitions;
+		else
+			it.second = 0;
+	}
+
+	for(auto &it : arrayPartitionToAvgStorePerBank) {
+		uint64_t numOfPartitions = std::get<0>(arrayNameToConfig[it.first]);
+		if(numOfPartitions)
+			it.second /= (float) numOfPartitions;
+		else
+			it.second = 0;
+	}
+}
+#endif
 
 void BaseDatapath::dumpGraph(bool isOptimised) {
 	std::string graphFileName(loopName + (isOptimised? "_graph_opt.dot" : "_graph.dot"));
@@ -1252,138 +1586,7 @@ uint64_t BaseDatapath::RCScheduler::schedule() {
 		//std::cout.flush();
 	}
 
-	rcIL = (args.fExtraScalar)? cycleTick + 1 : cycleTick - 1;
-
-	return rcIL;
-}
-
-uint64_t BaseDatapath::RCScheduler::getResIIMem() {
-	const std::map<std::string, std::tuple<uint64_t, uint64_t, uint64_t>> &arrayConfig = profile.getArrayConfig();
-
-	for(auto &it : arrayConfig) {
-		std::string arrayName = it.first;
-		uint64_t numOfPartitions = std::get<0>(it.second);
-
-		// Only partial partitioning
-		if(numOfPartitions > 1) {
-			for(unsigned i = 0; i < numOfPartitions; i++) {
-#ifdef LEGACY_SEPARATOR
-				std::string arrayPartitionName = arrayName + "-" + std::to_string(i);
-#else
-				std::string arrayPartitionName = arrayName + GLOBAL_SEPARATOR + std::to_string(i);
-#endif
-				arrayPartitionToPreviousSchedReadAssigned.insert(std::make_pair(arrayPartitionName, false));
-				arrayPartitionToPreviousSchedWriteAssigned.insert(std::make_pair(arrayPartitionName, false));
-				arrayPartitionToResII.insert(std::make_pair(arrayPartitionName, 0));
-			}
-		}
-		// Complete or no partitioning
-		else {
-			arrayPartitionToPreviousSchedReadAssigned.insert(std::make_pair(arrayName, false));
-			arrayPartitionToPreviousSchedWriteAssigned.insert(std::make_pair(arrayName, false));
-			arrayPartitionToResII.insert(std::make_pair(arrayName, 0));
-		}
-	}
-
-	for(unsigned nodeID = 0; nodeID < numOfTotalNodes; nodeID++)
-		rcToNodes[rc[nodeID]].push_back(nodeID);
-
-	for(auto &it : rcToNodes) {
-		uint64_t currentSched = it.first;
-
-		for(auto &it2 : it.second) {
-			unsigned opcode = microops.at(it);
-
-			if(!isMemoryOp(opcode))
-				continue;
-
-			// From this point only loads and stores are considered
-
-			std::string partitionName = baseAddress[it].first;
-#ifdef LEGACY_SEPARATOR
-			std::string arrayName = partitionName.substr(0, partitionName.find("-"));
-#else
-			std::string arrayName = partitionName.substr(0, partitionName.find(GLOBAL_SEPARATOR));
-#endif
-
-			if(isLoadOp(opcode)) {
-				// Complete partitioning, no need to analyse
-				if(!std::get<0>(arrayConfig[arrayName]))
-					continue;
-
-				arrayPartitionToNumOfReads[partitionName]++;
-
-				if(!arrayPartitionToPreviousSchedReadAssigned[partitionName]) {
-					arrayPartitionToPreviousSchedRead[partitionName] = currentSched;
-					arrayPartitionToPreviousSchedReadAssigned[partitionName] = true;
-				}
-
-				uint64_t prevSchedRead = arrayPartitionToPreviousSchedRead[partitionName];
-				if(prevSchedRead != currentSched) {
-					arrayPartitionToSchedReadDiffs[partitionName].push_back(currentRC - prevSchedRead);
-					arrayPartitionToPreviousSchedRead[partitionName] = currentSched;
-				}
-			}
-
-			if(isStoreOp(opcode)) {
-				// Complete partitioning, no need to analyse
-				if(!std::get<0>(arrayConfig[arrayName]))
-					continue;
-
-				arrayPartitionToNumOfWrites[partitionName]++;
-
-				if(!arrayPartitionToPreviousSchedWriteAssigned[partitionName]) {
-					arrayPartitionToPreviousSchedWrite[partitionName] = currentSched;
-					arrayPartitionToPreviousSchedWriteAssigned[partitionName] = true;
-				}
-
-				uint64_t prevSchedWrite = arrayPartitionToPreviousSchedWrite[partitionName];
-				if(prevSchedWrite != currentSched) {
-					arrayPartitionToSchedWriteDiffs[partitionName].push_back(currentRC - prevSchedWrite);
-					arrayPartitionToPreviousSchedWrite[partitionName] = currentSched;
-				}
-			}
-		}
-	}
-
-	for(auto &it : arrayPartitionToResII) {
-		std::string partitionName = it.first;
-
-		// Analyse for read
-		uint64_t readII = 0;
-		std::map<std::string, uint64_t>::iterator found = arrayPartitionToNumOfReads.find(partitionName);
-		if(found != arrayPartitionToNumOfReads.end()) {
-			uint64_t numReads = found->second;
-			uint64_t numReadPorts = profile.arrayGetPartitionReadPorts(partitionName);
-
-			std::map<std::string, std::vector<uint64_t>>::iterator found2 = arrayPartitionToSchedReadDiffs.find(partitionName);
-			if(found2 != arrayPartitionToSchedReadDiffs.end()) {
-				//uint64_t minDiff = *(std::min_element(arrayPartitionToSchedReadDiffs.begin(), arrayPartitionToSchedReadDiffs.end()));
-				readII = std::ceil(numReads / (double) numReadPorts);
-			}
-		}
-
-		// Analyse for write
-		uint64_t writeII = 0;
-		std::map<std::string, uint64_t>::iterator found3 = arrayPartitionToNumOfWrites.find(partitionName);
-		if(found3 != arrayPartitionToNumOfWrites.end()) {
-			uint64_t numWrites = found3->second;
-			uint64_t numWritePorts = profile.arrayGetPartitionWritePorts(partitionName);
-
-			std::map<std::string, std::vector<uint64_t>>::iterator found4 = arrayPartitionToSchedWriteDiffs.find(partitionName);
-			if(found4 != arrayPartitionToSchedWriteDiffs.end()) {
-				uint64_t minDiff = *(std::min_element(arrayPartitionToSchedWriteDiffs.begin(), arrayPartitionToSchedWriteDiffs.end()));
-				writeII = std::ceil((numReads * minDiff) / (double) numWritePorts);
-			}
-			else {
-				writeII = std::ceil(numWrite / (double) numWritePorts);
-			}
-		}
-
-		it.second = (readII > writeII)? readII : writeII;
-	}
-
-	// TODO: parei aqui
+	return (args.fExtraScalar)? cycleTick + 1 : cycleTick - 1;
 }
 
 void BaseDatapath::RCScheduler::assignReadyStartingNodes() {
@@ -1516,7 +1719,7 @@ void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &sel
 			// If allocation is successful (i.e. there is one operation unit available), select this operation
 			if((profile.*tryAllocate)()) {
 				unsigned nodeID = ready.front().first;
-				std::cout << "~~ selected: " << std::to_string(nodeID) << "\n";
+				//std::cout << "~~ selected: " << std::to_string(nodeID) << "\n";
 				selected.push_back(nodeID);
 				ready.pop_front();
 				rc[nodeID] = cycleTick;
@@ -1540,7 +1743,7 @@ void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &sel
 			unsigned nodeID = ready.front().first;
 			// If allocation is successful (i.e. there is one operation unit available), select this operation
 			if((profile.*tryAllocateInt)(microops.at(nodeID))) {
-				std::cout << "~~ selected (intOp): " << std::to_string(nodeID) << "\n";
+				//std::cout << "~~ selected (intOp): " << std::to_string(nodeID) << "\n";
 				selected.push_back(nodeID);
 				ready.pop_front();
 				rc[nodeID] = cycleTick;
@@ -1568,7 +1771,7 @@ void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &sel
 
 			// If allocation is successful (i.e. there is one operation unit available), select this operation
 			if((profile.*tryAllocateMem)(arrayPartitionName)) {
-				std::cout << "~~ selected (memory: " << arrayPartitionName << "): " << std::to_string(nodeID) << "\n";
+				//std::cout << "~~ selected (memory: " << arrayPartitionName << "): " << std::to_string(nodeID) << "\n";
 				selected.push_back(nodeID);
 				ready.pop_front();
 				rc[nodeID] = cycleTick;

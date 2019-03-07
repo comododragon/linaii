@@ -61,6 +61,7 @@ std::tuple<std::string, unsigned> parseLoopName(std::string loopName);
 std::tuple<std::string, unsigned, unsigned> parseWholeLoopName(std::string wholeLoopName);
 
 unsigned nextPowerOf2(unsigned x);
+uint64_t nextPowerOf2(uint64_t x);
 
 // TODO: REMOVER ISSO AQUI SOB DEMANDA
 extern std::string inputFileName;

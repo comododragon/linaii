@@ -15,12 +15,13 @@ protected:
 	std::map<std::string, std::tuple<uint64_t, uint64_t, size_t>> arrayNameToConfig;
 	std::map<std::string, unsigned> arrayNameToNumOfPartitions;
 	std::map<std::string, unsigned> arrayNameToWritePortsPerPartition;
-	std::map<std::string, unsigned> arrayNameToEfficiency;
+	std::map<std::string, float> arrayNameToEfficiency;
 	std::map<std::string, unsigned> arrayPartitionToReadPorts;
 	std::map<std::string, unsigned> arrayPartitionToReadPortsInUse;
 	std::map<std::string, unsigned> arrayPartitionToWritePorts;
 	std::map<std::string, unsigned> arrayPartitionToWritePortsInUse;
 	unsigned fAddCount, fSubCount, fMulCount, fDivCount;
+	unsigned unrFAddCount, unrFSubCount, unrFMulCount, unrFDivCount;
 	unsigned fAddInUse, fSubInUse, fMulInUse, fDivInUse;
 	unsigned fAddThreshold, fSubThreshold, fMulThreshold, fDivThreshold;
 	bool isConstrained;
@@ -60,6 +61,7 @@ public:
 		const ConfigurationManager::partitionCfgMapTy &partitionCfgMap,
 		const ConfigurationManager::partitionCfgMapTy &completePartitionCfgMap
 	);
+	std::tuple<std::string, uint64_t> calculateResIIOp();
 
 	std::set<int> getConstrainedUnits() { return limitedBy; }
 
@@ -73,6 +75,8 @@ public:
 	unsigned arrayGetPartitionReadPorts(std::string partitionName);
 	unsigned arrayGetPartitionWritePorts(std::string partitionName);
 	const std::map<std::string, std::tuple<uint64_t, uint64_t, size_t>> &arrayGetConfig() { return arrayNameToConfig; }
+	const std::map<std::string, unsigned> &arrayGetNumOfPartitions() { return arrayNameToNumOfPartitions; }
+	const std::map<std::string, float> &arrayGetEfficiency() { return arrayNameToEfficiency; }
 	virtual unsigned arrayGetMaximumWritePortsPerPartition() = 0;
 	unsigned fAddGetAmount() { return fAddCount; }
 	unsigned fSubGetAmount() { return fSubCount; }
@@ -178,11 +182,13 @@ public:
 
 	void arrayAddPartition(std::string arrayName);
 	void arrayAddPartitions(std::string arrayName, unsigned amount);
-	unsigned arrayGetMaximumWritePortsPerPartition();
 	bool fAddAddUnit();
 	bool fSubAddUnit();
 	bool fMulAddUnit();
 	bool fDivAddUnit();
+
+	unsigned arrayGetMaximumWritePortsPerPartition();
+	std::map<std::string, unsigned> arrayGetUsedBRAM18k() { return arrayNameToUsedBRAM18k; }
 
 	unsigned resourcesGetDSPs() { return usedDSP; }
 	unsigned resourcesGetFFs() { return usedFF; }

@@ -51,9 +51,57 @@ void HardwareProfile::constrainHardware(
 		setThresholdWithCurrentUsage();
 	}
 
+	unrFAddCount = fAddCount;
+	unrFSubCount = fSubCount;
+	unrFMulCount = fMulCount;
+	unrFDivCount = fDivCount;
+
 	clear();
 
 	setMemoryCurrentUsage(arrayInfoCfgMap, partitionCfgMap, completePartitionCfgMap);
+}
+
+std::tuple<std::string, uint64_t> HardwareProfile::calculateResIIOp() {
+	assert(isConstrained && "This hardware profile is not resource-constrained");
+
+	uint64_t resIIOp = 0;
+	std::string resIIOpName = "none";
+
+	if(fAddCount) {
+		resIIOp = std::ceil(unrFAddCount / (float) fAddCount);
+		resIIOpName = "fadd";
+	}
+
+	if(fSubCount) {
+		uint64_t resIIOpCandidate = std::ceil(unrFSubCount / (float) fSubCount);
+		if(resIIOpCandidate > resIIOp) {
+			resIIOp = resIIOpCandidate;
+			resIIOpName = "fsub";
+		}
+	}
+
+	if(fMulCount) {
+		uint64_t resIIOpCandidate = std::ceil(unrFMulCount / (float) fMulCount);
+		if(resIIOpCandidate > resIIOp) {
+			resIIOp = resIIOpCandidate;
+			resIIOpName = "fmul";
+		}
+	}
+
+	if(fDivCount) {
+		uint64_t resIIOpCandidate = std::ceil(unrFDivCount / (float) fDivCount);
+		if(resIIOpCandidate > resIIOp) {
+			resIIOp = resIIOpCandidate;
+			resIIOpName = "fdiv";
+		}
+	}
+
+	// XXX: If more resources are to be constrained, add equivalent logic here
+
+	if(resIIOp > 1)
+		return std::make_tuple(resIIOpName, resIIOp);
+	else
+		return std::make_tuple("none", 1);
 }
 
 unsigned HardwareProfile::arrayGetNumOfPartitions(std::string arrayName) {
@@ -591,7 +639,7 @@ void XilinxHardwareProfile::setMemoryCurrentUsage(
 
 		// Partial partitioning or no partition
 		if(numOfPartitions) {
-			float sizeInBitsPerPartition = (totalSizeInBytes << 3) / (float) numOfPartitions;
+			float sizeInBitsPerPartition = (totalSizeInBytes * 8) / (float) numOfPartitions;
 			uint64_t numOfBRAM18kPerPartition = 0;
 			float efficiencyPerPartition = 1;
 
@@ -604,6 +652,7 @@ void XilinxHardwareProfile::setMemoryCurrentUsage(
 			usedBRAM18k += bram18kUsage;
 			arrayNameToUsedBRAM18k.insert(std::make_pair(arrayName, bram18kUsage));
 			arrayNameToEfficiency.insert(std::make_pair(arrayName, efficiencyPerPartition));
+			std::cout << "~~ " << std::to_string(totalSizeInBytes) << " " << std::to_string(numOfPartitions) << " " << std::to_string(sizeInBitsPerPartition) << " " << std::to_string(numOfBRAM18kPerPartition) << " " << std::to_string(efficiencyPerPartition) << "\n";
 		}
 		// Complete partition
 		else {
@@ -637,7 +686,7 @@ void XilinxHardwareProfile::setMemoryCurrentUsage(
 
 			// Partial partitioning or no partition
 			if(numOfPartitions) {
-				float sizeInBits = (totalSizeInBytes << 3);
+				float sizeInBits = (totalSizeInBytes * 8);
 				uint64_t numOfBRAM18k = nextPowerOf2((uint64_t) std::ceil(sizeInBits / (float) size18kInBits));
 				float efficiency = sizeInBits / (float) (numOfBRAM18k * size18kInBits);
 
@@ -646,6 +695,7 @@ void XilinxHardwareProfile::setMemoryCurrentUsage(
 				arrayNameToEfficiency.insert(std::make_pair(arrayName, efficiency));
 				arrayPartitionToReadPorts.insert(std::make_pair(arrayName, PER_PARTITION_PORTS_R));
 				arrayPartitionToWritePorts.insert(std::make_pair(arrayName, PER_PARTITION_PORTS_W));
+				std::cout << "~2 " << std::to_string(totalSizeInBytes) << " " << std::to_string(sizeInBits) << " " << std::to_string(numOfBRAM18k) << " " << std::to_string(efficiency) << "\n";
 			}
 			// Complete partition
 			else {

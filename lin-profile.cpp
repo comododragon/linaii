@@ -17,10 +17,6 @@
 
 using namespace llvm;
 
-/// Global map
-BBidFreqMap BBidFreq;
-BranchidFreqMap BranchIDFreq;
-
 const std::string helpMessage =
 	"Lin-analyzer: A High Level Analysis Tool for FPGA Accelerators\n"
 	"Usage: lin-analyzer [OPTION]... BYTECODEFILE KERNELNAME\n"
@@ -115,7 +111,6 @@ int main(int argc, char **argv) {
 		}
 		else {
 			const std::string &inputFilenameStr = InputFilename;
-			int len = inputFilenameStr.length();
 			// We are assuming that InputFilename ends with ".bc", a constraint detected when the arguments were collected
 			OutputFilename = std::string(inputFilenameStr.begin(), inputFilenameStr.end() - 3) + FILE_TRACE_SUFFIX;
 		}

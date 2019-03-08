@@ -7,10 +7,7 @@ add_llvm_library(BuildDDDGlib
 	DDDGBuilder.cpp
 	SlotTracker.cpp
 	TraceFunctions.cpp
-	file_func.cpp
-	Registers.cpp
 	opcodes.cpp
-	generic_func.cpp
 	
 	LINK_LIBS
 	${ZLIB_LIBRARY}

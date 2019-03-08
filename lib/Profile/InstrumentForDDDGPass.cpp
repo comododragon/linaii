@@ -10,6 +10,8 @@ loopName2levelUnrollVecMapTy loopName2levelUnrollVecMap;
 
 using namespace llvm;
 
+static ManagedStatic<ProfilingJITContext> gJITContext;
+
 void TraceLogger::initialiseDefaults(Module &M) {
 	LLVMContext &C = M.getContext();
 
@@ -501,8 +503,8 @@ bool InstrumentForDDDG::runOnModule(Module &M) {
 		VERBOSE_PRINT(errs() << "[instrumentForDDDG] Starting profiling engine\n");
 
 		/// Integrate JIT profiling engine and run the embedded profiler
-		//ProfilingEngine P(M, TL);
-		//P.runOnProfiler();
+		ProfilingEngine P(M, TL);
+		P.runOnProfiler();
 
 		/// Finished Profiling
 		VERBOSE_PRINT(errs() << "[instrumentForDDDG] Profiling finished\n");
@@ -925,119 +927,6 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 
 #ifdef DBG_PRINT_ALL
 	CM.parseToFiles();
-#endif
-
-#if 0
-	errs() << "DEBUG-INFO: [trace-analysis_loop-based-trace-analysis] Analysis loops' IL and II inside the kernel\n";
-	/// Create Dynamic Data Dependence Graph
-	std::string trace_file_name = inputPath + "dynamic_trace.gz";
-	//std::string trace_file_name = "dynamic_trace";
-	std::string kernel_name = kernel_names.at(0);
-
-	/// Open summary file
-	open_summary_file(summary, kernel_name);
-
-	/// Remove previous configuration files
-	remove_config(kernel_name, inputPath);
-
-	/// Generate configuration files
-	parse_config(kernel_name, inputPath);
-
-	// Get unrolling configuration
-	getUnrollingConfiguration(lpNameLevelPair2headBBnameMap);
-
-	loopName2levelUnrollVecMapTy::iterator it = loopName2levelUnrollVecMap.begin();
-	loopName2levelUnrollVecMapTy::iterator ie = loopName2levelUnrollVecMap.end();
-	for (; it != ie; ++it) {
-		bool enable_pipelining = false;
-		bool skip_loop_analysis = false;
-		std::string loop_name = it->first;
-
-		if (target_loops.size() != 0) {
-			skip_loop_analysis = true;
-			size_t pos_index = loop_name.find("-");
-			if (pos_index != std::string::npos) {
-				std::string loop_index = loop_name.substr(pos_index + 1);
-				std::vector<std::string>::iterator found_lp_index = std::find(target_loops.begin(), target_loops.end(), loop_index);
-				if (found_lp_index != target_loops.end()) {
-					skip_loop_analysis = false;
-				}
-			}
-
-			if (skip_loop_analysis == true) {
-				// Do not analyze this loop
-				continue;
-			}
-		}
-
-		std::vector<unsigned> levelUnrollVec = it->second;
-		unsigned level_size = levelUnrollVec.size();
-
-		unsigned target_loop_level = 1;
-		unsigned target_unroll_factor = 1;
-
-		for (int i = (int) level_size-1; i >= 0; i--) {
-			unsigned unroll_factor = levelUnrollVec.at(i);
-			std::string whole_lp_name = loop_name + "_" + std::to_string(i+1);
-			wholeloopName2loopBoundMapTy::iterator it_found = wholeloopName2loopBoundMap.find(whole_lp_name);
-			if (it_found != wholeloopName2loopBoundMap.end()) {
-				unsigned level_bound = it_found->second;
-				bool exit_flag = false;
-				if (unroll_factor != level_bound) {
-					target_loop_level = i + 1;
-					exit_flag = true;
-					//break;
-				}
-				target_unroll_factor = unroll_factor;
-
-				std::vector<std::string>::iterator found_pipe = std::find(pipeline_loop_levelVec.begin(), pipeline_loop_levelVec.end(), whole_lp_name);
-				if (found_pipe != pipeline_loop_levelVec.end()) {
-					enable_pipelining = true;
-				}
-				else {
-					enable_pipelining = false;
-				}
-
-				if (exit_flag) {
-					break;
-				}
-			}
-			else {
-				assert(false && "Error: Can not find loop name in wholeloopName2loopBoundMap!\n");
-			}
-		}
-
-		unsigned target_loop_bound;
-		std::string whole_target_name = loop_name + "_" + std::to_string(target_loop_level);
-		wholeloopName2loopBoundMapTy::iterator found_it = wholeloopName2loopBoundMap.find(whole_target_name);
-		if (found_it != wholeloopName2loopBoundMap.end()) {
-			target_loop_bound = found_it->second;
-		}
-		else {
-			assert(false && "Error: Cannot find loop name in wholeloopName2loopBoundMap!\n");
-		}
-
-		unsigned unroll_factor = 1;
-		/// Used to get recII
-		unsigned IL_asap_rec = 0;
-		if (enable_pipelining == true) {
-			DynamicDatapath* datapath_tmp;
-			unsigned target_factor = target_unroll_factor * 2;
-			unroll_factor = ((target_loop_bound < target_factor) && (target_loop_bound != 0)) ? target_loop_bound : target_factor;
-			datapath_tmp = new DynamicDatapath(kernel_name, trace_file_name, inputPath, loop_name, target_loop_level, unroll_factor , enable_pipelining, 0);
-			IL_asap_rec = datapath_tmp->getIL_asap_ii();
-			delete datapath_tmp;
-		}
-
-		errs() << "DEBUG-INFO: [trace-analysis_loop-based-trace-analysis] Building Dynamic Datapath for loop " << loop_name <<"\n";
-		unroll_factor = ((target_loop_bound < target_unroll_factor) && (target_loop_bound != 0)) ? target_loop_bound : target_unroll_factor;
-		DynamicDatapath DynDatapath(kernel_name, trace_file_name, inputPath, loop_name, target_loop_level, unroll_factor, false, IL_asap_rec);
-		VERBOSE_PRINT(errs() << "DEBUG-INFO: [trace-analysis_loop-based-trace-analysis] Finished dynamic trace analysis for loop " << loop_name << "\n");
-		VERBOSE_PRINT(errs() << "-------------------\n");
-	}
-	VERBOSE_PRINT(errs() << "DEBUG-INFO: [trace-analysis_loop-based-trace-analysis] Finished\n");
-	close_summary_file(summary);
-	errs() << "-------------------\n";
 #endif
 }
 

@@ -137,8 +137,6 @@ struct ProfilingJITSingletonContext {
 	~ProfilingJITSingletonContext();
 };
 
-static ManagedStatic<ProfilingJITContext> gJITContext;
-
 } // End of llvm namespace
 
 #endif // End of INSTRUMENT_FOR_DDDG_PASS_H

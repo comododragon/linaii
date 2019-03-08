@@ -62,7 +62,15 @@ namespace llvm {
 		bool as_empty() const;
 
 		/// This function does the actual initialization.
-		inline void initialize();
+		inline void initialize() {
+			if (TheModule) {
+				processModule();
+				TheModule = 0; ///< Prevent re-processing next time we're called.
+			}
+
+			if (TheFunction && !FunctionProcessed)
+				processFunction();
+		}
 
 		// Implementation Details
 	private:
@@ -113,7 +121,9 @@ namespace llvm {
 	};
 
 	SlotTracker *createSlotTracker(const Module *M);
+#if 0
 	static SlotTracker *createSlotTracker(const Value *V);
+#endif
 
 } // End of llvm namespace
 

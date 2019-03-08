@@ -317,7 +317,6 @@ bool ExtractLoopInfo::runOnLoop(Loop *L, LPPassManager &LPM) {
 			std::vector<BasicBlock *> BBVec = L->getBlocks();
 			BasicBlock::iterator IT, IE;
 			unsigned sizeBBVec = BBVec.size();
-			unsigned arithmeticCounter = 0;
 			for(unsigned i = 0; i < sizeBBVec; i++) {
 				BasicBlock* BBTemp = BBVec.at(i);
 				for(IT = BBTemp->begin(), IE = BBTemp->end(); IT != IE; ++IT) {

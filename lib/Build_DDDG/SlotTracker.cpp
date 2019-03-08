@@ -6,6 +6,7 @@ SlotTracker *createSlotTracker(const Module *M) {
 	return new SlotTracker(M);
 }
 
+#if 0
 static SlotTracker *createSlotTracker(const Value *V) {
 	if (const Argument *FA = dyn_cast<Argument>(V))
 		return new SlotTracker(FA->getParent());
@@ -35,6 +36,7 @@ static SlotTracker *createSlotTracker(const Value *V) {
 
 	return 0;
 }
+#endif
 
 #if 0
 #define ST_DEBUG(X) dbgs() << X
@@ -54,16 +56,6 @@ mNext(0), fNext(0), mdnNext(0), asNext(0) {
 SlotTracker::SlotTracker(const Function *F)
 : TheModule(F ? F->getParent() : 0), TheFunction(F), FunctionProcessed(false),
 mNext(0), fNext(0), mdnNext(0), asNext(0) {
-}
-
-inline void SlotTracker::initialize() {
-	if (TheModule) {
-		processModule();
-		TheModule = 0; ///< Prevent re-processing next time we're called.
-	}
-
-	if (TheFunction && !FunctionProcessed)
-		processFunction();
 }
 
 // Iterate through all the global variables, functions, and global

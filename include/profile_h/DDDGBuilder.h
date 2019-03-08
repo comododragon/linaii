@@ -12,7 +12,6 @@
 #include <zlib.h>
 
 #include "profile_h/auxiliary.h"
-//#include "profile_h/file_func.h"
 #include "profile_h/opcodes.h"
 
 typedef std::unordered_map<std::string, std::string> instName2bbNameMapTy;
@@ -51,28 +50,6 @@ struct edgeNodeInfo {
 typedef std::unordered_multimap<unsigned, edgeNodeInfo> u2eMMap;
 
 typedef std::unordered_map<int64_t, unsigned> i642uMap;
-
-#if 0
-struct edge_node_info{
-  unsigned sink_node;
-  int par_id;
-};
-
-//data structure used to tract dependency
-typedef unordered_map<std::string, unsigned int> string_to_uint;
-typedef unordered_map<long long int, unsigned int> uint_to_uint;
-typedef unordered_multimap<unsigned int, edge_node_info> multi_uint_to_node_info;
-/// (Function Name, Basic Block Name) --> number of instructions in a BB Map
-//typedef std::map<std::string, std::vector<uint64_t> > loopName2levelLpBoundVecMapTy;
-
-//extern loopName2levelLpBoundVecMapTy loopName2levelLpBoundVecMap;
-
-namespace llvm {
-	//funcBBNmPair2numInstInBBMapTy funcBBNmPair2numInstInBBMap;
-}
-
-typedef std::pair<uint64_t, uint64_t> line_from_to_Ty;
-#endif
 
 #ifdef USE_FUTURE
 class FutureCache {

@@ -915,10 +915,12 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 		DynamicDatapath DD(kernelName, CM, &summaryFile, loopName, targetLoopLevel, unrollFactor, enablePipelining, recII);
 #endif
 
-		// TODO: Retrieve results from DD and print WITHOUT VERBOSE
+		errs() << "[][][" << targetWholeLoopName << "] Estimated cycles: " << std::to_string(DD.getCycles()) << "\n";
 	}
 
+	closeSummaryFile();
 	VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Summary file closed\n");
+
 	VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Finished\n");
 
 #ifdef DBG_PRINT_ALL
@@ -1045,15 +1047,16 @@ void InstrumentForDDDG::openSummaryFile(std::string kernelName) {
 		summaryFile.close();
 	summaryFile.open(fileName);
 
-	assert(summaryFile.is_open() && "Could not open memory trace output file");
+	assert(summaryFile.is_open() && "Could not open summary output file");
 
-	summaryFile << "==========================\n";
-	summaryFile << "   Lin-analyzer summary\n";
-	summaryFile << "==========================\n";
+	summaryFile << "================================================\n";
+	summaryFile << "Lin-analyzer summary\n";
+	summaryFile << "================================================\n";
 	summaryFile << "Function name: " << kernelName << "\n";
 }
 
 void InstrumentForDDDG::closeSummaryFile() {
+	summaryFile << "================================================\n";
 	summaryFile.close();
 }
 

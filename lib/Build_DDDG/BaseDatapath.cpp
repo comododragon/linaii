@@ -385,6 +385,12 @@ uint64_t BaseDatapath::fpgaEstimation() {
 	VERBOSE_PRINT(errs() << "\n\tCalculating maximum read/write per memory banks on arrays\n");
 	calculateMaxRWPerBank();
 #endif
+
+	// TODO: I think if we want to support nested loops with instructions in between, changes would be needed here
+	uint64_t numCycles = getLoopTotalLatency(rcIL, maxII);
+	dumpSummary(numCycles, std::get<0>(asapResult), rcIL, maxII, resIIMem, resIIOp, recII);
+
+	return numCycles;
 }
 
 void BaseDatapath::removeInductionDependencies() {
@@ -1181,22 +1187,6 @@ uint64_t BaseDatapath::rcScheduling() {
 
 	profile->constrainHardware(CM.getArrayInfoCfgMap(), CM.getPartitionCfgMap(), CM.getCompletePartitionCfgMap());
 
-	// TODO: FOR DEBUG ONLY
-	// TODO: FOR DEBUG ONLY
-	// TODO: FOR DEBUG ONLY
-	// TODO: FOR DEBUG ONLY
-	std::set<int> limitedUnitTypes = profile->getConstrainedUnits();
-	errs() << ">>>>> Constrained by: ";
-	if(limitedUnitTypes.count(HardwareProfile::LIMITED_BY_FADD))
-		errs() << "fadd ";
-	if(limitedUnitTypes.count(HardwareProfile::LIMITED_BY_FSUB))
-		errs() << "fsub ";
-	if(limitedUnitTypes.count(HardwareProfile::LIMITED_BY_FMUL))
-		errs() << "fmul ";
-	if(limitedUnitTypes.count(HardwareProfile::LIMITED_BY_FDIV))
-		errs() << "fdiv ";
-	errs() << "\n";
-
 	RCScheduler rcSched(microops, graph, numOfTotalNodes, nameToVertex, vertexToName, *profile, baseAddress, asapScheduledTime, alapScheduledTime, rcScheduledTime);
 	uint64_t rcIL = rcSched.schedule();
 
@@ -1473,6 +1463,171 @@ void BaseDatapath::calculateMaxRWPerBank() {
 	}
 }
 #endif
+
+uint64_t BaseDatapath::getLoopTotalLatency(uint64_t rcIL, uint64_t maxII) {
+	//calculateMaxRWPerBank();
+	uint64_t noPipelineLatency = 0, pipelinedLatency = 0;
+
+	loopName2levelUnrollVecMapTy::iterator found = loopName2levelUnrollVecMap.find(loopName);
+	assert(found != loopName2levelUnrollVecMap.end() && "Could not find loop in loopName2levelUnrollVecMap");
+	std::string wholeLoopName = appendDepthToLoopName(loopName, loopLevel);
+	wholeloopName2loopBoundMapTy::iterator found2 = wholeloopName2loopBoundMap.find(wholeLoopName);
+	assert(found2 != wholeloopName2loopBoundMap.end() && "Could not find loop in wholeloopName2loopBoundMap");
+
+	std::vector<unsigned> targetUnroll = found->second;
+	uint64_t loopBound = found2->second;
+
+	for(unsigned i = loopLevel - 1; i + 1; i--) {
+		unsigned unrollFactor = targetUnroll.at(i);
+		std::string currentWholeLoopName = appendDepthToLoopName(loopName, i + 1);
+
+		uint64_t currentLoopBound = wholeloopName2loopBoundMap.at(currentWholeLoopName);
+		assert(currentLoopBound && "Loop bound is equal to zero");
+
+		if(loopLevel - 1 == i)
+			noPipelineLatency = rcIL * (currentLoopBound / unrollFactor) + EXTRA_ENTER_EXIT_LOOP_LATENCY;
+		// TODO: I think if we want to support nested loops with instructions in between, changes would be needed here
+		else
+			noPipelineLatency *= currentLoopBound / unrollFactor;
+
+		//if(!enablePipelining)
+		//	calculateArrayName2maxReadWrite(currentLoopBound / unrollFactor);
+
+		if(i) {
+			unsigned upperLoopUnrollFactor = targetUnroll.at(i - 1);
+
+			noPipelineLatency *= upperLoopUnrollFactor;
+
+			//if(enablePipelining)
+			//	calculateArrayName2maxReadWrite(upperLoopUnrollFactor);
+
+			// XXX: There was an if here testing extra_cost, but extra_cost was always zero at this point, so I just ignored
+		}
+	}
+
+	if(enablePipelining) {
+		unsigned unrollFactor = targetUnroll.at(loopLevel - 1);
+
+		int64_t i;
+		uint64_t currentIterations = loopBound / unrollFactor;
+		for(i = ((int) loopLevel) - 2; i >= 0; i--) {
+			std::string currentWholeLoopName = appendDepthToLoopName(loopName, i + 1);
+			uint64_t currentLoopBound = wholeloopName2loopBoundMap.at(currentWholeLoopName);
+
+			if(wholeloopName2perfectOrNotMap.at(currentWholeLoopName))
+				currentIterations *= currentLoopBound;
+			else
+				break;
+		}
+
+		uint64_t totalIterations = 1;
+		for(; i >= 0; i--) {
+			std::string currentWholeLoopName = appendDepthToLoopName(loopName, i + 1);
+			uint64_t currentLoopBound = wholeloopName2loopBoundMap.at(currentWholeLoopName);
+			totalIterations *= currentLoopBound;
+		}
+
+		pipelinedLatency = (maxII * (currentIterations - 1) + rcIL + 2) * totalIterations;
+		//calculateArrayName2maxReadWrite(currentIterations * totalIterations);
+	}
+
+	//writeLogOfArrayName2maxReadWrite();
+
+	return enablePipelining? pipelinedLatency : noPipelineLatency;
+}
+
+void BaseDatapath::dumpSummary(
+	uint64_t numCycles, uint64_t asapII, uint64_t rcIL,
+	uint64_t maxII, std::tuple<std::string, uint64_t> resIIMem, std::tuple<std::string, uint64_t> resIIOp, uint64_t recII
+) {
+	*summaryFile << "================================================\n";
+	*summaryFile << "Loop name: " << loopName << "\n";
+	*summaryFile << "Loop level: " << std::to_string(loopLevel) << "\n";
+	*summaryFile << "Loop unrolling factor: " << std::to_string(loopUnrollFactor) << "\n";
+	*summaryFile << "Loop pipelining enabled? " << (enablePipelining? "yes" : "no") << "\n";
+	*summaryFile << "Total cycles: " << std::to_string(numCycles) << "\n";
+	*summaryFile << "------------------------------------------------\n";
+
+	if(sharedLoadsRemoved)
+		*summaryFile << "Number of shared loads detected: " << std::to_string(sharedLoadsRemoved) << "\n";
+	if(repeatedStoresRemoved)
+		*summaryFile << "Number of repeated stores detected: " << std::to_string(repeatedStoresRemoved) << "\n";
+	if(sharedLoadsRemoved || repeatedStoresRemoved)
+		*summaryFile << "------------------------------------------------\n";
+
+	*summaryFile << "Ideal iteration latency (ASAP): " << std::to_string(asapII) << "\n";
+	*summaryFile << "Constrained iteration latency: " << std::to_string(rcIL) << "\n";
+	*summaryFile << "Initiation interval (if applicable): " << std::to_string(maxII) << "\n";
+	*summaryFile << "resII (mem): " << std::to_string(std::get<1>(resIIMem)) << "\n";
+	*summaryFile << "resII (op): " << std::to_string(std::get<1>(resIIOp)) << "\n";
+	*summaryFile << "recII: " << std::to_string(recII) << "\n";
+
+	*summaryFile << "Limited by ";
+	if(std::get<1>(resIIMem) > std::get<1>(resIIOp) && std::get<1>(resIIMem) > recII && std::get<1>(resIIMem) > 1)
+		*summaryFile << "memory, array name: " << std::get<0>(resIIMem) << "\n";
+	else if(std::get<1>(resIIOp) > std::get<1>(resIIMem) && std::get<1>(resIIOp) > recII && std::get<1>(resIIOp) > 1)
+		*summaryFile << "floating point operation: " << std::get<0>(resIIOp) << "\n";
+	else if(recII > std::get<1>(resIIMem) && recII > std::get<1>(resIIOp) && recII > 1)
+		*summaryFile << "loop-carried dependency\n";
+	else
+		*summaryFile << "none\n";
+	*summaryFile << "------------------------------------------------\n";
+
+	if(!(args.fNoFPUThresOpt)) {
+		*summaryFile << "Units limited by DSP usage: ";
+		bool anyFound = false;
+		for(auto &i : profile->getConstrainedUnits()) {
+			std::string unitName;
+			switch(i) {
+				case HardwareProfile::LIMITED_BY_FADD:
+					unitName = "fadd";
+					break;
+				case HardwareProfile::LIMITED_BY_FSUB:
+					unitName = "fsub";
+					break;
+				case HardwareProfile::LIMITED_BY_FMUL:
+					unitName = "fmul";
+					break;
+				case HardwareProfile::LIMITED_BY_FDIV:
+					unitName = "fdiv";
+					break;
+			}
+
+			if(!anyFound) {
+				*summaryFile << unitName;
+				anyFound = true;
+			}
+			else {
+				*summaryFile << ", " << unitName;
+			}
+		}
+
+		if(!anyFound)
+			*summaryFile << "none";
+
+		*summaryFile << "\n";
+		*summaryFile << "------------------------------------------------\n";
+	}
+
+	if(XilinxHardwareProfile *fpgaProfile = dynamic_cast<XilinxHardwareProfile *>(profile)) {
+		*summaryFile << "DSPs: " << std::to_string(fpgaProfile->resourcesGetDSPs()) << "\n";
+		*summaryFile << "FFs: " << std::to_string(fpgaProfile->resourcesGetFFs()) << "\n";
+		*summaryFile << "LUTs: " << std::to_string(fpgaProfile->resourcesGetLUTs()) << "\n";
+		*summaryFile << "BRAM18k: " << std::to_string(fpgaProfile->resourcesGetBRAM18k()) << "\n";
+	}
+	*summaryFile << "fAdd units: " << std::to_string(profile->fAddGetAmount()) << "\n";
+	*summaryFile << "fSub units: " << std::to_string(profile->fSubGetAmount()) << "\n";
+	*summaryFile << "fMul units: " << std::to_string(profile->fMulGetAmount()) << "\n";
+	*summaryFile << "fDiv units: " << std::to_string(profile->fDivGetAmount()) << "\n";
+	for(auto &it : profile->arrayGetNumOfPartitions())
+		*summaryFile << "\tNumber of partitions for array \"" << it.first << "\": " << std::to_string(it.second) << "\n";
+	for(auto &it : profile->arrayGetEfficiency())
+		*summaryFile << "\tMemory efficiency for array \"" << it.first << "\": " << std::to_string(it.second) << "\n";
+	if(XilinxHardwareProfile *fpgaProfile = dynamic_cast<XilinxHardwareProfile *>(profile)) {
+		for(auto &it : fpgaProfile->arrayGetUsedBRAM18k())
+			*summaryFile << "\tUsed BRAM18k for array \"" << it.first << "\": " << std::to_string(it.second) << "\n";
+	}
+}	
 
 void BaseDatapath::dumpGraph(bool isOptimised) {
 	std::string graphFileName(loopName + (isOptimised? "_graph_opt.dot" : "_graph.dot"));

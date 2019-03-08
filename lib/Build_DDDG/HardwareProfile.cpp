@@ -652,7 +652,6 @@ void XilinxHardwareProfile::setMemoryCurrentUsage(
 			usedBRAM18k += bram18kUsage;
 			arrayNameToUsedBRAM18k.insert(std::make_pair(arrayName, bram18kUsage));
 			arrayNameToEfficiency.insert(std::make_pair(arrayName, efficiencyPerPartition));
-			std::cout << "~~ " << std::to_string(totalSizeInBytes) << " " << std::to_string(numOfPartitions) << " " << std::to_string(sizeInBitsPerPartition) << " " << std::to_string(numOfBRAM18kPerPartition) << " " << std::to_string(efficiencyPerPartition) << "\n";
 		}
 		// Complete partition
 		else {
@@ -695,7 +694,6 @@ void XilinxHardwareProfile::setMemoryCurrentUsage(
 				arrayNameToEfficiency.insert(std::make_pair(arrayName, efficiency));
 				arrayPartitionToReadPorts.insert(std::make_pair(arrayName, PER_PARTITION_PORTS_R));
 				arrayPartitionToWritePorts.insert(std::make_pair(arrayName, PER_PARTITION_PORTS_W));
-				std::cout << "~2 " << std::to_string(totalSizeInBytes) << " " << std::to_string(sizeInBits) << " " << std::to_string(numOfBRAM18k) << " " << std::to_string(efficiency) << "\n";
 			}
 			// Complete partition
 			else {

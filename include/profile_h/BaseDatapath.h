@@ -580,6 +580,10 @@ protected:
 		EDGE_CONTROL = 200,
 		EDGE_PIPE = 201
 	};
+	// Additional costs for latency calculation
+	enum {
+		EXTRA_ENTER_EXIT_LOOP_LATENCY = 3
+	};
 
 	bool enablePipelining;
 	uint64_t asapII;
@@ -643,7 +647,12 @@ protected:
 	uint64_t rcScheduling();
 	std::tuple<std::string, uint64_t> calculateResIIMem();
 	uint64_t calculateRecII(uint64_t currAsapII);
+	uint64_t getLoopTotalLatency(uint64_t rcIL, uint64_t maxII);
 
+	void dumpSummary(
+		uint64_t numCycles, uint64_t asapII, uint64_t rcIL,
+		uint64_t maxII, std::tuple<std::string, uint64_t> resIIMem, std::tuple<std::string, uint64_t> resIIOp, uint64_t recII
+	);
 	void dumpGraph(bool isOptimised = false);
 
 #if 0

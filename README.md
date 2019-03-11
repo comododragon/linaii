@@ -1,5 +1,7 @@
 # Lin-Analyzer
 
+***This is a refactored slightly-optimised version of Lin-Analyzer. Currently it works pretty much the same way with just some differences in the command line. It is under construction for the addition of new functionalities. The rest of this README.md is the original. For information about the new command line, execute lin-analyzer -h***
+
 A high-level performance analysis tool for FPGA-based accelerator.
 
 ## Installation

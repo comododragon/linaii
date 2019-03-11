@@ -214,11 +214,9 @@ def main(kernel, part, unroll, pipe, size):
   print 'Changing directory to %s' % output_path
   os.chdir(output_path)
 	
-  #Usage:  lin-analyzer [file.bc] -Ipath=[path] -config=[filename] [kernel-name] -Opath=[path] [options]
-  os.system('lin-analyzer %s %s %s %s %s %s %s' % (input_path+'/'+kernel+'_linked_opt.bc', '-Ipath='+input_path, \
-	'-config='+config_file, kernel, '-Opath='+output_path, '-no-trace', '-verbose'))
-  #os.system('lin-analyzer %s %s %s %s %s %s' % (input_path+'/'+kernel+'_linked_opt.bc', '-Ipath='+input_path, \
-	#'-config='+config_file, kernel, '-Opath='+output_path, '-no-trace'))
+  # Usage: lin-analyzer [OPTION]... BYTECODEFILE KERNELNAME
+  os.system('lin-analyzer --mode=estimation --verbose --workdir=%s --config-file=%s --out-workdir=%s %s %s' % \
+	(input_path, config_file, output_path, (input_path+'/'+kernel+'_linked_opt.bc'), kernel))
   
   #delete *.gz files to save disk space
   os.system('rm %s' % ('*.gz'))

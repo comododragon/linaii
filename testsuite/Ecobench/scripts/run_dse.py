@@ -128,11 +128,11 @@ for kernel in benchmarks:
   
   #bitcode_file = BITCODE_HOME+'/'+kernel+'/'+kernel+'_linked_opt.bc'
   #os.system('cp %s %s' % (bitcode_file, TESTBENCH_HOME+'/'+kernel))
-  #Usage:  lin-analyzer [file.bc] -Ipath=[path] -config=[filename] [kernel-name] -Opath=[path] [options]
+  # Usage: lin-analyzer [OPTION]... BYTECODEFILE KERNELNAME
   input_bitcode = TESTBENCH_HOME+'/'+kernel+'/'+kernel+'_linked_opt.bc'
   input_path = TESTBENCH_HOME+'/'+kernel
   start_time = time.time()
-  os.system('lin-analyzer %s %s %s %s %s' % (input_bitcode, '-Ipath='+input_path, '-config=no', kernel, '-profiling-time'))
+  os.system('lin-analyzer --mode=trace --workdir=%s %s %s' % (input_path, input_bitcode, kernel))
   end_time = time.time()
   profiling_times[kernel] = end_time - start_time
   

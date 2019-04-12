@@ -40,8 +40,9 @@ const std::string helpMessage =
 	"                                           estimation: perform cycle estimation only,\n"
 	"                                                       using provided dynamic_trace.gz\n"
 	"        -t TARGET, --target=TARGET   : select TARGET FPGA platform, where TARGET may be:\n"
-	"                                           ZC702: Xilinx Zynq-7000 SoC (DEFAULT)\n"
-	"                                           VC707: Xilinx Virtex-7 FPGA\n"
+	"                                           ZC702 : Xilinx Zynq-7000 SoC (DEFAULT)\n"
+	"                                           ZCU102: Xilinx Zynq UltraScale+ SoC\n"
+	"                                           VC707 : Xilinx Virtex-7 FPGA\n"
 	"        -v       , --verbose         : be verbose, print a lot of information\n"
 	"        -x       , --compressed      : use compressed files to reduce memory footprint\n"
 #ifdef PROGRESSIVE_TRACE_CURSOR
@@ -248,7 +249,9 @@ void parseInputArguments(int argc, char **argv) {
 			case 't':
 				optargStr = optarg;
 				if(!optargStr.compare("VC707"))
-					args.mode = args.TARGET_XILINX_VC707;
+					args.target = args.TARGET_XILINX_VC707;
+				else if(!optargStr.compare("ZCU102"))
+					args.target = args.TARGET_XILINX_ZCU102;
 				break;
 			case 'v':
 				args.verbose = true;
@@ -389,9 +392,12 @@ void parseInputArguments(int argc, char **argv) {
 				break;
 		}
 		errs() << "Target: ";
-		switch(args.mode) {
+		switch(args.target) {
 			case ArgPack::TARGET_XILINX_VC707:
 				errs() << "Xilinx Virtex-7 FPGA\n";
+				break;
+			case ArgPack::TARGET_XILINX_ZCU102:
+				errs() << "Xilinx Zynq UltraScale+ SoC\n";
 				break;
 			case ArgPack::TARGET_XILINX_ZC702:
 			default:

@@ -159,8 +159,8 @@ protected:
 public:
 	void clear();
 
-	unsigned getLatency(unsigned opcode);
-	unsigned getSchedulingLatency(unsigned opcode);
+	virtual unsigned getLatency(unsigned opcode);
+	virtual unsigned getSchedulingLatency(unsigned opcode);
 	bool isPipelined(unsigned opcode);
 	void calculateRequiredResources(
 		std::vector<int> &microops,
@@ -218,6 +218,36 @@ class XilinxZC702HardwareProfile : public XilinxHardwareProfile {
 
 public:
 	void setResourceLimits();
+};
+
+class XilinxZCU102HardwareProfile : public XilinxHardwareProfile {
+	enum {
+		MAX_DSP = 2520,
+		MAX_FF = 548160,
+		MAX_LUT = 274080,
+		// XXX: This device has BRAM36k units, that can be configured to be used as 2 BRAM18k units.
+		// XXX: I'm not sure if this affects the current implementation of Lin-analyzer,
+		// XXX: but it's good to know about this fact
+		MAX_BRAM18K = 1824
+	};
+
+	enum {
+		LATENCY_LOAD = 2,
+		LATENCY_STORE = 1,
+		LATENCY_ADD = 1,
+		LATENCY_SUB = 1,
+		LATENCY_MUL32 = 6,
+		LATENCY_DIV32 = 36,
+		LATENCY_FADD32 = 4,
+		LATENCY_FSUB32 = 5,
+		LATENCY_FMUL32 = 3,
+		LATENCY_FDIV32 = 16,
+		LATENCY_FCMP = 1
+	};
+
+public:
+	void setResourceLimits();
+	unsigned getLatency(unsigned opcode);
 };
 
 #endif

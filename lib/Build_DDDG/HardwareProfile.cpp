@@ -7,6 +7,8 @@ HardwareProfile *HardwareProfile::createInstance() {
 	switch(args.target) {
 		case ArgPack::TARGET_XILINX_VC707:
 			return new XilinxVC707HardwareProfile();
+		case ArgPack::TARGET_XILINX_ZCU102:
+			return new XilinxZCU102HardwareProfile();
 		case ArgPack::TARGET_XILINX_ZC702:
 		default:
 			return new XilinxZC702HardwareProfile();
@@ -232,6 +234,7 @@ bool HardwareProfile::loadTryAllocate(std::string arrayPartitionName) {
 
 	std::map<std::string, unsigned>::iterator found = arrayPartitionToReadPorts.find(arrayPartitionName);
 	std::map<std::string, unsigned>::iterator found2 = arrayPartitionToReadPortsInUse.find(arrayPartitionName);
+	//std::cout << ">>>>>> " << arrayPartitionName << std::endl;
 	assert(found != arrayPartitionToReadPorts.end() && "Array has no storage allocated for it");
 	assert(found2 != arrayPartitionToReadPortsInUse.end() && "Array has no storage allocated for it");
 
@@ -258,6 +261,7 @@ bool HardwareProfile::storeTryAllocate(std::string arrayPartitionName) {
 
 	std::map<std::string, unsigned>::iterator found = arrayPartitionToWritePorts.find(arrayPartitionName);
 	std::map<std::string, unsigned>::iterator found2 = arrayPartitionToWritePortsInUse.find(arrayPartitionName);
+	//std::cout << ">>>>>> " << arrayPartitionName << std::endl;
 	assert(found != arrayPartitionToWritePorts.end() && "Array has no storage allocated for it");
 	assert(found2 != arrayPartitionToWritePortsInUse.end() && "Array has no storage allocated for it");
 
@@ -875,5 +879,65 @@ void XilinxZC702HardwareProfile::setResourceLimits() {
 		maxFF = MAX_FF;
 		maxLUT = MAX_LUT;
 		maxBRAM18k = MAX_BRAM18K;
+	}
+}
+
+void XilinxZCU102HardwareProfile::setResourceLimits() {
+	if(args.fNoFPUThresOpt) {
+		maxDSP = HardwareProfile::INFINITE_RESOURCES;
+		maxFF = HardwareProfile::INFINITE_RESOURCES;
+		maxLUT = HardwareProfile::INFINITE_RESOURCES;
+		maxBRAM18k = HardwareProfile::INFINITE_RESOURCES;
+	}
+	else {
+		maxDSP = MAX_DSP;
+		maxFF = MAX_FF;
+		maxLUT = MAX_LUT;
+		maxBRAM18k = MAX_BRAM18K;
+	}
+}
+
+unsigned XilinxZCU102HardwareProfile::getLatency(unsigned opcode) {
+	switch(opcode) {
+		case LLVM_IR_Shl:
+		case LLVM_IR_LShr:
+		case LLVM_IR_AShr:
+		case LLVM_IR_And:
+		case LLVM_IR_Or:
+		case LLVM_IR_Xor:
+		case LLVM_IR_ICmp:
+		case LLVM_IR_Br:
+		case LLVM_IR_IndexAdd:
+		case LLVM_IR_IndexSub:
+			return 0;
+		case LLVM_IR_Add:
+			return LATENCY_ADD;
+		case LLVM_IR_Sub: 
+			return LATENCY_SUB;
+		case LLVM_IR_Call:
+			return 0;
+		case LLVM_IR_Store:
+			return LATENCY_STORE;
+		case LLVM_IR_SilentStore:
+			return 0;
+		case LLVM_IR_Load:
+			return (args.fILL)? LATENCY_LOAD : LATENCY_LOAD - 1;
+		case LLVM_IR_Mul:
+			return LATENCY_MUL32;
+		case LLVM_IR_UDiv:
+		case LLVM_IR_SDiv:
+			return LATENCY_DIV32;
+		case LLVM_IR_FAdd:
+			return LATENCY_FADD32;
+		case LLVM_IR_FSub:
+			return LATENCY_FSUB32;
+		case LLVM_IR_FMul:
+			return LATENCY_FMUL32;
+		case LLVM_IR_FDiv:
+			return LATENCY_FDIV32;
+		case LLVM_IR_FCmp:
+			return LATENCY_FCMP;
+		default: 
+			return 0;
 	}
 }

@@ -2173,7 +2173,7 @@ template<class VE> void BaseDatapath::ColorWriter::operator()(std::ostream &out,
 			out << "[" << colorString << " label=\"{" << nodeID << " | call}\"]";
 		}
 		else {
-			out << "[" << colorString << "]";
+			out << "[" << colorString << " label=\"{" << nodeID << " | (" << op << ")}\"]";
 		}
 	}
 }

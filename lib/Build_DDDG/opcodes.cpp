@@ -99,12 +99,12 @@ bool isMulOp(unsigned microop) {
 	switch(microop) {
 		case LLVM_IR_Mul:
 		case LLVM_IR_UDiv:
-		case LLVM_IR_FMul:
+		//case LLVM_IR_FMul:
 		case LLVM_IR_SDiv:
-		case LLVM_IR_FDiv:
+		//case LLVM_IR_FDiv:
 		case LLVM_IR_URem:
 		case LLVM_IR_SRem:
-		case LLVM_IR_FRem:
+		//case LLVM_IR_FRem:
 			return true;
 		default:
 			return false;

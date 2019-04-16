@@ -236,13 +236,21 @@ void ParsedTraceContainer::appendToGetElementPtrList(int key, std::string elem, 
 	assert(!locked && "This container is locked, no modification permitted");
 	assert(!keepAliveRead && "This container is open for read, no modification permitted");
 
+	// XXX: Substitute the elem (which can be arrayidxXX) for the array name (e.g. A, B, etc)
+	// In the original code, this is performed when the getElementPtrList is requested, not
+	// when the element is inserted. However, getElementPtrList is only used at initBaseAddress(),
+	// where the array name is used instead of the arrayidxXX. Therefore, I think there is no
+	// problem to add the arrayidxXX-to-arrayName conversion here instead of in getGetElementPtr()
+	getElementPtrName2arrayNameMapTy::iterator found = getElementPtrName2arrayNameMap.find(elem);
+	std::string arrayName = (found != getElementPtrName2arrayNameMap.end())? found->second : elem;
+
 	if(compressed) {
 		if(!getElementPtrFile) {
 			getElementPtrFile = gzopen(getElementPtrFileName.c_str(), "a");
 			assert(getElementPtrFile != Z_NULL && "Could not open getelementptr file for write");
 		}
 
-		gzprintf(getElementPtrFile, "%d,%s,%ld\n", key, elem.c_str(), elem2);
+		gzprintf(getElementPtrFile, "%d,%s,%ld\n", key, arrayName.c_str(), elem2);
 
 		if(!keepAliveWrite) {
 			gzclose(getElementPtrFile);
@@ -250,7 +258,7 @@ void ParsedTraceContainer::appendToGetElementPtrList(int key, std::string elem, 
 		}
 	}
 	else {
-		getElementPtrList.insert(std::make_pair(key, std::make_pair(elem, elem2)));
+		getElementPtrList.insert(std::make_pair(key, std::make_pair(arrayName, elem2)));
 	}
 }
 

@@ -45,12 +45,13 @@ extern long int progressiveTraceCursor;
 extern uint64_t progressiveTraceInstCount;
 #endif
 
+extern const std::string functionNameMapperMDKindName;
 extern const std::string loopNumberMDKindName;
 extern const std::string assignBasicBlockIDMDKindName;
 extern const std::string assignLoadStoreIDMDKindName;
 extern const std::string extractLoopInfoMDKindName;
 
-bool isFunctionOfInterest(std::string key);
+bool isFunctionOfInterest(std::string key, bool isMangled = true);
 bool verifyModuleAndPrintErrors(llvm::Module &M);
 std::string constructLoopName(std::string funcName, unsigned loopNo, unsigned depth = ((unsigned) -1));
 std::string appendDepthToLoopName(std::string loopName, unsigned depth);
@@ -91,6 +92,9 @@ extern bbFuncNamePair2lpNameLevelPairMapTy bbFuncNamePair2lpNameLevelPairMap;
 extern bbFuncNamePair2lpNameLevelPairMapTy headerBBFuncnamePair2lpNameLevelPairMap;
 extern bbFuncNamePair2lpNameLevelPairMapTy exitBBFuncnamePair2lpNameLevelPairMap;
 extern LpName2numLevelMapTy LpName2numLevelMap;
+
+extern std::map<std::string, std::string> functionName2MangledNameMap;
+extern std::map<std::string, std::string> mangledName2FunctionNameMap;
 
 class ConfigurationManager {
 public:

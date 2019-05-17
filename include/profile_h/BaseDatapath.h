@@ -246,7 +246,7 @@ protected:
 	};
 	// Additional costs for latency calculation
 	enum {
-		EXTRA_ENTER_EXIT_LOOP_LATENCY = 3
+		EXTRA_ENTER_EXIT_LOOP_LATENCY = 2
 	};
 
 	bool enablePipelining;

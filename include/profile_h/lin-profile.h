@@ -16,6 +16,7 @@
 #include "profile_h/AssignBasicBlockIDPass.h"
 #include "profile_h/AssignLoadStoreIDPass.h"
 #include "profile_h/ExtractLoopInfoPass.h"
+#include "profile_h/FunctionNameMapperPass.h"
 #include "profile_h/InstrumentForDDDGPass.h"
 #include "profile_h/LoopNumberPass.h"
 #include "profile_h/auxiliary.h"

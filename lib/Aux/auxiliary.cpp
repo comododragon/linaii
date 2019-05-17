@@ -4,14 +4,21 @@
 
 using namespace llvm;
 
+const std::string functionNameMapperMDKindName = "lia.functionnamemapper";
 const std::string loopNumberMDKindName = "lia.kernelloopnumber";
 const std::string assignBasicBlockIDMDKindName = "lia.kernelbbid";
 const std::string assignLoadStoreIDMDKindName = "lia.loadstoreid"; 
 const std::string extractLoopInfoMDKindName = "lia.kernelloopinfo";
 
-bool isFunctionOfInterest(std::string key) {
+bool isFunctionOfInterest(std::string key, bool isMangled) {
 	std::vector<std::string>::iterator it;
-	it = std::find(args.kernelNames.begin(), args.kernelNames.end(), key);
+	if(isMangled) {
+		std::map<std::string, std::string>::iterator found = mangledName2FunctionNameMap.find(key);
+		it = std::find(args.kernelNames.begin(), args.kernelNames.end(), (mangledName2FunctionNameMap.end() == found)? key : found->second);
+	}
+	else {
+		it = std::find(args.kernelNames.begin(), args.kernelNames.end(), key);
+	}
 	return (it != args.kernelNames.end());
 }
 
@@ -115,7 +122,8 @@ ConfigurationManager::ConfigurationManager(std::string kernelName) : kernelName(
 void ConfigurationManager::appendToPipeliningCfg(std::string funcName, unsigned loopNo, unsigned loopLevel) {
 	pipeliningCfgTy elem;
 
-	elem.funcName = funcName;
+	std::map<std::string, std::string>::iterator found = functionName2MangledNameMap.find(funcName);
+	elem.funcName = (functionName2MangledNameMap.end() == found)? funcName : found->second;
 	elem.loopNo = loopNo;
 	elem.loopLevel = loopLevel;
 
@@ -125,7 +133,8 @@ void ConfigurationManager::appendToPipeliningCfg(std::string funcName, unsigned 
 void ConfigurationManager::appendToUnrollingCfg(std::string funcName, unsigned loopNo, unsigned loopLevel, int lineNo, uint64_t unrollFactor) {
 	unrollingCfgTy elem;
 
-	elem.funcName = funcName;
+	std::map<std::string, std::string>::iterator found = functionName2MangledNameMap.find(funcName);
+	elem.funcName = (functionName2MangledNameMap.end() == found)? funcName : found->second;
 	elem.loopNo = loopNo;
 	elem.loopLevel = loopLevel;
 	elem.lineNo = lineNo;

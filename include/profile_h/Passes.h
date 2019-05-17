@@ -47,6 +47,10 @@ void initializeAnalysisProfilingPass(PassRegistry &Registry);
 ModulePass* createInstrumentForDDDGPass();
 void initializeInstrumentForDDDGPass(PassRegistry &Registry);
 
+/// FunctionNameMapper Pass
+Pass* createFunctionNameMapperPass();
+void initializeFunctionNameMapperPass(PassRegistry &Registry);
+
 // Calculate number of arithmatic operations for loops inside functions except for the "main" function
 // The map used to trace binary operators: (functionName, loopName) -> std::vector<BB id> > fnlpNamePair2BinaryOpBBidMap.
 // After we get the basic block frequency, we can get the total number of binary operations executed by

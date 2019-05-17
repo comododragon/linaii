@@ -127,6 +127,8 @@ int main(int argc, char **argv) {
 	}
 
 	PassManager Passes;
+	// Identifying the mangled-demangled function names
+	Passes.add(createFunctionNameMapperPass());
 	// Counting number of top-level loops in each function of interest (and store in the form of metadata)
 	Passes.add(createLoopNumberPass());
 	// Assigning IDs to BBs, acquiring array names

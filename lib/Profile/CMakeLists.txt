@@ -4,6 +4,7 @@ add_llvm_library(LLVMLinProfiler
 	AssignBasicBlockID.cpp
 	AssignLoadStoreID.cpp
 	ExtractLoopInfoPass.cpp
+	FunctionNameMapperPass.cpp
 	)
 
 target_link_libraries(LLVMLinProfiler

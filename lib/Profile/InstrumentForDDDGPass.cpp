@@ -818,7 +818,8 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 	VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Loop-based trace analysis started\n");
 
 	std::string traceFileName = args.workDir + FILE_DYNAMIC_TRACE;
-	std::string kernelName = args.kernelNames.at(0);
+	std::map<std::string, std::string>::iterator found = functionName2MangledNameMap.find(args.kernelNames.at(0));
+	std::string kernelName = (functionName2MangledNameMap.end() == found)? args.kernelNames.at(0) : found->second;
 
 	VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Writing header of summary file\n");
 	openSummaryFile(kernelName); 

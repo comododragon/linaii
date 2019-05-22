@@ -1487,8 +1487,12 @@ uint64_t BaseDatapath::getLoopTotalLatency(uint64_t rcIL, uint64_t maxII) {
 		if(loopLevel - 1 == i)
 			noPipelineLatency = rcIL * (currentLoopBound / unrollFactor) + EXTRA_ENTER_EXIT_LOOP_LATENCY;
 		// TODO: I think if we want to support nested loops with instructions in between, changes would be needed here
-		else
-			noPipelineLatency *= currentLoopBound / unrollFactor;
+		else if(1 == i) {
+			noPipelineLatency = noPipelineLatency * (currentLoopBound / unrollFactor) + EXTRA_ENTER_EXIT_LOOP_LATENCY;
+		}
+		else {
+			noPipelineLatency = noPipelineLatency * (currentLoopBound / unrollFactor);
+		}
 
 		//if(!enablePipelining)
 		//	calculateArrayName2maxReadWrite(currentLoopBound / unrollFactor);
@@ -1741,7 +1745,10 @@ uint64_t BaseDatapath::RCScheduler::schedule() {
 		//std::cout.flush();
 	}
 
-	return (args.fExtraScalar)? cycleTick + 1 : cycleTick - 1;
+	// XXX: I could not clearly get why (i - 1) and (i + 1) but not (i) and (i + 1)
+	//return (args.fExtraScalar)? cycleTick + 1 : cycleTick - 1;
+	// XXX: Changing to see if it improves accuracy
+	return (args.fExtraScalar)? cycleTick + 1 : cycleTick;
 }
 
 void BaseDatapath::RCScheduler::assignReadyStartingNodes() {

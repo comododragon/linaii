@@ -24,57 +24,60 @@ const std::string helpMessage =
 	"    BYTECODEFILE is the optimised .bc file generated with the LLVM toolchain\n"
 	"    KERNELNAME is the kernel name (i.e. function name) to be analysed\n"
 	"    OPTION may be:\n"
-	"        -h       , --help            : this message\n"
-	"        -i PATH  , --workdir=PATH    : input working directory where trace should happen\n"
-	"                                       (e.g. containing files used by the application).\n"
-	"                                       Default is $CWD\n"
-	"        -o PATH  , --out-workdir=PATH: output working directory where temporary files\n"
-	"                                       will be written. Default is $CWD\n"
-	"        -c FILE  , --config-file=FILE: use FILE as the configuration file for this\n"
-	"                                       application. Default is workdir/config.cfg\n"
-	"        -m MODE  , --mode=MODE       : set execution mode to MODE, where MODE may be:\n"
-	"                                           all       : perform dynamic trace and cycle\n"
-	"                                                       estimation (DEFAULT)\n"
-	"                                           trace     : perform dynamic trace only,\n"
-	"                                                       generating dynamic_trace.gz\n"
-	"                                           estimation: perform cycle estimation only,\n"
-	"                                                       using provided dynamic_trace.gz\n"
-	"        -t TARGET, --target=TARGET   : select TARGET FPGA platform, where TARGET may be:\n"
-	"                                           ZC702 : Xilinx Zynq-7000 SoC (DEFAULT)\n"
-	"                                           ZCU102: Xilinx Zynq UltraScale+ SoC\n"
-	"                                           VC707 : Xilinx Virtex-7 FPGA\n"
-	"        -v       , --verbose         : be verbose, print a lot of information\n"
-	"        -x       , --compressed      : use compressed files to reduce memory footprint\n"
+	"        -h       , --help             : this message\n"
+	"        -i PATH  , --workdir=PATH     : input working directory where trace should happen\n"
+	"                                        (e.g. containing files used by the application).\n"
+	"                                        Default is $CWD\n"
+	"        -o PATH  , --out-workdir=PATH : output working directory where temporary files\n"
+	"                                        will be written. Default is $CWD\n"
+	"        -c FILE  , --config-file=FILE : use FILE as the configuration file for this\n"
+	"                                        application. Default is workdir/config.cfg\n"
+	"        -m MODE  , --mode=MODE        : set execution mode to MODE, where MODE may be:\n"
+	"                                            all       : perform dynamic trace and cycle\n"
+	"                                                        estimation (DEFAULT)\n"
+	"                                            trace     : perform dynamic trace only,\n"
+	"                                                        generating dynamic_trace.gz\n"
+	"                                            estimation: perform cycle estimation only,\n"
+	"                                                        using provided dynamic_trace.gz\n"
+	"        -t TARGET, --target=TARGET    : select TARGET FPGA platform, where TARGET may be:\n"
+	"                                            ZC702 : Xilinx Zynq-7000 SoC (DEFAULT)\n"
+	"                                            ZCU102: Xilinx Zynq UltraScale+ SoC\n"
+	"                                            VC707 : Xilinx Virtex-7 FPGA\n"
+	"        -v       , --verbose          : be verbose, print a lot of information\n"
+	"        -x       , --compressed       : use compressed files to reduce memory footprint\n"
 #ifdef PROGRESSIVE_TRACE_CURSOR
-	"        -p       , --progressive     : use progressive trace cursor when trace is\n"
-	"                                       analysed, reducing estimation time when several\n"
-	"                                       top loops are analysed. Loops defined with\n"
-	"                                       -l|--loops flag must be in crescent order\n"
+	"        -p       , --progressive      : use progressive trace cursor when trace is\n"
+	"                                        analysed, reducing estimation time when several\n"
+	"                                        top loops are analysed. Loops defined with\n"
+	"                                        -l|--loops flag must be in crescent order\n"
 #endif
-	"        -l LOOPS , --loops=LOOPS     : specify loops to be analysed comma-separated (e.g.\n"
-	"                                       --loops=2,3 only analyse loops 2 and 3)\n"
-	"                   --mem-trace       : obtain memory trace for access pattern analysis.\n"
-	"                                       Ignored if -m estimation | --mode=estimation is\n"
-	"                                       set.\n"
-	"                                       Can only be used with -m trace | --mode=trace\n"
-	"                   --show-cfg        : show CFG with basic blocks\n"
-	"                   --show-detail-cfg : show detailed CFG with instructions\n"
-	"                   --show-pre-dddg   : show DDDG before optimisation\n"
-	"                   --show-post-dddg  : show DDDG after optimisation\n"
-	"                   --fno-sb          : disable store-buffer optimisation\n"
-	"                   --f-slr           : enable shared-load-removal optimisation\n"
-	"                   --fno-slr         : disable shared-load-removal optimisation. If\n"
-	"                                       either --f-slr and --fno-slr are omitted, the\n"
-	"                                       decision will be left to the estimator\n"
-	"                   --fno-rsr         : disable repeated-store-removal optimisation\n"
-	"                   --f-thr-float     : enable tree-height-reduction for floating point\n"
-	"                                       operations\n"
-	"                   --f-thr-int       : enable tree-height-reduction for integer\n"
-	"                                       operations\n"
-	"                   --f-md            : enable memory-disambiguation optimisation\n"
-	"                   --fno-ft          : disable FPU threshold optimisation\n"
-	"                   --f-es            : enable extra-scalar\n"
-	"                   --f-rwrwm         : enable RWRW memory\n"
+	"        -f FREQ  , --frequency=FREQ   : specify the target clock (in MHz)\n"
+	"        -u UNCTY , --uncertainty=UNCTY: specify the clock uncertainty (in %)\n"
+	"        -l LOOPS , --loops=LOOPS      : specify loops to be analysed comma-separated (e.g.\n"
+	"                                        --loops=2,3 only analyse loops 2 and 3)\n"
+	"                   --mem-trace        : obtain memory trace for access pattern analysis.\n"
+	"                                        Ignored if -m estimation | --mode=estimation is\n"
+	"                                        set.\n"
+	"                                        Can only be used with -m trace | --mode=trace\n"
+	"                   --show-cfg         : show CFG with basic blocks\n"
+	"                   --show-detail-cfg  : show detailed CFG with instructions\n"
+	"                   --show-pre-dddg    : show DDDG before optimisation\n"
+	"                   --show-post-dddg   : show DDDG after optimisation\n"
+	"                   --fno-tcs          : disable timing-constrained scheduling\n"
+	"                   --fno-sb           : disable store-buffer optimisation\n"
+	"                   --f-slr            : enable shared-load-removal optimisation\n"
+	"                   --fno-slr          : disable shared-load-removal optimisation. If\n"
+	"                                        either --f-slr and --fno-slr are omitted, the\n"
+	"                                        decision will be left to the estimator\n"
+	"                   --fno-rsr          : disable repeated-store-removal optimisation\n"
+	"                   --f-thr-float      : enable tree-height-reduction for floating point\n"
+	"                                        operations\n"
+	"                   --f-thr-int        : enable tree-height-reduction for integer\n"
+	"                                        operations\n"
+	"                   --f-md             : enable memory-disambiguation optimisation\n"
+	"                   --fno-ft           : disable FPU threshold optimisation\n"
+	"                   --f-es             : enable extra-scalar\n"
+	"                   --f-rwrwm          : enable RWRW memory\n"
 	"Report bugs to abperina<abperina@usp.br>\n"
 	"or guanwen<guanwen@comp.nus.edu.sg>\n";
 
@@ -167,12 +170,15 @@ void parseInputArguments(int argc, char **argv) {
 #ifdef PROGRESSIVE_TRACE_CURSOR
 	args.progressive = false;
 #endif
+	args.frequency = 100.0;
+	args.uncertainty = 27;
 	args.verbose = false;
 	args.memTrace = false;
 	args.showCFG = false;
 	args.showCFGDetailed = false;
 	args.showPreOptDDDG = false;
 	args.showPostOptDDDG = false;
+	args.fNoTCS = false;
 	args.fSBOpt = true;
 	args.fSLROpt = false;
 	args.fNoSLROpt = false;
@@ -199,30 +205,33 @@ void parseInputArguments(int argc, char **argv) {
 #ifdef PROGRESSIVE_TRACE_CURSOR
 			{"progressive", no_argument, 0, 'p'},
 #endif
+			{"frequency", required_argument, 0, 'f'},
+			{"uncertainty", required_argument, 0, 'u'},
 			{"loops", required_argument, 0, 'l'},
 			{"mem-trace", no_argument, 0, 0xF00},
 			{"show-cfg", no_argument, 0, 0xF01},
 			{"show-detail-cfg", no_argument, 0, 0xF02},
 			{"show-pre-dddg", no_argument, 0, 0xF03},
 			{"show-post-dddg", no_argument, 0, 0xF04},
-			{"fno-sb", no_argument, 0, 0xF05},
-			{"f-slr", no_argument, 0, 0xF06},
-			{"fno-slr", no_argument, 0, 0xF07},
-			{"fno-rsr", no_argument, 0, 0xF08},
-			{"f-thr-float", no_argument, 0, 0xF09},
-			{"f-thr-int", no_argument, 0, 0xF0A},
-			{"f-md", no_argument, 0, 0xF0B},
-			{"fno-ft", no_argument, 0, 0xF0C},
-			{"f-es", no_argument, 0, 0xF0D},
-			{"f-rwrwm", no_argument, 0, 0xF0E},
+			{"fno-tcs", no_argument, 0, 0xF05},
+			{"fno-sb", no_argument, 0, 0xF06},
+			{"f-slr", no_argument, 0, 0xF07},
+			{"fno-slr", no_argument, 0, 0xF08},
+			{"fno-rsr", no_argument, 0, 0xF09},
+			{"f-thr-float", no_argument, 0, 0xF0A},
+			{"f-thr-int", no_argument, 0, 0xF0B},
+			{"f-md", no_argument, 0, 0xF0C},
+			{"fno-ft", no_argument, 0, 0xF0D},
+			{"f-es", no_argument, 0, 0xF0E},
+			{"f-rwrwm", no_argument, 0, 0xF0F},
 			{0, 0, 0, 0}
 		};
 		int optionIndex = 0;
 
 #ifdef PROGRESSIVE_TRACE_CURSOR
-		c = getopt_long(argc, argv, "+hi:o:c:m:t:vxpl:", longOptions, &optionIndex);
+		c = getopt_long(argc, argv, "+hi:o:c:m:t:vxpf:u:l:", longOptions, &optionIndex);
 #else
-		c = getopt_long(argc, argv, "+hi:o:c:m:t:vxl:", longOptions, &optionIndex);
+		c = getopt_long(argc, argv, "+hi:o:c:m:t:vxf:u:l:", longOptions, &optionIndex);
 #endif
 		if(-1 == c)
 			break;
@@ -266,6 +275,12 @@ void parseInputArguments(int argc, char **argv) {
 				args.progressive = true;
 				break;
 #endif
+			case 'f':
+				args.frequency = std::stof(optarg);
+				break;
+			case 'u':
+				args.uncertainty = std::stof(optarg);
+				break;
 			case 'l':
 				optargStr = optarg;
 				commaPos = optargStr.find(",");
@@ -300,33 +315,36 @@ void parseInputArguments(int argc, char **argv) {
 				args.showPostOptDDDG = true;
 				break;
 			case 0xF05:
-				args.fSBOpt = false;
+				args.fNoTCS = true;
 				break;
 			case 0xF06:
-				args.fSLROpt = true;
+				args.fSBOpt = false;
 				break;
 			case 0xF07:
-				args.fNoSLROpt = true;
+				args.fSLROpt = true;
 				break;
 			case 0xF08:
-				args.fRSROpt = false;
+				args.fNoSLROpt = true;
 				break;
 			case 0xF09:
-				args.fTHRFloatOpt = true;
+				args.fRSROpt = false;
 				break;
 			case 0xF0A:
-				args.fTHRIntOpt = true;
+				args.fTHRFloatOpt = true;
 				break;
 			case 0xF0B:
-				args.fMemDisambuigOpt = true;
+				args.fTHRIntOpt = true;
 				break;
 			case 0xF0C:
-				args.fNoFPUThresOpt = true;
+				args.fMemDisambuigOpt = true;
 				break;
 			case 0xF0D:
-				args.fExtraScalar = true;
+				args.fNoFPUThresOpt = true;
 				break;
 			case 0xF0E:
+				args.fExtraScalar = true;
+				break;
+			case 0xF0F:
 				args.fRWRWMem = true;
 				break;
 		}
@@ -375,6 +393,19 @@ void parseInputArguments(int argc, char **argv) {
 	}
 #endif
 
+	if(args.uncertainty < 0.0 || args.uncertainty > 100.0) {
+		errs() << "Uncertainty must be between 0.0 and 100.0 %\n";
+		exit(-1);
+	}
+	if(args.frequency < 0.0) {
+		errs() << "Target frequency must be positive\n";
+		exit(-1);
+	}
+	if(args.frequency > 500.0) {
+		errs() << "Lin-analyzer does not support estimation with target frequency above 500 Mhz\n";
+		exit(-1);
+	}
+
 	VERBOSE_PRINT(
 		errs() << "Input bitcode file: " << InputFilename << "\n";
 		errs() << "Kernel name: " << args.kernelNames[0] << "\n";
@@ -406,6 +437,10 @@ void parseInputArguments(int argc, char **argv) {
 				errs() << "Xilinx Zynq-7000 SoC\n";
 				break;
 		}
+		errs() << "Target clock: " << std::to_string(args.frequency) << ((args.fNoTCS)? " MHz (disabled)\n" : " MHz\n");
+		errs() << "Clock uncertainty: " << std::to_string(args.uncertainty) << ((args.fNoTCS)? " % (disabled)\n" : " %\n");
+		errs() << "Target clock period: " << std::to_string(1000 / args.frequency) << ((args.fNoTCS)? " ns (disabled)\n" : " ns\n");
+		errs() << "Effective clock period: " << std::to_string((1000 / args.frequency) - (10 * args.uncertainty / args.frequency)) << ((args.fNoTCS)? " ns (disabled)\n" : " ns\n");
 		errs() << "Target loops: " << args.targetLoops[0];
 		for(unsigned int i = 1; i < args.targetLoops.size(); i++)
 			errs() << ", " << args.targetLoops[i];

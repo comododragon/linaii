@@ -1545,6 +1545,12 @@ void BaseDatapath::dumpSummary(
 	uint64_t maxII, std::tuple<std::string, uint64_t> resIIMem, std::tuple<std::string, uint64_t> resIIOp, uint64_t recII
 ) {
 	*summaryFile << "================================================\n";
+	if(args.fNoTCS)
+		*summaryFile << "Time-constrained scheduling disabled\n";
+	*summaryFile << "Target clock: " << std::to_string(args.frequency) << " MHz\n";
+	*summaryFile << "Clock uncertainty: " << std::to_string(args.uncertainty) << " %\n";
+	*summaryFile << "Target clock period: " << std::to_string(1000 / args.frequency) << " ns\n";
+	*summaryFile << "Effective clock period: " << std::to_string((1000 / args.frequency) - (10 * args.uncertainty / args.frequency)) << " ns\n";
 	*summaryFile << "Loop name: " << loopName << "\n";
 	*summaryFile << "Loop level: " << std::to_string(loopLevel) << "\n";
 	*summaryFile << "Loop unrolling factor: " << std::to_string(loopUnrollFactor) << "\n";

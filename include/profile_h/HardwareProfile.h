@@ -231,21 +231,45 @@ class XilinxZCU102HardwareProfile : public XilinxHardwareProfile {
 		MAX_BRAM18K = 1824
 	};
 
+
 	enum {
-		LATENCY_LOAD = 2,
-		LATENCY_STORE = 1,
-		LATENCY_ADD = 1,
-		LATENCY_SUB = 1,
-		LATENCY_MUL32 = 1,
-		LATENCY_DIV32 = 36,
-		LATENCY_FADD32 = 4,
-		LATENCY_FSUB32 = 4,
-		LATENCY_FMUL32 = 3,
-		LATENCY_FDIV32 = 9,
-		LATENCY_FCMP = 1
+		LATENCY_LOAD,
+		LATENCY_STORE,
+		LATENCY_ADD,
+		LATENCY_SUB,
+		LATENCY_MUL32,
+		LATENCY_DIV32,
+		LATENCY_FADD32,
+		LATENCY_FSUB32,
+		LATENCY_FMUL32,
+		LATENCY_FDIV32,
+		LATENCY_FCMP
 	};
 
+	/* We are assuming here that effective frequency will never be above 500 MHz, thus the cases where timing latencies are below 2 ns are excluded */
+	/* This map format: {key (the operation being considered), {key (latency for completion), in-cycle latency in ns}} */
+	const std::unordered_map<unsigned, std::map<unsigned, double>> timeConstrainedLatencies = {
+		{LATENCY_LOAD, {{1, 1.23}}},
+		{LATENCY_STORE, {{1, 1.23}}},
+		{LATENCY_ADD, {{1, 1.01}}},
+		{LATENCY_SUB, {{1, 1.01}}},
+		{LATENCY_MUL32, {{1, 3.42}, {2, 2.36}, {3, 2.11}}},
+		{LATENCY_DIV32, {{36, 1.47}}},
+		{LATENCY_FADD32, {{1, 15.80}, {2, 12.60}, {3, 10.50}, {4, 6.43}, {5, 5.02}, {6, 4.82}, {7, 4.08}, {8, 3.45}, {10, 2.46}, {11, 2.26}}},
+		{LATENCY_FSUB32, {{1, 15.80}, {2, 12.60}, {3, 10.50}, {4, 6.43}, {5, 5.02}, {6, 4.82}, {7, 4.08}, {8, 3.45}, {10, 2.46}, {11, 2.26}}},
+		{LATENCY_FMUL32, {{1, 10.50}, {2, 8.41}, {3, 7.01}, {4, 3.79}, {5, 3.17}, {6, 2.56}, {7, 2.41}}},
+		{LATENCY_FDIV32, {
+			{1, 54.60}, {2, 43.70}, {3, 36.40}, {4, 33.90}, {5, 17.60}, {6, 12.00}, {7, 9.66}, {8, 8.27}, {9, 7.05}, {10, 5.69}, {12, 4.36},
+			{15, 4.34}, {16, 3.03}, {28, 3.01}, {29, 2.91}, {30, 2.23}
+		}},
+		{LATENCY_FCMP, {{1, 3.47}, {2, 2.78}, {3, 2.31}}}
+	};
+
+	double effectivePeriod;
+	std::unordered_map<unsigned, std::pair<unsigned, double>> effectiveLatencies;
+
 public:
+	XilinxZCU102HardwareProfile();
 	void setResourceLimits();
 	unsigned getLatency(unsigned opcode);
 };

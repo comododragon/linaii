@@ -6,11 +6,13 @@ HardwareProfile *HardwareProfile::createInstance() {
 	// XXX: Right now only Xilinx boards are supported, therefore this is the only constructor available for now
 	switch(args.target) {
 		case ArgPack::TARGET_XILINX_VC707:
+			assert(args.fNoTCS && "Time-constrained scheduling is currently not supported with the selected platform. Please activate the \"--fno-tcs\" flag");
 			return new XilinxVC707HardwareProfile();
 		case ArgPack::TARGET_XILINX_ZCU102:
 			return new XilinxZCU102HardwareProfile();
 		case ArgPack::TARGET_XILINX_ZC702:
 		default:
+			assert(args.fNoTCS && "Time-constrained scheduling is currently not supported with the selected platform. Please activate the \"--fno-tcs\" flag");
 			return new XilinxZC702HardwareProfile();
 	}
 }
@@ -371,6 +373,7 @@ void HardwareProfile::intOpRelease(unsigned opcode) {
 void HardwareProfile::callRelease() {
 	assert(false && "Calls are not constrained");
 }
+
 void XilinxHardwareProfile::clear() {
 	HardwareProfile::clear();
 
@@ -882,6 +885,27 @@ void XilinxZC702HardwareProfile::setResourceLimits() {
 	}
 }
 
+XilinxZCU102HardwareProfile::XilinxZCU102HardwareProfile() {
+	effectivePeriod = (1000 / args.frequency) - (10 * args.uncertainty / args.frequency);
+
+	/* Even if time-constrained scheduling is disabled, we still need to define the latencies of each instruction according to effective clock */
+	for(auto &it : timeConstrainedLatencies) {
+		unsigned currLatency;
+		double currInCycleLatency;
+		for(auto &it2 : it.second) {
+			currLatency = it2.first;
+			currInCycleLatency = it2.second;
+
+			/* Found FU configuration that fits inside the target effective clock */
+			if(it2.second <= effectivePeriod)
+				break;
+		}
+
+		/* Save selected latency for this instruction */
+		effectiveLatencies.insert(std::make_pair(it.first, std::make_pair(currLatency, currInCycleLatency)));
+	}
+}
+
 void XilinxZCU102HardwareProfile::setResourceLimits() {
 	if(args.fNoFPUThresOpt) {
 		maxDSP = HardwareProfile::INFINITE_RESOURCES;
@@ -911,32 +935,32 @@ unsigned XilinxZCU102HardwareProfile::getLatency(unsigned opcode) {
 		case LLVM_IR_IndexSub:
 			return 0;
 		case LLVM_IR_Add:
-			return LATENCY_ADD;
+			return effectiveLatencies[LATENCY_ADD].first;
 		case LLVM_IR_Sub: 
-			return LATENCY_SUB;
+			return effectiveLatencies[LATENCY_SUB].first;
 		case LLVM_IR_Call:
 			return 0;
 		case LLVM_IR_Store:
-			return LATENCY_STORE;
+			return effectiveLatencies[LATENCY_STORE].first;
 		case LLVM_IR_SilentStore:
 			return 0;
 		case LLVM_IR_Load:
-			return (args.fILL)? LATENCY_LOAD : LATENCY_LOAD - 1;
+			return (args.fILL)? effectiveLatencies[LATENCY_LOAD].first : effectiveLatencies[LATENCY_LOAD].first - 1;
 		case LLVM_IR_Mul:
-			return LATENCY_MUL32;
+			return effectiveLatencies[LATENCY_MUL32].first;
 		case LLVM_IR_UDiv:
 		case LLVM_IR_SDiv:
-			return LATENCY_DIV32;
+			return effectiveLatencies[LATENCY_DIV32].first;
 		case LLVM_IR_FAdd:
-			return LATENCY_FADD32;
+			return effectiveLatencies[LATENCY_FADD32].first;
 		case LLVM_IR_FSub:
-			return LATENCY_FSUB32;
+			return effectiveLatencies[LATENCY_FSUB32].first;
 		case LLVM_IR_FMul:
-			return LATENCY_FMUL32;
+			return effectiveLatencies[LATENCY_FMUL32].first;
 		case LLVM_IR_FDiv:
-			return LATENCY_FDIV32;
+			return effectiveLatencies[LATENCY_FDIV32].first;
 		case LLVM_IR_FCmp:
-			return LATENCY_FCMP;
+			return effectiveLatencies[LATENCY_FCMP].first;
 		default: 
 			return 0;
 	}

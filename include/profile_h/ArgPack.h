@@ -27,11 +27,14 @@ typedef struct {
 #ifdef PROGRESSIVE_TRACE_CURSOR
 	bool progressive;
 #endif
+	double frequency;
+	double uncertainty;
 	bool memTrace;
 	bool showCFG;
 	bool showCFGDetailed;
 	bool showPreOptDDDG;
 	bool showPostOptDDDG;
+	bool fNoTCS;
 	bool fSBOpt;
 	bool fSLROpt;
 	bool fNoSLROpt;

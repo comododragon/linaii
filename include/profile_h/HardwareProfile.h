@@ -42,6 +42,7 @@ public:
 
 	virtual unsigned getLatency(unsigned opcode) = 0;
 	virtual unsigned getSchedulingLatency(unsigned opcode) = 0;
+	virtual double getInCycleLatency(unsigned opcode) = 0;
 	virtual bool isPipelined(unsigned opcode) = 0;
 	virtual void calculateRequiredResources(
 		std::vector<int> &microops,
@@ -66,10 +67,10 @@ public:
 	std::set<int> getConstrainedUnits() { return limitedBy; }
 
 	virtual void arrayAddPartition(std::string arrayName) = 0;
-	virtual bool fAddAddUnit() = 0;
-	virtual bool fSubAddUnit() = 0;
-	virtual bool fMulAddUnit() = 0;
-	virtual bool fDivAddUnit() = 0;
+	virtual bool fAddAddUnit(bool commit = true) = 0;
+	virtual bool fSubAddUnit(bool commit = true) = 0;
+	virtual bool fMulAddUnit(bool commit = true) = 0;
+	virtual bool fDivAddUnit(bool commit = true) = 0;
 
 	unsigned arrayGetNumOfPartitions(std::string arrayName);
 	unsigned arrayGetPartitionReadPorts(std::string partitionName);
@@ -83,15 +84,15 @@ public:
 	unsigned fMulGetAmount() { return fMulCount; }
 	unsigned fDivGetAmount() { return fDivCount; }
 
-	bool fAddTryAllocate();
-	bool fSubTryAllocate();
-	bool fMulTryAllocate();
-	bool fDivTryAllocate();
-	bool fCmpTryAllocate();
-	bool loadTryAllocate(std::string arrayPartitionName);
-	bool storeTryAllocate(std::string arrayPartitionName);
-	bool intOpTryAllocate(unsigned opcode);
-	bool callTryAllocate();
+	bool fAddTryAllocate(bool commit = true);
+	bool fSubTryAllocate(bool commit = true);
+	bool fMulTryAllocate(bool commit = true);
+	bool fDivTryAllocate(bool commit = true);
+	bool fCmpTryAllocate(bool commit = true);
+	bool loadTryAllocate(std::string arrayPartitionName, bool commit = true);
+	bool storeTryAllocate(std::string arrayPartitionName, bool commit = true);
+	bool intOpTryAllocate(unsigned opcode, bool commit = true);
+	bool callTryAllocate(bool commit = true);
 
 	void fAddRelease();
 	void fSubRelease();
@@ -161,6 +162,7 @@ public:
 
 	virtual unsigned getLatency(unsigned opcode);
 	virtual unsigned getSchedulingLatency(unsigned opcode);
+	virtual double getInCycleLatency(unsigned opcode);
 	bool isPipelined(unsigned opcode);
 	void calculateRequiredResources(
 		std::vector<int> &microops,
@@ -182,10 +184,10 @@ public:
 
 	void arrayAddPartition(std::string arrayName);
 	void arrayAddPartitions(std::string arrayName, unsigned amount);
-	bool fAddAddUnit();
-	bool fSubAddUnit();
-	bool fMulAddUnit();
-	bool fDivAddUnit();
+	bool fAddAddUnit(bool commit = true);
+	bool fSubAddUnit(bool commit = true);
+	bool fMulAddUnit(bool commit = true);
+	bool fDivAddUnit(bool commit = true);
 
 	unsigned arrayGetMaximumWritePortsPerPartition();
 	std::map<std::string, unsigned> arrayGetUsedBRAM18k() { return arrayNameToUsedBRAM18k; }
@@ -249,7 +251,7 @@ class XilinxZCU102HardwareProfile : public XilinxHardwareProfile {
 	/* We are assuming here that effective frequency will never be above 500 MHz, thus the cases where timing latencies are below 2 ns are excluded */
 	/* This map format: {key (the operation being considered), {key (latency for completion), in-cycle latency in ns}} */
 	const std::unordered_map<unsigned, std::map<unsigned, double>> timeConstrainedLatencies = {
-		{LATENCY_LOAD, {{1, 1.23}}},
+		{LATENCY_LOAD, {{2, 1.23}}},
 		{LATENCY_STORE, {{1, 1.23}}},
 		{LATENCY_ADD, {{1, 1.01}}},
 		{LATENCY_SUB, {{1, 1.01}}},
@@ -272,6 +274,7 @@ public:
 	XilinxZCU102HardwareProfile();
 	void setResourceLimits();
 	unsigned getLatency(unsigned opcode);
+	double getInCycleLatency(unsigned opcode);
 };
 
 #endif

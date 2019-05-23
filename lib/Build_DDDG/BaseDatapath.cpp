@@ -327,7 +327,9 @@ uint64_t BaseDatapath::fpgaEstimation() {
 	identifyCriticalPaths();
 
 	VERBOSE_PRINT(errs() << "\tStarting resource-constrained scheduling\n");
-	uint64_t rcIL = rcScheduling();
+	std::pair<uint64_t, double> rcPair = rcScheduling();
+	uint64_t rcIL = rcPair.first;
+	double achievedPeriod = rcPair.second;
 
 	VERBOSE_PRINT(errs() << "\tGetting memory-constrained II\n");
 	std::tuple<std::string, uint64_t> resIIMem = calculateResIIMem();
@@ -370,6 +372,7 @@ uint64_t BaseDatapath::fpgaEstimation() {
 		for(auto &it : fpgaProfile->arrayGetUsedBRAM18k())
 			VERBOSE_PRINT(errs() << "\tUsed BRAM18k for array \"" << it.first << "\": " << std::to_string(it.second) << "\n");
 	}
+	VERBOSE_PRINT(errs() << "\n\tAchieved period: " << std::to_string(achievedPeriod) << "\n");
 	VERBOSE_PRINT(errs() << "\n\tIL: " << std::to_string(rcIL) << "\n");
 	VERBOSE_PRINT(errs() << "\tII: " << std::to_string(maxII) << "\n");
 	VERBOSE_PRINT(errs() << "\tRecII: " << std::to_string(recII) << "\n");
@@ -388,7 +391,7 @@ uint64_t BaseDatapath::fpgaEstimation() {
 
 	// TODO: I think if we want to support nested loops with instructions in between, changes would be needed here
 	uint64_t numCycles = getLoopTotalLatency(rcIL, maxII);
-	dumpSummary(numCycles, std::get<0>(asapResult), rcIL, maxII, resIIMem, resIIOp, recII);
+	dumpSummary(numCycles, std::get<0>(asapResult), rcIL, achievedPeriod, maxII, resIIMem, resIIOp, recII);
 
 	return numCycles;
 }
@@ -1164,7 +1167,7 @@ void BaseDatapath::identifyCriticalPaths() {
 	}
 }
 
-uint64_t BaseDatapath::rcScheduling() {
+std::pair<uint64_t, double> BaseDatapath::rcScheduling() {
 	VERBOSE_PRINT(errs() << "\t\tResource-constrained scheduling started\n");
 
 	assert(asapScheduledTime.size() && alapScheduledTime.size() && cPathNodes.size() && "ASAP, ALAP and/or critical path list not generated");
@@ -1187,11 +1190,11 @@ uint64_t BaseDatapath::rcScheduling() {
 
 	profile->constrainHardware(CM.getArrayInfoCfgMap(), CM.getPartitionCfgMap(), CM.getCompletePartitionCfgMap());
 
-	RCScheduler rcSched(microops, graph, numOfTotalNodes, nameToVertex, vertexToName, *profile, baseAddress, asapScheduledTime, alapScheduledTime, rcScheduledTime);
-	uint64_t rcIL = rcSched.schedule();
+	RCScheduler rcSched(loopName, microops, graph, numOfTotalNodes, nameToVertex, vertexToName, *profile, baseAddress, asapScheduledTime, alapScheduledTime, rcScheduledTime);
+	std::pair<uint64_t, double> rcPair = rcSched.schedule();
 
 	VERBOSE_PRINT(errs() << "\t\tResource-constrained scheduling finished\n");
-	return rcIL;
+	return rcPair;
 }
 
 std::tuple<std::string, uint64_t> BaseDatapath::calculateResIIMem() {
@@ -1541,7 +1544,7 @@ uint64_t BaseDatapath::getLoopTotalLatency(uint64_t rcIL, uint64_t maxII) {
 }
 
 void BaseDatapath::dumpSummary(
-	uint64_t numCycles, uint64_t asapII, uint64_t rcIL,
+	uint64_t numCycles, uint64_t asapII, uint64_t rcIL, double achievedPeriod,
 	uint64_t maxII, std::tuple<std::string, uint64_t> resIIMem, std::tuple<std::string, uint64_t> resIIOp, uint64_t recII
 ) {
 	*summaryFile << "================================================\n";
@@ -1551,6 +1554,7 @@ void BaseDatapath::dumpSummary(
 	*summaryFile << "Clock uncertainty: " << std::to_string(args.uncertainty) << " %\n";
 	*summaryFile << "Target clock period: " << std::to_string(1000 / args.frequency) << " ns\n";
 	*summaryFile << "Effective clock period: " << std::to_string((1000 / args.frequency) - (10 * args.uncertainty / args.frequency)) << " ns\n";
+	*summaryFile << "Achieved clock period: " << std::to_string(achievedPeriod) << " ns\n";
 	*summaryFile << "Loop name: " << loopName << "\n";
 	*summaryFile << "Loop level: " << std::to_string(loopLevel) << "\n";
 	*summaryFile << "Loop unrolling factor: " << std::to_string(loopUnrollFactor) << "\n";
@@ -1640,7 +1644,7 @@ void BaseDatapath::dumpSummary(
 }	
 
 void BaseDatapath::dumpGraph(bool isOptimised) {
-	std::string graphFileName(loopName + (isOptimised? "_graph_opt.dot" : "_graph.dot"));
+	std::string graphFileName(args.outWorkDir + loopName + (isOptimised? "_graph_opt.dot" : "_graph.dot"));
 	std::ofstream out(graphFileName);
 
 	std::vector<std::string> functionNames;
@@ -1666,6 +1670,7 @@ void BaseDatapath::dumpGraph(bool isOptimised) {
 }
 
 BaseDatapath::RCScheduler::RCScheduler(
+	const std::string loopName,
 	const std::vector<int> &microops,
 	const Graph &graph, unsigned numOfTotalNodes,
 	const std::unordered_map<unsigned, Vertex> &nameToVertex, const VertexNameMap &vertexToName,
@@ -1676,7 +1681,8 @@ BaseDatapath::RCScheduler::RCScheduler(
 	graph(graph), numOfTotalNodes(numOfTotalNodes),
 	nameToVertex(nameToVertex), vertexToName(vertexToName),
 	profile(profile), baseAddress(baseAddress),
-	asap(asap), alap(alap), rc(rc)
+	asap(asap), alap(alap), rc(rc),
+	tcSched(microops, graph, numOfTotalNodes, nameToVertex, vertexToName, profile)
 {
 	numParents.assign(numOfTotalNodes, 0);
 	finalIsolated.assign(numOfTotalNodes, true);
@@ -1736,10 +1742,37 @@ BaseDatapath::RCScheduler::RCScheduler(
 
 		startingNodes.push_back(std::make_pair(currNodeID, alap[currNodeID]));
 	}
+
+	if(args.showScheduling) {
+		dumpFile.open(args.outWorkDir + loopName + ".sched.rpt");
+
+		dumpFile << "================================================\n";
+		dumpFile << "Lin-analyzer scheduling report file\n";
+		dumpFile << "Loop name: " << loopName << "\n";
+		if(args.fNoTCS)
+			dumpFile << "Time-constrained scheduling disabled\n";
+		dumpFile << "Target clock: " << std::to_string(args.frequency) << " MHz\n";
+		dumpFile << "Clock uncertainty: " << std::to_string(args.uncertainty) << " %\n";
+		dumpFile << "Target clock period: " << std::to_string(1000 / args.frequency) << " ns\n";
+		dumpFile << "Effective clock period: " << std::to_string((1000 / args.frequency) - (10 * args.uncertainty / args.frequency)) << " ns\n";
+		dumpFile << "------------------------------------------------\n";
+	}
 }
 
-uint64_t BaseDatapath::RCScheduler::schedule() {
+BaseDatapath::RCScheduler::~RCScheduler() {
+	if(dumpFile.is_open())
+		dumpFile.close();
+}
+
+std::pair<uint64_t, double> BaseDatapath::RCScheduler::schedule() {
 	for(cycleTick = 0; scheduledNodeCount != totalConnectedNodes; cycleTick++) {
+		if(args.showScheduling)
+			dumpFile << "[TICK] " << std::to_string(cycleTick) << "\n";
+
+		// Reset timing-constraint scheduling
+		if(!(args.fNoTCS))
+			tcSched.clear();
+
 		//std::cout << "~~ start " << std::to_string(cycleTick) << "\n";
 		// Assign ready state to starting nodes (if any)
 		if(startingNodes.size())
@@ -1749,12 +1782,30 @@ uint64_t BaseDatapath::RCScheduler::schedule() {
 		release();
 		//std::cout << "~~ end " << std::to_string(cycleTick) << "\n";
 		//std::cout.flush();
+
+		if(args.fNoTCS) {
+			if(args.showScheduling)
+				dumpFile << "[TICK]\n";
+		}
+		else {
+			double currCriticalPath = tcSched.getCriticalPath();
+			if(currCriticalPath > achievedPeriod)
+				achievedPeriod = currCriticalPath;
+
+			if(args.showScheduling)
+				dumpFile << "[TICK] Critical path for this tick: " << std::to_string(currCriticalPath) << " ns\n";
+		}
+	}
+
+	if(args.showScheduling) {
+		dumpFile << "================================================\n";
+		dumpFile.close();
 	}
 
 	// XXX: I could not clearly get why (i - 1) and (i + 1) but not (i) and (i + 1)
 	//return (args.fExtraScalar)? cycleTick + 1 : cycleTick - 1;
 	// XXX: Changing to see if it improves accuracy
-	return (args.fExtraScalar)? cycleTick + 1 : cycleTick;
+	return std::make_pair((args.fExtraScalar)? cycleTick + 1 : cycleTick, achievedPeriod);
 }
 
 void BaseDatapath::RCScheduler::assignReadyStartingNodes() {
@@ -1784,6 +1835,12 @@ void BaseDatapath::RCScheduler::select() {
 	// Schedule/finish all instructions that we are not considering (i.e. latency 0)
 	while(othersReady.size()) {
 		unsigned currNodeID = othersReady.front().first;
+
+		if(args.showScheduling) {
+			unsigned opcode = microops.at(currNodeID);
+			dumpFile << "\t[RELEASED] [0/" <<  std::to_string(profile.getLatency(opcode)) << "] Node " << currNodeID << " (" << reverseOpcodeMap.at(opcode) << ")\n";
+		}
+
 		//std::cout << "~~ done (others): " << std::to_string(currNodeID) << "\n";
 		othersReady.pop_front();
 		rc[currNodeID] = cycleTick;
@@ -1874,33 +1931,12 @@ void BaseDatapath::RCScheduler::pushReady(unsigned nodeID, uint64_t tick) {
 			othersReady.push_back(std::make_pair(nodeID, tick));
 			break;
 	}
+
+	if(args.showScheduling)
+		dumpFile << "\t[READY] Node " << std::to_string(nodeID) << " (" << reverseOpcodeMap.at(microops.at(nodeID)) << ")\n";
 }
 
-void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocate)()) {
-	if(ready.size()) {
-		selected.clear();
-
-		// Sort nodes by their ALAP, smallest first (urgent nodes first)
-		ready.sort(prioritiseSmallerALAP);
-		size_t initialReadySize = ready.size();
-		for(unsigned i = 0; i < initialReadySize; i++) {
-			// If allocation is successful (i.e. there is one operation unit available), select this operation
-			if((profile.*tryAllocate)()) {
-				unsigned nodeID = ready.front().first;
-				//std::cout << "~~ selected: " << std::to_string(nodeID) << "\n";
-				selected.push_back(nodeID);
-				ready.pop_front();
-				rc[nodeID] = cycleTick;
-			}
-			// Resource contention, not able to allocate now
-			else {
-				break;
-			}
-		}
-	}
-}
-
-void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocateInt)(unsigned)) {
+void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocate)(bool)) {
 	if(ready.size()) {
 		selected.clear();
 
@@ -1909,12 +1945,33 @@ void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &sel
 		size_t initialReadySize = ready.size();
 		for(unsigned i = 0; i < initialReadySize; i++) {
 			unsigned nodeID = ready.front().first;
+
 			// If allocation is successful (i.e. there is one operation unit available), select this operation
-			if((profile.*tryAllocateInt)(microops.at(nodeID))) {
-				//std::cout << "~~ selected (intOp): " << std::to_string(nodeID) << "\n";
-				selected.push_back(nodeID);
-				ready.pop_front();
-				rc[nodeID] = cycleTick;
+			// If timing-constrained scheduling is enabled, allocation is not yet performed, only attempted
+			if((profile.*tryAllocate)(args.fNoTCS)) {
+				bool timingConstrained = false;
+
+				// Timing-constrained scheduling (taa-daa)
+				if(!(args.fNoTCS)) {
+					// If selecting the current node does not violate timing in any way, proceed
+					if(tcSched.tryAllocate(nodeID))
+						(profile.*tryAllocate)(true);
+					// Else, fail
+					else
+						timingConstrained = true;
+				}
+
+				// No timing-constraint, allocate
+				if(!timingConstrained) {
+					//std::cout << "~~ selected: " << std::to_string(nodeID) << "\n";
+					selected.push_back(nodeID);
+					ready.pop_front();
+					rc[nodeID] = cycleTick;
+				}
+				// Timing contention, not able to allocate now
+				else {
+					break;
+				}
 			}
 			// Resource contention, not able to allocate now
 			else {
@@ -1924,7 +1981,52 @@ void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &sel
 	}
 }
 
-void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocateMem)(std::string)) {
+void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocateInt)(unsigned, bool)) {
+	if(ready.size()) {
+		selected.clear();
+
+		// Sort nodes by their ALAP, smallest first (urgent nodes first)
+		ready.sort(prioritiseSmallerALAP);
+		size_t initialReadySize = ready.size();
+		for(unsigned i = 0; i < initialReadySize; i++) {
+			unsigned nodeID = ready.front().first;
+
+			// If allocation is successful (i.e. there is one operation unit available), select this operation
+			// If timing-constrained scheduling is enabled, allocation is not yet performed, only attempted
+			if((profile.*tryAllocateInt)(microops.at(nodeID), args.fNoTCS)) {
+				bool timingConstrained = false;
+
+				// Timing-constrained scheduling (taa-daa)
+				if(!(args.fNoTCS)) {
+					// If selecting the current node does not violate timing in any way, proceed
+					if(tcSched.tryAllocate(nodeID))
+						(profile.*tryAllocateInt)(microops.at(nodeID), true);
+					// Else, fail
+					else
+						timingConstrained = true;
+				}
+
+				// No timing-constraint, allocate
+				if(!timingConstrained) {
+					//std::cout << "~~ selected (intOp): " << std::to_string(nodeID) << "\n";
+					selected.push_back(nodeID);
+					ready.pop_front();
+					rc[nodeID] = cycleTick;
+				}
+				// Timing contention, not able to allocate now
+				else {
+					break;
+				}
+			}
+			// Resource contention, not able to allocate now
+			else {
+				break;
+			}
+		}
+	}
+}
+
+void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocateMem)(std::string, bool)) {
 	if(ready.size()) {
 		selected.clear();
 
@@ -1938,11 +2040,31 @@ void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &sel
 			std::string arrayPartitionName = baseAddress.at(nodeID).first;
 
 			// If allocation is successful (i.e. there is one operation unit available), select this operation
-			if((profile.*tryAllocateMem)(arrayPartitionName)) {
-				//std::cout << "~~ selected (memory: " << arrayPartitionName << "): " << std::to_string(nodeID) << "\n";
-				selected.push_back(nodeID);
-				ready.pop_front();
-				rc[nodeID] = cycleTick;
+			// If timing-constrained scheduling is enabled, allocation is not yet performed, only attempted
+			if((profile.*tryAllocateMem)(arrayPartitionName, args.fNoTCS)) {
+				bool timingConstrained = false;
+
+				// Timing-constrained scheduling (taa-daa)
+				if(!(args.fNoTCS)) {
+					// If selecting the current node does not violate timing in any way, proceed
+					if(tcSched.tryAllocate(nodeID))
+						(profile.*tryAllocateMem)(arrayPartitionName, true);
+					// Else, fail
+					else
+						timingConstrained = true;
+				}
+
+				// No timing-constraint, allocate
+				if(!timingConstrained) {
+					//std::cout << "~~ selected (memory: " << arrayPartitionName << "): " << std::to_string(nodeID) << "\n";
+					selected.push_back(nodeID);
+					ready.pop_front();
+					rc[nodeID] = cycleTick;
+				}
+				// Timing contention, not able to allocate now
+				else {
+					break;
+				}
 			}
 			// Resource contention, not able to allocate now
 			else {
@@ -1958,11 +2080,16 @@ void BaseDatapath::RCScheduler::enqueueExecute(unsigned opcode, selectedListTy &
 		unsigned latency = profile.getSchedulingLatency(opcode);
 
 		// Latency 0 or 1: this node was solved already. Set as scheduled and assign its children as ready
-		if(latency <= 1)
+		if(latency <= 1) {
+			if(args.showScheduling)
+				dumpFile << "\t[RELEASED] [1/" <<  std::to_string(latency) << "] Node " << selectedNodeID << " (" << reverseOpcodeMap.at(opcode) << ")\n";
+
 			setScheduledAndAssignReadyChildren(selectedNodeID);
+		}
 		// Multi-latency instruction: put into executing queue
-		else
+		else {
 			executing.insert(std::make_pair(selectedNodeID, latency));
+		}
 
 		selected.pop_front();
 
@@ -1979,11 +2106,16 @@ void BaseDatapath::RCScheduler::enqueueExecute(selectedListTy &selected, executi
 		unsigned latency = profile.getSchedulingLatency(opcode);
 
 		// Latency 0 or 1: this node was solved already. Set as scheduled and assign its children as ready
-		if(latency <= 1)
+		if(latency <= 1) {
+			if(args.showScheduling)
+				dumpFile << "\t[RELEASED] [1/" <<  std::to_string(latency) << "] Node " << selectedNodeID << " (" << reverseOpcodeMap.at(opcode) << ")\n";
+
 			setScheduledAndAssignReadyChildren(selectedNodeID);
+		}
 		// Multi-latency instruction: put into executing queue
-		else
+		else {
 			executing.insert(std::make_pair(selectedNodeID, latency));
+		}
 			
 		selected.pop_front();
 
@@ -2000,11 +2132,16 @@ void BaseDatapath::RCScheduler::enqueueExecute(unsigned opcode, selectedListTy &
 		std::string arrayName = baseAddress.at(selectedNodeID).first;
 
 		// Latency 0 or 1: this node was solved already. Set as scheduled and assign its children as ready
-		if(latency <= 1)
+		if(latency <= 1) {
+			if(args.showScheduling)
+				dumpFile << "\t[RELEASED] [1/" <<  std::to_string(latency) << "] Node " << selectedNodeID << " (" << reverseOpcodeMap.at(opcode) << ")\n";
+
 			setScheduledAndAssignReadyChildren(selectedNodeID);
+		}
 		// Multi-latency instruction: put into executing queue
-		else
+		else {
 			executing.insert(std::make_pair(selectedNodeID, latency));
+		}
 
 		selected.pop_front();
 
@@ -2025,12 +2162,19 @@ void BaseDatapath::RCScheduler::tryRelease(unsigned opcode, executingMapTy &exec
 
 		// All cycles were consumed, this operation is done, release resource
 		if(!(it.second)) {
+			if(args.showScheduling)
+				dumpFile << "\t[RELEASED] [" << std::to_string(it.second + 1) << "/" <<  std::to_string(profile.getLatency(opcode)) << "] Node " << executingNodeID << " (" << reverseOpcodeMap.at(opcode) << ")\n";
+
 			setScheduledAndAssignReadyChildren(executingNodeID);
 			toErase.push_back(executingNodeID);
 
 			// If operation is pipelined, the resource was already released before
 			if(!(profile.isPipelined(opcode)))
 				(profile.*release)();
+		}
+		else {
+			if(args.showScheduling)
+				dumpFile << "\t[ALLOCATED] [" << std::to_string(it.second + 1) << "/" <<  std::to_string(profile.getLatency(opcode)) << "] Node " << executingNodeID << " (" << reverseOpcodeMap.at(opcode) << ")\n";
 		}
 	}
 
@@ -2043,19 +2187,26 @@ void BaseDatapath::RCScheduler::tryRelease(executingMapTy &executing, void (Hard
 
 	for(auto &it: executing) {
 		unsigned executingNodeID = it.first;
+		unsigned opcode = microops.at(executingNodeID);
 
 		// Decrease one cycle
 		(it.second)--;
 
 		// All cycles were consumed, this operation is done, release resource
 		if(!(it.second)) {
-			unsigned opcode = microops.at(executingNodeID);
+			if(args.showScheduling)
+				dumpFile << "\t[RELEASED] [" << std::to_string(it.second + 1) << "/" <<  std::to_string(profile.getLatency(opcode)) << "] Node " << executingNodeID << " (" << reverseOpcodeMap.at(opcode) << ")\n";
+
 			setScheduledAndAssignReadyChildren(executingNodeID);
 			toErase.push_back(executingNodeID);
 
 			// If operation is pipelined, the resource was already released before
 			if(!(profile.isPipelined(opcode)))
 				(profile.*releaseInt)(opcode);
+		}
+		else {
+			if(args.showScheduling)
+				dumpFile << "\t[ALLOCATED] [" << std::to_string(it.second + 1) << "/" <<  std::to_string(profile.getLatency(opcode)) << "] Node " << executingNodeID << " (" << reverseOpcodeMap.at(opcode) << ")\n";
 		}
 	}
 
@@ -2075,12 +2226,19 @@ void BaseDatapath::RCScheduler::tryRelease(unsigned opcode, executingMapTy &exec
 
 		// All cycles were consumed, this operation is done, release resource
 		if(!(it.second)) {
+			if(args.showScheduling)
+				dumpFile << "\t[RELEASED] [" << std::to_string(it.second + 1) << "/" <<  std::to_string(profile.getLatency(opcode)) << "] Node " << executingNodeID << " (" << reverseOpcodeMap.at(opcode) << ")\n";
+
 			setScheduledAndAssignReadyChildren(executingNodeID);
 			toErase.push_back(executingNodeID);
 
 			// If operation is pipelined, the resource was already released before
 			if(!(profile.isPipelined(opcode)))
 				(profile.*releaseMem)(arrayName);
+		}
+		else {
+			if(args.showScheduling)
+				dumpFile << "\t[ALLOCATED] [" << std::to_string(it.second + 1) << "/" <<  std::to_string(profile.getLatency(opcode)) << "] Node " << executingNodeID << " (" << reverseOpcodeMap.at(opcode) << ")\n";
 		}
 	}
 
@@ -2101,6 +2259,107 @@ void BaseDatapath::RCScheduler::setScheduledAndAssignReadyChildren(unsigned node
 		if(!numParents[childNodeID] && !finalIsolated[childNodeID])
 			pushReady(childNodeID, alap[childNodeID]);
 	}
+}
+
+BaseDatapath::TCScheduler::TCScheduler(
+	const std::vector<int> &microops,
+	const Graph &graph, unsigned numOfTotalNodes,
+	const std::unordered_map<unsigned, Vertex> &nameToVertex, const VertexNameMap &vertexToName,
+	HardwareProfile &profile
+) :
+	microops(microops),
+	graph(graph), numOfTotalNodes(numOfTotalNodes),
+	nameToVertex(nameToVertex), vertexToName(vertexToName),
+	profile(profile)
+{
+	effectivePeriod = (1000 / args.frequency) - (10 * args.uncertainty / args.frequency);
+	clear();
+}
+
+void BaseDatapath::TCScheduler::clear() {
+	//criticalPath = -1;
+	//criticalPathValue = 0;
+	paths.clear();
+}
+
+bool BaseDatapath::TCScheduler::tryAllocate(unsigned nodeID) {
+	std::vector<std::pair<double, std::vector<unsigned>> *> pathsToModify;
+	std::vector<std::pair<double, std::vector<unsigned>>> newPaths;
+	double inCycleLatency = profile.getInCycleLatency(microops.at(nodeID));
+
+	// If there is not path yet defined, simply add the node and return
+	if(!(paths.size())) {
+		std::vector<unsigned> newPath;
+		newPath.push_back(nodeID);
+		paths.push_back(std::make_pair(profile.getInCycleLatency(microops.at(nodeID)), newPath));
+
+		return true;
+	}
+
+	// Check if this node is part of any ongoing path
+	for(auto &it : paths) {
+		// Check if this node is connected to any part of the current ongoing path
+		for(auto &it2 : it.second) {
+			// Connection found
+			if(boost::edge(nameToVertex.at(it2), nameToVertex.at(nodeID), graph).second) {
+				// If this is the last node of the path, simply try to append the new node
+				if(it.second.back() == it2) {
+					// If the insertion of current node violates timing, fail
+					if((it.first + inCycleLatency) > effectivePeriod) {
+						return false;
+					}
+					// Else, mark the path to be modified
+					else {
+						pathsToModify.push_back(&it);
+					}
+				}
+				// Otherwise, save the common nodes and create a new path
+				else {
+					std::pair<double, std::vector<unsigned>> newPath;
+					newPath.first = 0;
+
+					for(auto it3 = it.second.begin(); *it3 != it2; it3++) {
+						newPath.first += profile.getInCycleLatency(microops.at(*it3));
+						newPath.second.push_back(*it3);
+					}
+					newPaths.push_back(newPath);
+				}
+			}
+		}
+	}
+
+	// Check the new paths and see if any violates timing
+	for(auto &it : newPaths) {
+		if((it.first + inCycleLatency) > effectivePeriod)
+			return false;
+	}
+
+	// If code reached here, no path violated timing. Create those paths
+	for(auto &it : newPaths) {
+		it.first += inCycleLatency;
+		it.second.push_back(nodeID);
+		paths.push_back(it);
+	}
+
+	// Update the existing paths
+	for(auto &it : pathsToModify) {
+		it->first += inCycleLatency;
+		it->second.push_back(nodeID);
+	}
+
+	// If the code reached here, no timings were violated, super!
+	return true;
+}
+
+double BaseDatapath::TCScheduler::getCriticalPath() {
+	double criticalPath = -1;
+
+	for(auto &it : paths) {
+		if(it.first > criticalPath)
+			criticalPath = it.first;
+	}
+
+	return criticalPath;
 }
 
 BaseDatapath::ColorWriter::ColorWriter(
@@ -2186,7 +2445,7 @@ template<class VE> void BaseDatapath::ColorWriter::operator()(std::ostream &out,
 			out << "[" << colorString << " label=\"{" << nodeID << " | call}\"]";
 		}
 		else {
-			out << "[" << colorString << " label=\"{" << nodeID << " | (" << op << ")}\"]";
+			out << "[" << colorString << " label=\"{" << nodeID << " | " << reverseOpcodeMap.at(op) << "}\"]";
 		}
 	}
 }

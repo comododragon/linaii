@@ -59,10 +59,11 @@ const std::string helpMessage =
 	"                                        Ignored if -m estimation | --mode=estimation is\n"
 	"                                        set.\n"
 	"                                        Can only be used with -m trace | --mode=trace\n"
-	"                   --show-cfg         : show CFG with basic blocks\n"
-	"                   --show-detail-cfg  : show detailed CFG with instructions\n"
-	"                   --show-pre-dddg    : show DDDG before optimisation\n"
-	"                   --show-post-dddg   : show DDDG after optimisation\n"
+	"                   --show-cfg         : dump CFG with basic blocks\n"
+	"                   --show-detail-cfg  : dump detailed CFG with instructions\n"
+	"                   --show-pre-dddg    : dump DDDG before optimisation\n"
+	"                   --show-post-dddg   : dump DDDG after optimisation\n"
+	"                   --show-scheduling  : dump constrained-scheduling\n"
 	"                   --fno-tcs          : disable timing-constrained scheduling\n"
 	"                   --fno-sb           : disable store-buffer optimisation\n"
 	"                   --f-slr            : enable shared-load-removal optimisation\n"
@@ -178,6 +179,7 @@ void parseInputArguments(int argc, char **argv) {
 	args.showCFGDetailed = false;
 	args.showPreOptDDDG = false;
 	args.showPostOptDDDG = false;
+	args.showScheduling = false;
 	args.fNoTCS = false;
 	args.fSBOpt = true;
 	args.fSLROpt = false;
@@ -213,17 +215,18 @@ void parseInputArguments(int argc, char **argv) {
 			{"show-detail-cfg", no_argument, 0, 0xF02},
 			{"show-pre-dddg", no_argument, 0, 0xF03},
 			{"show-post-dddg", no_argument, 0, 0xF04},
-			{"fno-tcs", no_argument, 0, 0xF05},
-			{"fno-sb", no_argument, 0, 0xF06},
-			{"f-slr", no_argument, 0, 0xF07},
-			{"fno-slr", no_argument, 0, 0xF08},
-			{"fno-rsr", no_argument, 0, 0xF09},
-			{"f-thr-float", no_argument, 0, 0xF0A},
-			{"f-thr-int", no_argument, 0, 0xF0B},
-			{"f-md", no_argument, 0, 0xF0C},
-			{"fno-ft", no_argument, 0, 0xF0D},
-			{"f-es", no_argument, 0, 0xF0E},
-			{"f-rwrwm", no_argument, 0, 0xF0F},
+			{"show-scheduling", no_argument, 0, 0xF05},
+			{"fno-tcs", no_argument, 0, 0xF06},
+			{"fno-sb", no_argument, 0, 0xF07},
+			{"f-slr", no_argument, 0, 0xF08},
+			{"fno-slr", no_argument, 0, 0xF09},
+			{"fno-rsr", no_argument, 0, 0xF0A},
+			{"f-thr-float", no_argument, 0, 0xF0B},
+			{"f-thr-int", no_argument, 0, 0xF0C},
+			{"f-md", no_argument, 0, 0xF0D},
+			{"fno-ft", no_argument, 0, 0xF0E},
+			{"f-es", no_argument, 0, 0xF0F},
+			{"f-rwrwm", no_argument, 0, 0xF10},
 			{0, 0, 0, 0}
 		};
 		int optionIndex = 0;
@@ -315,36 +318,39 @@ void parseInputArguments(int argc, char **argv) {
 				args.showPostOptDDDG = true;
 				break;
 			case 0xF05:
-				args.fNoTCS = true;
+				args.showScheduling = true;
 				break;
 			case 0xF06:
-				args.fSBOpt = false;
+				args.fNoTCS = true;
 				break;
 			case 0xF07:
-				args.fSLROpt = true;
+				args.fSBOpt = false;
 				break;
 			case 0xF08:
-				args.fNoSLROpt = true;
+				args.fSLROpt = true;
 				break;
 			case 0xF09:
-				args.fRSROpt = false;
+				args.fNoSLROpt = true;
 				break;
 			case 0xF0A:
-				args.fTHRFloatOpt = true;
+				args.fRSROpt = false;
 				break;
 			case 0xF0B:
-				args.fTHRIntOpt = true;
+				args.fTHRFloatOpt = true;
 				break;
 			case 0xF0C:
-				args.fMemDisambuigOpt = true;
+				args.fTHRIntOpt = true;
 				break;
 			case 0xF0D:
-				args.fNoFPUThresOpt = true;
+				args.fMemDisambuigOpt = true;
 				break;
 			case 0xF0E:
-				args.fExtraScalar = true;
+				args.fNoFPUThresOpt = true;
 				break;
 			case 0xF0F:
+				args.fExtraScalar = true;
+				break;
+			case 0xF10:
 				args.fRWRWMem = true;
 				break;
 		}

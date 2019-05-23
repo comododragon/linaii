@@ -70,6 +70,32 @@ typedef struct {
 
 class BaseDatapath {
 public:
+	class TCScheduler {
+		const std::vector<int> &microops;
+		const Graph &graph;
+		unsigned numOfTotalNodes;
+		const std::unordered_map<unsigned, Vertex> &nameToVertex;
+		const VertexNameMap &vertexToName;
+		HardwareProfile &profile;
+
+		//int criticalPath;
+		//double criticalPathValue;
+		double effectivePeriod;
+		std::vector<std::pair<double, std::vector<unsigned>>> paths;
+
+	public:
+		TCScheduler(
+			const std::vector<int> &microops,
+			const Graph &graph, unsigned numOfTotalNodes,
+			const std::unordered_map<unsigned, Vertex> &nameToVertex, const VertexNameMap &vertexToName,
+			HardwareProfile &profile
+		);
+
+		void clear();
+		bool tryAllocate(unsigned nodeID);
+		double getCriticalPath();
+	};
+
 	class RCScheduler {
 		typedef std::list<std::pair<unsigned, uint64_t>> nodeTickTy;
 		typedef std::list<unsigned> selectedListTy;
@@ -91,6 +117,9 @@ public:
 		unsigned totalConnectedNodes;
 		unsigned scheduledNodeCount;
 		uint64_t cycleTick;
+		double achievedPeriod;
+
+		TCScheduler tcSched;
 
 		nodeTickTy startingNodes;
 
@@ -125,6 +154,8 @@ public:
 		executingMapTy intOpExecuting;
 		executingMapTy callExecuting;
 
+		std::ofstream dumpFile;
+
 		bool dummyAllocate() { return true; }
 		static bool prioritiseSmallerALAP(const std::pair<unsigned, uint64_t> &first, const std::pair<unsigned, uint64_t> &second) { return first.second < second.second; }
 
@@ -134,9 +165,9 @@ public:
 		void release();
 
 		void pushReady(unsigned nodeID, uint64_t tick);
-		void trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocate)());
-		void trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocateInt)(unsigned));
-		void trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocateMem)(std::string));
+		void trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocate)(bool));
+		void trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocateInt)(unsigned, bool));
+		void trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocateMem)(std::string, bool));
 		void enqueueExecute(unsigned opcode, selectedListTy &selected, executingMapTy &executing, void (HardwareProfile::*release)());
 		void enqueueExecute(selectedListTy &selected, executingMapTy &executing, void (HardwareProfile::*releaseInt)(unsigned));
 		void enqueueExecute(unsigned opcde, selectedListTy &selected, executingMapTy &executing, void (HardwareProfile::*releaseMem)(std::string));
@@ -147,6 +178,7 @@ public:
 
 	public:
 		RCScheduler(
+			const std::string loopName,
 			const std::vector<int> &microops,
 			const Graph &graph, unsigned numOfTotalNodes,
 			const std::unordered_map<unsigned, Vertex> &nameToVertex, const VertexNameMap &vertexToName,
@@ -154,9 +186,11 @@ public:
 			const std::vector<uint64_t> &asap, const std::vector<uint64_t> &alap, std::vector<uint64_t> &rc
 		);
 
-		uint64_t schedule();
-	};
+		~RCScheduler();
 
+		std::pair<uint64_t, double> schedule();
+	};
+	
 	class ColorWriter {
 		Graph &graph;
 		VertexNameMap &vertexNameMap;
@@ -308,13 +342,13 @@ protected:
 	std::tuple<uint64_t, uint64_t> asapScheduling();
 	void alapScheduling(std::tuple<uint64_t, uint64_t> asapResult);
 	void identifyCriticalPaths();
-	uint64_t rcScheduling();
+	std::pair<uint64_t, double> rcScheduling();
 	std::tuple<std::string, uint64_t> calculateResIIMem();
 	uint64_t calculateRecII(uint64_t currAsapII);
 	uint64_t getLoopTotalLatency(uint64_t rcIL, uint64_t maxII);
 
 	void dumpSummary(
-		uint64_t numCycles, uint64_t asapII, uint64_t rcIL,
+		uint64_t numCycles, uint64_t asapII, uint64_t rcIL, double achievedPeriod,
 		uint64_t maxII, std::tuple<std::string, uint64_t> resIIMem, std::tuple<std::string, uint64_t> resIIOp, uint64_t recII
 	);
 	void dumpGraph(bool isOptimised = false);

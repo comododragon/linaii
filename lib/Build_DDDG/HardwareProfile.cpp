@@ -126,12 +126,13 @@ unsigned HardwareProfile::arrayGetPartitionWritePorts(std::string partitionName)
 }
 
 
-bool HardwareProfile::fAddTryAllocate() {
+bool HardwareProfile::fAddTryAllocate(bool commit) {
 	assert(isConstrained && "This hardware profile is not resource-constrained");
 
 	// There are fAdd available for use, just allocate it
 	if(fAddInUse < fAddCount) {
-		fAddInUse++;
+		if(commit)
+			fAddInUse++;
 		return true;
 	}
 	// All fAdd are in use, try to allocate a new unit
@@ -142,21 +143,22 @@ bool HardwareProfile::fAddTryAllocate() {
 		}
 
 		// Try to allocate a new unit
-		bool success = fAddAddUnit();
+		bool success = fAddAddUnit(commit);
 		// If successful, mark this unit as allocated
-		if(success)
+		if(success && commit)
 			fAddInUse++;
 
 		return success;
 	}
 }
 
-bool HardwareProfile::fSubTryAllocate() {
+bool HardwareProfile::fSubTryAllocate(bool commit) {
 	assert(isConstrained && "This hardware profile is not resource-constrained");
 
 	// There are fSub available for use, just allocate it
 	if(fSubInUse < fSubCount) {
-		fSubInUse++;
+		if(commit)
+			fSubInUse++;
 		return true;
 	}
 	// All fSub are in use, try to allocate a new unit
@@ -167,21 +169,22 @@ bool HardwareProfile::fSubTryAllocate() {
 		}
 
 		// Try to allocate a new unit
-		bool success = fSubAddUnit();
+		bool success = fSubAddUnit(commit);
 		// If successful, mark this unit as allocated
-		if(success)
+		if(success && commit)
 			fSubInUse++;
 
 		return success;
 	}
 }
 
-bool HardwareProfile::fMulTryAllocate() {
+bool HardwareProfile::fMulTryAllocate(bool commit) {
 	assert(isConstrained && "This hardware profile is not resource-constrained");
 
 	// There are fMul available for use, just allocate it
 	if(fMulInUse < fMulCount) {
-		fMulInUse++;
+		if(commit)
+			fMulInUse++;
 		return true;
 	}
 	// All fMul are in use, try to allocate a new unit
@@ -192,21 +195,22 @@ bool HardwareProfile::fMulTryAllocate() {
 		}
 
 		// Try to allocate a new unit
-		bool success = fMulAddUnit();
+		bool success = fMulAddUnit(commit);
 		// If successful, mark this unit as allocated
-		if(success)
+		if(success && commit)
 			fMulInUse++;
 
 		return success;
 	}
 }
 
-bool HardwareProfile::fDivTryAllocate() {
+bool HardwareProfile::fDivTryAllocate(bool commit) {
 	assert(isConstrained && "This hardware profile is not resource-constrained");
 
 	// There are fDiv available for use, just allocate it
 	if(fDivInUse < fDivCount) {
-		fDivInUse++;
+		if(commit)
+			fDivInUse++;
 		return true;
 	}
 	// All fDiv are in use, try to allocate a new unit
@@ -217,21 +221,21 @@ bool HardwareProfile::fDivTryAllocate() {
 		}
 
 		// Try to allocate a new unit
-		bool success = fDivAddUnit();
+		bool success = fDivAddUnit(commit);
 		// If successful, mark this unit as allocated
-		if(success)
+		if(success && commit)
 			fDivInUse++;
 
 		return success;
 	}
 }
 
-bool HardwareProfile::fCmpTryAllocate() {
+bool HardwareProfile::fCmpTryAllocate(bool commit) {
 	// XXX: For now, fCmp is not constrained
 	return true;
 }
 
-bool HardwareProfile::loadTryAllocate(std::string arrayPartitionName) {
+bool HardwareProfile::loadTryAllocate(std::string arrayPartitionName, bool commit) {
 	assert(isConstrained && "This hardware profile is not resource-constrained");
 
 	std::map<std::string, unsigned>::iterator found = arrayPartitionToReadPorts.find(arrayPartitionName);
@@ -253,12 +257,13 @@ bool HardwareProfile::loadTryAllocate(std::string arrayPartitionName) {
 		return false;
 
 	// Allocate a port
-	(found2->second)++;
+	if(commit)
+		(found2->second)++;
 
 	return true;
 }
 
-bool HardwareProfile::storeTryAllocate(std::string arrayPartitionName) {
+bool HardwareProfile::storeTryAllocate(std::string arrayPartitionName, bool commit) {
 	assert(isConstrained && "This hardware profile is not resource-constrained");
 
 	std::map<std::string, unsigned>::iterator found = arrayPartitionToWritePorts.find(arrayPartitionName);
@@ -279,16 +284,20 @@ bool HardwareProfile::storeTryAllocate(std::string arrayPartitionName) {
 	if(found2->second >= found->second) {
 		// If RW ports are enabled, attempt to allocate a new port
 		if(args.fRWRWMem && found->second < arrayGetMaximumWritePortsPerPartition()) {
-			(found->second)++;
-			(found2->second)++;
+			if(commit) {
+				(found->second)++;
+				(found2->second)++;
+			}
 
 #ifdef LEGACY_SEPARATOR
 			size_t tagPos = arrayPartitionName.find("-");
 #else
 			size_t tagPos = arrayPartitionName.find(GLOBAL_SEPARATOR);
 #endif
-			// TODO: euacho que isso funciona sem o if
-			(arrayNameToWritePortsPerPartition[arrayPartitionName.substr(0, tagPos)])++;
+			if(commit) {
+				// TODO: euacho que isso funciona sem o if
+				(arrayNameToWritePortsPerPartition[arrayPartitionName.substr(0, tagPos)])++;
+			}
 
 			return true;
 		}
@@ -304,12 +313,12 @@ bool HardwareProfile::storeTryAllocate(std::string arrayPartitionName) {
 	return true;
 }
 
-bool HardwareProfile::intOpTryAllocate(unsigned opcode) {
+bool HardwareProfile::intOpTryAllocate(unsigned opcode, bool commit) {
 	// XXX: For now, int ops are not constrained
 	return true;
 }
 
-bool HardwareProfile::callTryAllocate() {
+bool HardwareProfile::callTryAllocate(bool commit) {
 	// XXX: For now, calls are not constrained
 	return true;
 }
@@ -468,6 +477,11 @@ unsigned XilinxHardwareProfile::getSchedulingLatency(unsigned opcode) {
 		return SCHEDULING_LATENCY_LOAD;
 	else
 		return getLatency(opcode);
+}
+
+double XilinxHardwareProfile::getInCycleLatency(unsigned opcode) {
+	assert(args.fNoTCS && "Time-constrained scheduling is currently not supported with the selected platform. Please activate the \"--fno-tcs\" flag");
+	return 0;
 }
 
 bool XilinxHardwareProfile::isPipelined(unsigned opcode) {
@@ -795,62 +809,70 @@ unsigned XilinxHardwareProfile::arrayGetMaximumWritePortsPerPartition() {
 	return PER_PARTITION_MAX_PORTS_W;
 }
 
-bool XilinxHardwareProfile::fAddAddUnit() {
+bool XilinxHardwareProfile::fAddAddUnit(bool commit) {
 	// Hardware is constrained, we must first check if it is possible to add a new unit
 	if(isConstrained) {
 		if((usedDSP + DSP_FADD) > maxDSP || (usedFF + FF_FADD) > maxFF || (usedLUT + LUT_FADD) > maxLUT)
 			return false;
 	}
 
-	usedDSP += DSP_FADD;
-	usedFF += FF_FADD;
-	usedLUT += LUT_FADD;
-	fAddCount++;
+	if(commit) {
+		usedDSP += DSP_FADD;
+		usedFF += FF_FADD;
+		usedLUT += LUT_FADD;
+		fAddCount++;
+	}
 
 	return true;
 }
 
-bool XilinxHardwareProfile::fSubAddUnit() {
+bool XilinxHardwareProfile::fSubAddUnit(bool commit) {
 	// Hardware is constrained, we must first check if it is possible to add a new unit
 	if(isConstrained) {
 		if((usedDSP + DSP_FSUB) > maxDSP || (usedFF + FF_FSUB) > maxFF || (usedLUT + LUT_FSUB) > maxLUT)
 			return false;
 	}
 
-	usedDSP += DSP_FSUB;
-	usedFF += FF_FSUB;
-	usedLUT += LUT_FSUB;
-	fSubCount++;
+	if(commit) {
+		usedDSP += DSP_FSUB;
+		usedFF += FF_FSUB;
+		usedLUT += LUT_FSUB;
+		fSubCount++;
+	}
 
 	return true;
 }
 
-bool XilinxHardwareProfile::fMulAddUnit() {
+bool XilinxHardwareProfile::fMulAddUnit(bool commit) {
 	// Hardware is constrained, we must first check if it is possible to add a new unit
 	if(isConstrained) {
 		if((usedDSP + DSP_FMUL) > maxDSP || (usedFF + FF_FMUL) > maxFF || (usedLUT + LUT_FMUL) > maxLUT)
 			return false;
 	}
 
-	usedDSP += DSP_FMUL;
-	usedFF += FF_FMUL;
-	usedLUT += LUT_FMUL;
-	fMulCount++;
+	if(commit) {
+		usedDSP += DSP_FMUL;
+		usedFF += FF_FMUL;
+		usedLUT += LUT_FMUL;
+		fMulCount++;
+	}
 
 	return true;
 }
 
-bool XilinxHardwareProfile::fDivAddUnit() {
+bool XilinxHardwareProfile::fDivAddUnit(bool commit) {
 	// Hardware is constrained, we must first check if it is possible to add a new unit
 	if(isConstrained) {
 		if((usedDSP + DSP_FDIV) > maxDSP || (usedFF + FF_FDIV) > maxFF || (usedLUT + LUT_FDIV) > maxLUT)
 			return false;
 	}
 
-	usedDSP += DSP_FDIV;
-	usedFF += FF_FDIV;
-	usedLUT += LUT_FDIV;
-	fDivCount++;
+	if(commit) {
+		usedDSP += DSP_FDIV;
+		usedFF += FF_FDIV;
+		usedLUT += LUT_FDIV;
+		fDivCount++;
+	}
 
 	return true;
 }
@@ -961,6 +983,52 @@ unsigned XilinxZCU102HardwareProfile::getLatency(unsigned opcode) {
 			return effectiveLatencies[LATENCY_FDIV32].first;
 		case LLVM_IR_FCmp:
 			return effectiveLatencies[LATENCY_FCMP].first;
+		default: 
+			return 0;
+	}
+}
+
+double XilinxZCU102HardwareProfile::getInCycleLatency(unsigned opcode) {
+	switch(opcode) {
+		case LLVM_IR_Shl:
+		case LLVM_IR_LShr:
+		case LLVM_IR_AShr:
+		case LLVM_IR_And:
+		case LLVM_IR_Or:
+		case LLVM_IR_Xor:
+		case LLVM_IR_ICmp:
+		case LLVM_IR_Br:
+		case LLVM_IR_IndexAdd:
+		case LLVM_IR_IndexSub:
+			return 0;
+		case LLVM_IR_Add:
+			return effectiveLatencies[LATENCY_ADD].second;
+		case LLVM_IR_Sub: 
+			return effectiveLatencies[LATENCY_SUB].second;
+		case LLVM_IR_Call:
+			return 0;
+		case LLVM_IR_Store:
+			return effectiveLatencies[LATENCY_STORE].second;
+		case LLVM_IR_SilentStore:
+			return 0;
+		case LLVM_IR_Load:
+			// XXX: fILL deve ter efeito aqui?
+			return effectiveLatencies[LATENCY_LOAD].second;
+		case LLVM_IR_Mul:
+			return effectiveLatencies[LATENCY_MUL32].second;
+		case LLVM_IR_UDiv:
+		case LLVM_IR_SDiv:
+			return effectiveLatencies[LATENCY_DIV32].second;
+		case LLVM_IR_FAdd:
+			return effectiveLatencies[LATENCY_FADD32].second;
+		case LLVM_IR_FSub:
+			return effectiveLatencies[LATENCY_FSUB32].second;
+		case LLVM_IR_FMul:
+			return effectiveLatencies[LATENCY_FMUL32].second;
+		case LLVM_IR_FDiv:
+			return effectiveLatencies[LATENCY_FDIV32].second;
+		case LLVM_IR_FCmp:
+			return effectiveLatencies[LATENCY_FCMP].second;
 		default: 
 			return 0;
 	}

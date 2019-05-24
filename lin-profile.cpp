@@ -191,7 +191,8 @@ void parseInputArguments(int argc, char **argv) {
 	args.fNoFPUThresOpt = false;
 	args.fExtraScalar = false;
 	args.fRWRWMem = false;
-	args.fILL = false;
+	// XXX: Does not seem to make sense for me right now to leave this deactivated
+	args.fILL = true;
 
 	int c;
 	while(true) {

@@ -71,6 +71,8 @@ typedef struct {
 class BaseDatapath {
 public:
 	class TCScheduler {
+		typedef std::pair<double, std::vector<unsigned>> pathTy;
+
 		const std::vector<int> &microops;
 		const Graph &graph;
 		unsigned numOfTotalNodes;
@@ -81,7 +83,7 @@ public:
 		//int criticalPath;
 		//double criticalPathValue;
 		double effectivePeriod;
-		std::vector<std::pair<double, std::vector<unsigned>>> paths;
+		std::vector<pathTy> paths;
 
 	public:
 		TCScheduler(
@@ -92,7 +94,8 @@ public:
 		);
 
 		void clear();
-		bool tryAllocate(unsigned nodeID);
+		std::pair<std::vector<pathTy *>, std::vector<pathTy>> findDependencies(unsigned nodeID);
+		bool tryAllocate(unsigned nodeID, bool checkTiming = true);
 		double getCriticalPath();
 	};
 

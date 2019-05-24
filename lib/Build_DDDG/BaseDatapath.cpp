@@ -373,7 +373,7 @@ uint64_t BaseDatapath::fpgaEstimation() {
 			VERBOSE_PRINT(errs() << "\tUsed BRAM18k for array \"" << it.first << "\": " << std::to_string(it.second) << "\n");
 	}
 	VERBOSE_PRINT(errs() << "\n\tAchieved period: " << std::to_string(achievedPeriod) << "\n");
-	VERBOSE_PRINT(errs() << "\n\tIL: " << std::to_string(rcIL) << "\n");
+	VERBOSE_PRINT(errs() << "\tIL: " << std::to_string(rcIL) << "\n");
 	VERBOSE_PRINT(errs() << "\tII: " << std::to_string(maxII) << "\n");
 	VERBOSE_PRINT(errs() << "\tRecII: " << std::to_string(recII) << "\n");
 	VERBOSE_PRINT(errs() << "\tResII: " << std::to_string(resII) << "\n");
@@ -408,8 +408,13 @@ void BaseDatapath::removeInductionDependencies() {
 		std::string nodeInstID = instID.at(nodeID);
 
 		if(nodeInstID.find("indvars") != std::string::npos) {
+			//if(LLVM_IR_Add == microops.at(nodeID))
+			//	microops.at(nodeID) = LLVM_IR_IndexAdd;
+			// XXX: Changing from add to every int operation
 			if(LLVM_IR_Add == microops.at(nodeID))
 				microops.at(nodeID) = LLVM_IR_IndexAdd;
+			else if(LLVM_IR_Sub == microops.at(nodeID))
+				microops.at(nodeID) = LLVM_IR_IndexSub;
 		}
 		else {
 			InEdgeIterator inEdgei, inEdgeEnd;
@@ -417,11 +422,18 @@ void BaseDatapath::removeInductionDependencies() {
 				unsigned parentID = vertexToName[boost::source(*inEdgei, graph)];
 				std::string parentInstID = instID.at(parentID);
 
-				if(std::string::npos == parentInstID.find("indvars"))
+				//if(std::string::npos == parentInstID.find("indvars"))
+				// XXX: changing the if to also consider parents that are already indexop
+				if(std::string::npos == parentInstID.find("indvars") && !isIndexOp(microops.at(parentID)))
 					continue;
 
+				//if(LLVM_IR_Add == microops.at(nodeID))
+				//	microops.at(nodeID) = LLVM_IR_IndexAdd;
+				// XXX: Changing from add to every int operation
 				if(LLVM_IR_Add == microops.at(nodeID))
 					microops.at(nodeID) = LLVM_IR_IndexAdd;
+				else if(LLVM_IR_Sub == microops.at(nodeID))
+					microops.at(nodeID) = LLVM_IR_IndexSub;
 			}
 		}
 	}
@@ -1769,14 +1781,36 @@ std::pair<uint64_t, double> BaseDatapath::RCScheduler::schedule() {
 		if(args.showScheduling)
 			dumpFile << "[TICK] " << std::to_string(cycleTick) << "\n";
 
-		// Reset timing-constraint scheduling
-		if(!(args.fNoTCS))
-			tcSched.clear();
-
 		//std::cout << "~~ start " << std::to_string(cycleTick) << "\n";
 		// Assign ready state to starting nodes (if any)
 		if(startingNodes.size())
 			assignReadyStartingNodes();
+
+		if(!(args.fNoTCS)) {
+			// Reset timing-constraint scheduling
+			tcSched.clear();
+
+			// Before selecting, we must deduce the in-cycle latency that is being held by running instructions
+			for(auto &it : fAddExecuting)
+				tcSched.tryAllocate(it.first, false);
+			for(auto &it : fSubExecuting)
+				tcSched.tryAllocate(it.first, false);
+			for(auto &it : fMulExecuting)
+				tcSched.tryAllocate(it.first, false);
+			for(auto &it : fDivExecuting)
+				tcSched.tryAllocate(it.first, false);
+			for(auto &it : fCmpExecuting)
+				tcSched.tryAllocate(it.first, false);
+			for(auto &it : loadExecuting)
+				tcSched.tryAllocate(it.first, false);
+			for(auto &it : storeExecuting)
+				tcSched.tryAllocate(it.first, false);
+			for(auto &it : intOpExecuting)
+				tcSched.tryAllocate(it.first, false);
+			for(auto &it : callExecuting)
+				tcSched.tryAllocate(it.first, false);
+		}
+
 		select();
 		execute();
 		release();
@@ -1785,7 +1819,7 @@ std::pair<uint64_t, double> BaseDatapath::RCScheduler::schedule() {
 
 		if(args.fNoTCS) {
 			if(args.showScheduling)
-				dumpFile << "[TICK]\n";
+				dumpFile << "[TICK]\n\n";
 		}
 		else {
 			double currCriticalPath = tcSched.getCriticalPath();
@@ -1793,7 +1827,7 @@ std::pair<uint64_t, double> BaseDatapath::RCScheduler::schedule() {
 				achievedPeriod = currCriticalPath;
 
 			if(args.showScheduling)
-				dumpFile << "[TICK] Critical path for this tick: " << std::to_string(currCriticalPath) << " ns\n";
+				dumpFile << "[TICK] Critical path for this tick: " << std::to_string(currCriticalPath) << " ns\n\n";
 		}
 	}
 
@@ -2077,7 +2111,12 @@ void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &sel
 void BaseDatapath::RCScheduler::enqueueExecute(unsigned opcode, selectedListTy &selected, executingMapTy &executing, void (HardwareProfile::*release)()) {
 	while(selected.size()) {
 		unsigned selectedNodeID = selected.front();
-		unsigned latency = profile.getSchedulingLatency(opcode);
+		// XXX: getSchedulingLatency only exists because of load, which has a SCHEDULING_LATENCY of 1 cycle.
+		// But I don't feel that this is right anymore. Can't I just say that load is pipelined and let the
+		// rest of the scheduling to do the magic?
+		// XXX: I'm deactivating this line right now.
+		//unsigned latency = profile.getSchedulingLatency(opcode);
+		unsigned latency = profile.getLatency(opcode);
 
 		// Latency 0 or 1: this node was solved already. Set as scheduled and assign its children as ready
 		if(latency <= 1) {
@@ -2103,7 +2142,12 @@ void BaseDatapath::RCScheduler::enqueueExecute(selectedListTy &selected, executi
 	while(selected.size()) {
 		unsigned selectedNodeID = selected.front();
 		unsigned opcode = microops.at(selectedNodeID);
-		unsigned latency = profile.getSchedulingLatency(opcode);
+		// XXX: getSchedulingLatency only exists because of load, which has a SCHEDULING_LATENCY of 1 cycle.
+		// But I don't feel that this is right anymore. Can't I just say that load is pipelined and let the
+		// rest of the scheduling to do the magic?
+		// XXX: I'm deactivating this line right now.
+		//unsigned latency = profile.getSchedulingLatency(opcode);
+		unsigned latency = profile.getLatency(opcode);
 
 		// Latency 0 or 1: this node was solved already. Set as scheduled and assign its children as ready
 		if(latency <= 1) {
@@ -2128,7 +2172,12 @@ void BaseDatapath::RCScheduler::enqueueExecute(selectedListTy &selected, executi
 void BaseDatapath::RCScheduler::enqueueExecute(unsigned opcode, selectedListTy &selected, executingMapTy &executing, void (HardwareProfile::*releaseMem)(std::string)) {
 	while(selected.size()) {
 		unsigned selectedNodeID = selected.front();
-		unsigned latency = profile.getSchedulingLatency(opcode);
+		// XXX: getSchedulingLatency only exists because of load, which has a SCHEDULING_LATENCY of 1 cycle.
+		// But I don't feel that this is right anymore. Can't I just say that load is pipelined and let the
+		// rest of the scheduling to do the magic?
+		// XXX: I'm deactivating this line right now.
+		//unsigned latency = profile.getSchedulingLatency(opcode);
+		unsigned latency = profile.getLatency(opcode);
 		std::string arrayName = baseAddress.at(selectedNodeID).first;
 
 		// Latency 0 or 1: this node was solved already. Set as scheduled and assign its children as ready
@@ -2282,7 +2331,80 @@ void BaseDatapath::TCScheduler::clear() {
 	paths.clear();
 }
 
-bool BaseDatapath::TCScheduler::tryAllocate(unsigned nodeID) {
+std::pair<std::vector<BaseDatapath::TCScheduler::pathTy *>, std::vector<BaseDatapath::TCScheduler::pathTy>> BaseDatapath::TCScheduler::findDependencies(unsigned nodeID) {
+	std::vector<pathTy *> pathsToModify;
+	std::vector<pathTy> pathsToCreate;
+
+	// Check if this node is part of any ongoing path
+	for(auto &it : paths) {
+		// Check if this node is connected to any part of the current ongoing path
+		for(auto &it2 : it.second) {
+			// Connection found
+			if(boost::edge(nameToVertex.at(it2), nameToVertex.at(nodeID), graph).second) {
+				// If this is the last node of the path, mark the path
+				if(it.second.back() == it2) {
+					pathsToModify.push_back(&it);
+				}
+				// Else, create a new path with the common nodes
+				else {
+					pathTy newPath;
+					newPath.first = 0;
+
+					for(auto it3 = it.second.begin(); *it3 != it2; it3++) {
+						newPath.first += profile.getInCycleLatency(microops.at(*it3));
+						newPath.second.push_back(*it3);
+					}
+					pathsToCreate.push_back(newPath);
+				}
+			}
+		}
+	}
+
+	return std::make_pair(pathsToModify, pathsToCreate);
+}
+
+bool BaseDatapath::TCScheduler::tryAllocate(unsigned nodeID, bool checkTiming) {
+	std::pair<std::vector<pathTy *>, std::vector<pathTy>> pathsFound = findDependencies(nodeID);
+	double inCycleLatency = profile.getInCycleLatency(microops.at(nodeID));
+
+	// If no dependency was found for this node, create a new path and return
+	if(!(pathsFound.first.size() || pathsFound.second.size())) {
+		pathTy newPath;
+		newPath.first = inCycleLatency;
+		newPath.second.push_back(nodeID);
+		paths.push_back(newPath);
+
+		return true;
+	}
+
+	if(checkTiming) {
+		// Check if any modified path violates timing
+		for(auto &it : pathsFound.first) {
+			if((it->first + inCycleLatency) > effectivePeriod)
+				return false;
+		}
+
+		// Check if any new path violates timing
+		for(auto &it : pathsFound.second) {
+			if((it.first + inCycleLatency) > effectivePeriod)
+				return false;
+		}
+	}
+
+	// No path violations reported. Create/modify the paths and return
+	for(auto &it : pathsFound.first) {
+		it->first += inCycleLatency;
+		it->second.push_back(nodeID);
+	}
+	for(auto &it : pathsFound.second) {
+		it.first += inCycleLatency;
+		it.second.push_back(nodeID);
+		paths.push_back(it);
+	}
+
+	return true;
+
+#if 0
 	std::vector<std::pair<double, std::vector<unsigned>> *> pathsToModify;
 	std::vector<std::pair<double, std::vector<unsigned>>> newPaths;
 	double inCycleLatency = profile.getInCycleLatency(microops.at(nodeID));
@@ -2349,6 +2471,7 @@ bool BaseDatapath::TCScheduler::tryAllocate(unsigned nodeID) {
 
 	// If the code reached here, no timings were violated, super!
 	return true;
+#endif
 }
 
 double BaseDatapath::TCScheduler::getCriticalPath() {

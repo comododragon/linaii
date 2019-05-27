@@ -1700,6 +1700,7 @@ BaseDatapath::RCScheduler::RCScheduler(
 	finalIsolated.assign(numOfTotalNodes, true);
 	totalConnectedNodes = 0;
 	scheduledNodeCount = 0;
+	achievedPeriod = 0;
 
 	startingNodes.clear();
 

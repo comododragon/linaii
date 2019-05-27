@@ -2,6 +2,31 @@
 
 #include "profile_h/opcodes.h"
 
+HardwareProfile::HardwareProfile() {
+	fAddCount = 0;
+	fSubCount = 0;
+	fMulCount = 0;
+	fDivCount = 0;
+
+	unrFAddCount = 0;
+	unrFSubCount = 0;
+	unrFMulCount = 0;
+	unrFDivCount = 0;
+
+	fAddInUse = 0;
+	fSubInUse = 0;
+	fMulInUse = 0;
+	fDivInUse = 0;
+
+	fAddThreshold = 0;
+	fSubThreshold = 0;
+	fMulThreshold = 0;
+	fDivThreshold = 0;
+
+	isConstrained = false;
+	thresholdSet = false;
+}
+
 HardwareProfile *HardwareProfile::createInstance() {
 	// XXX: Right now only Xilinx boards are supported, therefore this is the only constructor available for now
 	switch(args.target) {
@@ -381,6 +406,18 @@ void HardwareProfile::intOpRelease(unsigned opcode) {
 
 void HardwareProfile::callRelease() {
 	assert(false && "Calls are not constrained");
+}
+
+XilinxHardwareProfile::XilinxHardwareProfile() {
+	maxDSP = 0;
+	maxFF = 0;
+	maxLUT = 0;
+	maxBRAM18k = 0;
+
+	usedDSP = 0;
+	usedFF = 0;
+	usedLUT = 0;
+	usedBRAM18k = 0;
 }
 
 void XilinxHardwareProfile::clear() {

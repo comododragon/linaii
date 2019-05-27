@@ -36,6 +36,7 @@ public:
 		LIMITED_BY_FDIV
 	};
 
+	HardwareProfile();
 	virtual ~HardwareProfile() { }
 	static HardwareProfile *createInstance();
 	virtual void clear();
@@ -158,6 +159,8 @@ protected:
 	unsigned usedDSP, usedFF, usedLUT, usedBRAM18k;
 
 public:
+	XilinxHardwareProfile();
+
 	void clear();
 
 	virtual unsigned getLatency(unsigned opcode);

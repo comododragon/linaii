@@ -802,10 +802,13 @@ void InstrumentForDDDG::updateUnrollingDatabase(const std::vector<ConfigurationM
 
 		unsigned innermostLevel = found2->second.size();
 
+		// Not the innermost level AND partial unroll requested
 		if(cfg.loopLevel != innermostLevel && cfg.unrollFactor > 1) {
 			assert(cfg.loopLevel <= innermostLevel && "Loop level is larger than number of levels");
+			// XXX: Shouldn't we also check here if the factor is bigger than the loop bound if it is known?
 			found2->second[cfg.loopLevel - 1] = cfg.unrollFactor;
 		}
+		// Innermost level OR full unroll requested
 		else {
 			std::string wholeLoopName = appendDepthToLoopName(loopName, cfg.loopLevel);
 			uint64_t loopBound = wholeloopName2loopBoundMap.at(wholeLoopName);
@@ -835,11 +838,11 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 		std::string loopName = it.first;
 		std::string loopIndex = std::to_string(std::get<1>(parseLoopName(loopName)));
 
+		// Skip loop if it is not of interest
 		std::vector<std::string>::iterator found = std::find(args.targetLoops.begin(), args.targetLoops.end(), loopIndex);
 		if(args.targetLoops.end() == found)
 			continue;
 
-		// Skip loop if it is not of interest
 		std::vector<unsigned> &levelUnrollVec = it.second;
 		int targetLoopLevel = 1;
 		unsigned targetUnrollFactor = 1;
@@ -847,6 +850,7 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 		std::string targetWholeLoopName = appendDepthToLoopName(loopName, targetLoopLevel);
 		bool enablePipelining = false;
 
+		// XXX: I think that the bug possibility is now gone, see the inner ocmment explaining this loop
 		// TODO: THIS MAY BE A SOURCE FOR BUGS
 		// TODO: THIS MAY BE A SOURCE FOR BUGS
 		// TODO: THIS MAY BE A SOURCE FOR BUGS
@@ -856,15 +860,21 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 		// Acquire target unroll factors, loop bound and pipelining flag
 		// XXX: this is very confusing. I just simplified from original code but it is still very confusing
 		for(int i = (int) (levelUnrollVec.size() - 1); i >= 0 && 1 == targetLoopLevel; i--) {
+			// This value is always > 0
 			targetUnrollFactor = levelUnrollVec.at(i);
 			std::string wholeLoopName = appendDepthToLoopName(loopName, i + 1);
 
 			wholeloopName2loopBoundMapTy::iterator found2 = wholeloopName2loopBoundMap.find(wholeLoopName);
-
 			assert(found2 != wholeloopName2loopBoundMap.end() && "Could not find loop in wholeloopName2loopBoundMap");
-
 			targetLoopBound = found2->second;
 
+			/**
+			 * If loop bound is not known statically (0 == targetLoopBound), this "if" always executes (targetUnrollFactor is always > 0)
+			 * If loop bound is known (targetLoopBound > 1), this "if" will execute in the following situations:
+			 * - No unroll was specified
+			 * - Unroll was specified, but the unroll factor is different from the loop bound
+			 * The first execution of this "if" breaks the "for" loop.
+			 */
 			if(targetUnrollFactor != targetLoopBound) {
 				targetLoopLevel = i + 1;
 				targetWholeLoopName = wholeLoopName;

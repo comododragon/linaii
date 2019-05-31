@@ -59,6 +59,17 @@ BaseDatapath::BaseDatapath(
 
 	VERBOSE_PRINT(errs() << "\tBuild initial DDDG\n");
 
+	// If global optimisation is enabled, we build the DDDG for the whole loop instead.
+	// After optimisations, we reduce the DDDG to a single iteration of the requested loop
+	// XXX: será que devo modificar mesmo o unroll factor? só o loop level nao é suficiente?
+	if(args.fGOpt) {
+		originalLoopLevel = loopLevel;
+		originalLoopUnrollFactor = loopUnrollFactor;
+
+		this->loopLevel = 1;
+		this->loopUnrollFactor = 1;
+	}
+
 #ifdef USE_FUTURE
 	builder = new DDDGBuilder(this, PC, future);
 #else
@@ -244,6 +255,12 @@ uint64_t BaseDatapath::fpgaEstimationOneMoreSubtraceForRecIICalculation() {
 		enableStoreBufferOptimisation();
 	}
 
+	// XXX: Those calls were migrated from the rcScheduling call!
+	VERBOSE_PRINT(errs() << "\tUpdating base address database\n");
+	initScratchpadPartitions();
+	VERBOSE_PRINT(errs() << "\tOptimising DDDG\n");
+	optimiseDDDG();
+
 	// Put the node latency using selected architecture as edge weights in the graph
 	VERBOSE_PRINT(errs() << "\tUpdating DDDG edges with operation latencies according to selected hardware\n");
 	//EdgeWeightMap edgeWeightMap = boost::get(boost::edge_weight, graph);
@@ -293,6 +310,14 @@ uint64_t BaseDatapath::fpgaEstimation() {
 		VERBOSE_PRINT(errs() << "\tOptimising store buffers\n");
 		enableStoreBufferOptimisation();
 	}
+
+	// XXX: Those calls were migrated from the rcScheduling call!
+	VERBOSE_PRINT(errs() << "\tUpdating base address database\n");
+	initScratchpadPartitions();
+	VERBOSE_PRINT(errs() << "\tOptimising DDDG\n");
+	optimiseDDDG();
+	if(args.showPostOptDDDG)
+		dumpGraph(true);
 
 	// Put the node latency using selected architecture as edge weights in the graph
 	VERBOSE_PRINT(errs() << "\tUpdating DDDG edges with operation latencies according to selected hardware\n");
@@ -570,6 +595,59 @@ void BaseDatapath::enableStoreBufferOptimisation() {
 	updateRemoveDDDGNodes(nodesToRemove);
 }
 
+void BaseDatapath::reduceDDDG(){
+	const std::vector<std::string> &bbNames = PC.getCurrBBList();
+	const std::vector<std::string> &instIDs = PC.getInstIDList();
+
+	std::vector<std::string> funcNames;
+	for(auto &it : PC.getFuncList()) {
+#ifdef LEGACY_SEPARATOR
+		size_t tagPos = it.find("-");
+#else
+		size_t tagPos = it.find(GLOBAL_SEPARATOR);
+#endif
+		std::string functionName = it.substr(0, tagPos);
+
+		funcNames.push_back(functionName);
+	}
+
+	loopLevel = originalLoopLevel;
+	loopUnrollFactor = originalLoopUnrollFactor;
+
+	std::vector<unsigned> nodesToRemove;
+	std::set<std::string> visited;
+
+	// Remove all nodes that are part of other loop level
+	for(unsigned nodeID = 0; nodeID < numOfTotalNodes; nodeID++) {
+		if(!boost::degree(nameToVertex[nodeID], graph))
+			continue;
+
+		std::string bbName = bbNames.at(nodeID);
+		std::string funcName = funcNames.at(nodeID);
+		bbFuncNamePairTy bbFuncPair = std::make_pair(bbName, funcName);
+		bbFuncNamePair2lpNameLevelPairMapTy::iterator found = bbFuncNamePair2lpNameLevelPairMap.find(bbFuncPair);
+		assert(found != bbFuncNamePair2lpNameLevelPairMap.end() && "Could not find loop in bbFuncNamePair2lpNameLevelPairMap");
+
+		// Node is part of other loop level, remove
+		if(found->second.second != loopLevel)
+			nodesToRemove.push_back(nodeID);
+	}
+
+	// Remove all repeated nodes (i.e. leave only one iteration of the loop)
+	for(unsigned nodeID = 0; nodeID < numOfTotalNodes; nodeID++) {
+		if(!boost::degree(nameToVertex[nodeID], graph))
+			continue;
+
+		std::string instID = instIDs.at(nodeID);
+		if(visited.count(instID))
+			nodesToRemove.push_back(nodeID);
+		else
+			visited.insert(instID);
+	}
+
+	updateRemoveDDDGNodes(nodesToRemove);
+}
+
 void BaseDatapath::initScratchpadPartitions() {
 	// TODO: Null-scratchpads for arrays without partition are created here
 
@@ -653,6 +731,10 @@ void BaseDatapath::optimiseDDDG() {
 
 	if(args.fTHRFloatOpt)
 		reduceTreeHeight(isFAssociative);
+
+	// All optimisations were already performed. If global optimisation is set, it's now time to schedule the original allocated loop
+	if(args.fGOpt)
+		reduceDDDG();
 }
 
 void BaseDatapath::performMemoryDisambiguation() {
@@ -1174,6 +1256,9 @@ void BaseDatapath::identifyCriticalPaths() {
 	// After calculating ASAP and ALAP, the critical path is defined by the nodes that have the same scheduled time on both
 	// (i.e. no operation mobility / slack)
 	for(unsigned nodeID = 0; nodeID < numOfTotalNodes; nodeID++) {
+		if(!boost::degree(nameToVertex[nodeID], graph))
+			continue;
+
 		if(asapScheduledTime[nodeID] == alapScheduledTime[nodeID])
 			cPathNodes.push_back(nodeID);
 	}
@@ -1184,19 +1269,25 @@ std::pair<uint64_t, double> BaseDatapath::rcScheduling() {
 
 	assert(asapScheduledTime.size() && alapScheduledTime.size() && cPathNodes.size() && "ASAP, ALAP and/or critical path list not generated");
 
+	// XXX: migrating these both calls to before asap and alap!!!!!
+	// XXX: migrating these both calls to before asap and alap!!!!!
+	// XXX: migrating these both calls to before asap and alap!!!!!
+	// XXX: migrating these both calls to before asap and alap!!!!!
+	// XXX: migrating these both calls to before asap and alap!!!!!
+	// XXX: migrating these both calls to before asap and alap!!!!!
 	// XXX: completePartition() initialised a vector of registers (a class named Registers). This class is composed of a counter of loads
 	// and stores. However, such information is never used, so there is no point on generating such structure.
 	//completePartition();
 	// XXX: initScratchpadPartitions also created some data structure that apparently is not used.
 	// I've implemented only part of it, where it messes with the baseAddress. However the logic is quite strange
 	// and I still question myself if it'll be useful at any point at all
-	VERBOSE_PRINT(errs() << "\t\tUpdating base address database\n");
-	initScratchpadPartitions();
-	VERBOSE_PRINT(errs() << "\t\tOptimising DDDG\n");
-	optimiseDDDG();
+	//VERBOSE_PRINT(errs() << "\t\tUpdating base address database\n");
+	//initScratchpadPartitions();
+	//VERBOSE_PRINT(errs() << "\t\tOptimising DDDG\n");
+	//optimiseDDDG();
 
-	if(args.showPostOptDDDG)
-		dumpGraph(true);
+	//if(args.showPostOptDDDG)
+	//	dumpGraph(true);
 
 	rcScheduledTime.assign(numOfTotalNodes, 0);
 
@@ -1248,8 +1339,12 @@ std::tuple<std::string, uint64_t> BaseDatapath::calculateResIIMem() {
 	}
 
 	std::map<uint64_t, std::vector<unsigned>> rcToNodes;
-	for(unsigned nodeID = 0; nodeID < numOfTotalNodes; nodeID++)
+	for(unsigned nodeID = 0; nodeID < numOfTotalNodes; nodeID++) {
+		if(!boost::degree(nameToVertex[nodeID], graph))
+			continue;
+
 		rcToNodes[rcScheduledTime[nodeID]].push_back(nodeID);
+	}
 
 	for(auto &it : rcToNodes) {
 		uint64_t currentSched = it.first;
@@ -1778,9 +1873,13 @@ BaseDatapath::RCScheduler::~RCScheduler() {
 }
 
 std::pair<uint64_t, double> BaseDatapath::RCScheduler::schedule() {
+	unsigned nullCycles = 0;
+
 	for(cycleTick = 0; scheduledNodeCount != totalConnectedNodes; cycleTick++) {
 		if(args.showScheduling)
 			dumpFile << "[TICK] " << std::to_string(cycleTick) << "\n";
+
+		isNullCycle = true;
 
 		//std::cout << "~~ start " << std::to_string(cycleTick) << "\n";
 		// Assign ready state to starting nodes (if any)
@@ -1820,7 +1919,7 @@ std::pair<uint64_t, double> BaseDatapath::RCScheduler::schedule() {
 
 		if(args.fNoTCS) {
 			if(args.showScheduling)
-				dumpFile << "[TICK]\n\n";
+				dumpFile << "[TICK]";
 		}
 		else {
 			double currCriticalPath = tcSched.getCriticalPath();
@@ -1828,7 +1927,16 @@ std::pair<uint64_t, double> BaseDatapath::RCScheduler::schedule() {
 				achievedPeriod = currCriticalPath;
 
 			if(args.showScheduling)
-				dumpFile << "[TICK] Critical path for this tick: " << std::to_string(currCriticalPath) << " ns\n\n";
+				dumpFile << "[TICK] Critical path for this tick: " << std::to_string(currCriticalPath) << " ns";
+		}
+
+		// Null cycle detected: no instructions of interest were selected
+		if(isNullCycle) {
+			nullCycles++;
+			dumpFile << " (null cycle)\n\n";
+		}
+		else {
+			dumpFile << "\n\n";
 		}
 	}
 
@@ -1836,6 +1944,9 @@ std::pair<uint64_t, double> BaseDatapath::RCScheduler::schedule() {
 		dumpFile << "================================================\n";
 		dumpFile.close();
 	}
+
+	// Deduce null cycles
+	cycleTick -= nullCycles;
 
 	// XXX: I could not clearly get why (i - 1) and (i + 1) but not (i) and (i + 1)
 	//return (args.fExtraScalar)? cycleTick + 1 : cycleTick - 1;
@@ -2121,6 +2232,8 @@ void BaseDatapath::RCScheduler::enqueueExecute(unsigned opcode, selectedListTy &
 
 		// Latency 0 or 1: this node was solved already. Set as scheduled and assign its children as ready
 		if(latency <= 1) {
+			isNullCycle = false;
+
 			if(args.showScheduling)
 				dumpFile << "\t[RELEASED] [1/" <<  std::to_string(latency) << "] Node " << selectedNodeID << " (" << reverseOpcodeMap.at(opcode) << ")\n";
 
@@ -2152,6 +2265,8 @@ void BaseDatapath::RCScheduler::enqueueExecute(selectedListTy &selected, executi
 
 		// Latency 0 or 1: this node was solved already. Set as scheduled and assign its children as ready
 		if(latency <= 1) {
+			isNullCycle = false;
+
 			if(args.showScheduling)
 				dumpFile << "\t[RELEASED] [1/" <<  std::to_string(latency) << "] Node " << selectedNodeID << " (" << reverseOpcodeMap.at(opcode) << ")\n";
 
@@ -2183,6 +2298,8 @@ void BaseDatapath::RCScheduler::enqueueExecute(unsigned opcode, selectedListTy &
 
 		// Latency 0 or 1: this node was solved already. Set as scheduled and assign its children as ready
 		if(latency <= 1) {
+			isNullCycle = false;
+
 			if(args.showScheduling)
 				dumpFile << "\t[RELEASED] [1/" <<  std::to_string(latency) << "] Node " << selectedNodeID << " (" << reverseOpcodeMap.at(opcode) << ")\n";
 
@@ -2206,6 +2323,8 @@ void BaseDatapath::RCScheduler::tryRelease(unsigned opcode, executingMapTy &exec
 
 	for(auto &it: executing) {
 		unsigned executingNodeID = it.first;
+
+		isNullCycle = false;
 
 		// Decrease one cycle
 		(it.second)--;
@@ -2239,6 +2358,8 @@ void BaseDatapath::RCScheduler::tryRelease(executingMapTy &executing, void (Hard
 		unsigned executingNodeID = it.first;
 		unsigned opcode = microops.at(executingNodeID);
 
+		isNullCycle = false;
+
 		// Decrease one cycle
 		(it.second)--;
 
@@ -2270,6 +2391,8 @@ void BaseDatapath::RCScheduler::tryRelease(unsigned opcode, executingMapTy &exec
 	for(auto &it: executing) {
 		unsigned executingNodeID = it.first;
 		std::string arrayName = baseAddress.at(executingNodeID).first;
+
+		isNullCycle = false;
 
 		// Decrease one cycle
 		(it.second)--;
@@ -2498,6 +2621,9 @@ BaseDatapath::ColorWriter::ColorWriter(
 template<class VE> void BaseDatapath::ColorWriter::operator()(std::ostream &out, const VE &v) const {
 	unsigned nodeID = vertexNameMap[v];
 
+	if(!boost::degree(v, graph))
+		return;
+
 	assert(nodeID < bbNames.size() && "Node ID out of bounds (bbNames)");
 	assert(nodeID < funcNames.size() && "Node ID out of bounds (funcNames)");
 	assert(nodeID < opcodes.size() && "Node ID out of bounds (opcodes)");
@@ -2509,7 +2635,7 @@ template<class VE> void BaseDatapath::ColorWriter::operator()(std::ostream &out,
 	llvm::bbFuncNamePair2lpNameLevelPairMapTy::iterator found = bbFuncNamePair2lpNameLevelPairMap.find(bbFuncPair);
 	if(found != bbFuncNamePair2lpNameLevelPairMap.end()) {
 		std::string colorString = "color=";
-		switch((ColorEnum) std::get<1>(parseLoopName(found->second.first))) {
+		switch((ColorEnum) found->second.second) {
 			case RED: colorString += "red"; break;
 			case GREEN: colorString += "green"; break;
 			case BLUE: colorString += "blue"; break;

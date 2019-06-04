@@ -1441,7 +1441,7 @@ std::tuple<std::string, uint64_t> BaseDatapath::calculateResIIMem() {
 		it.second = (readII > writeII)? readII : writeII;
 	}
 
-	std::map<std::string, uint64_t>::iterator maxIt = std::max_element(arrayPartitionToResII.begin(), arrayPartitionToResII.end());
+	std::map<std::string, uint64_t>::iterator maxIt = std::max_element(arrayPartitionToResII.begin(), arrayPartitionToResII.end(), prioritiseSmallerResIIMem);
 
 	if(maxIt->second > 1)
 		return std::make_tuple(maxIt->first, maxIt->second);

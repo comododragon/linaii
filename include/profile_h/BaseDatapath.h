@@ -244,6 +244,7 @@ private:
 	HardwareProfile *profile;
 
 	void findMinimumRankPair(std::pair<unsigned, unsigned> &pair, std::map<unsigned, unsigned> rankMap);
+	static bool prioritiseSmallerResIIMem(const std::pair<std::string, double> &first, const std::pair<std::string, double> &second) { return first.second < second.second; }
 
 public:
 #ifdef USE_FUTURE

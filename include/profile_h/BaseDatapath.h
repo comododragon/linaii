@@ -233,8 +233,6 @@ private:
 	std::string loopName;
 	unsigned loopLevel;
 	uint64_t loopUnrollFactor;
-	unsigned originalLoopLevel;
-	uint64_t originalLoopUnrollFactor;
 
 	DDDGBuilder *builder;
 	ParsedTraceContainer PC;
@@ -339,7 +337,6 @@ protected:
 	void removeInductionDependencies();
 	void removePhiNodes();
 	void enableStoreBufferOptimisation();
-	void reduceDDDG();
 	void initScratchpadPartitions();
 	void optimiseDDDG();
 	void performMemoryDisambiguation();

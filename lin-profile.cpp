@@ -64,7 +64,7 @@ const std::string helpMessage =
 	"                   --show-pre-dddg    : dump DDDG before optimisation\n"
 	"                   --show-post-dddg   : dump DDDG after optimisation\n"
 	"                   --show-scheduling  : dump constrained-scheduling\n"
-	"                   --f-gopt           : enable DDDG global optimisation\n"
+	"                   --f-npla           : enable non-perfect loop analysis\n"
 	"                   --fno-tcs          : disable timing-constrained scheduling\n"
 	"                   --fno-sb           : disable store-buffer optimisation\n"
 	"                   --f-slr            : enable shared-load-removal optimisation\n"
@@ -181,7 +181,7 @@ void parseInputArguments(int argc, char **argv) {
 	args.showPreOptDDDG = false;
 	args.showPostOptDDDG = false;
 	args.showScheduling = false;
-	args.fGOpt = false;
+	args.fNPLA = false;
 	args.fNoTCS = false;
 	args.fSBOpt = true;
 	args.fSLROpt = false;
@@ -219,7 +219,7 @@ void parseInputArguments(int argc, char **argv) {
 			{"show-pre-dddg", no_argument, 0, 0xF03},
 			{"show-post-dddg", no_argument, 0, 0xF04},
 			{"show-scheduling", no_argument, 0, 0xF05},
-			{"f-gopt", no_argument, 0, 0xF06},
+			{"f-npla", no_argument, 0, 0xF06},
 			{"fno-tcs", no_argument, 0, 0xF07},
 			{"fno-sb", no_argument, 0, 0xF08},
 			{"f-slr", no_argument, 0, 0xF09},
@@ -325,7 +325,7 @@ void parseInputArguments(int argc, char **argv) {
 				args.showScheduling = true;
 				break;
 			case 0xF06:
-				args.fGOpt = true;
+				args.fNPLA = true;
 				break;
 			case 0xF07:
 				args.fNoTCS = true;

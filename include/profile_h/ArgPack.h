@@ -35,7 +35,7 @@ typedef struct {
 	bool showPreOptDDDG;
 	bool showPostOptDDDG;
 	bool showScheduling;
-	bool fGOpt;
+	bool fNPLA;
 	bool fNoTCS;
 	bool fSBOpt;
 	bool fSLROpt;

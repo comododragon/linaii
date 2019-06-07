@@ -31,6 +31,7 @@
 #include "profile_h/BaseDatapath.h"
 #include "profile_h/DDDGBuilder.h"
 #include "profile_h/DynamicDatapath.h"
+#include "profile_h/Multipath.h"
 #include "profile_h/Passes.h"
 #include "profile_h/SlotTracker.h"
 #include "profile_h/TraceFunctions.h"

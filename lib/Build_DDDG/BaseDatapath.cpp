@@ -75,20 +75,38 @@ BaseDatapath::BaseDatapath(
 	delete builder;
 	builder = nullptr;
 
-	BGL_FORALL_VERTICES(v, graph, Graph) nameToVertex[boost::get(boost::vertex_index, graph, v)] = v;
-	vertexToName = boost::get(boost::vertex_index, graph);
+	postDDDGBuild();
 
-	for(auto &it : PC.getFuncList()) {
-#ifdef LEGACY_SEPARATOR
-		size_t tagPos = it.find("-");
-#else
-		size_t tagPos = it.find(GLOBAL_SEPARATOR);
-#endif
-		std::string functionName = it.substr(0, tagPos);
+	numCycles = 0;
 
-		//if(functionNames.end() == functionNames.find(functionName))
-		functionNames.insert(functionName);
-	}
+	///FIXME: We set numOfPortsPerPartition to 1000, so that we do not have memory port limitations. 
+	/// 1000 ports are sufficient. 
+	/// Later, we need to add memory port limitation below (struct will be better) to take read/write
+	/// ports into consideration.
+	numOfPortsPerPartition = 1000;
+
+	// Reset resource counting in profile
+	profile->clear();
+
+	sharedLoadsRemoved = 0;
+	repeatedStoresRemoved = 0;
+}
+
+BaseDatapath::BaseDatapath(
+	std::string kernelName, ConfigurationManager &CM, ParsedTraceContainer &PC, std::ofstream *summaryFile,
+	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
+	bool enablePipelining, uint64_t asapII
+) :
+	kernelName(kernelName), CM(CM), summaryFile(summaryFile),
+	loopName(loopName), loopLevel(loopLevel), loopUnrollFactor(loopUnrollFactor),
+	PC(PC), enablePipelining(enablePipelining), asapII(asapII)
+{
+	builder = nullptr;
+	profile = nullptr;
+	microops.clear();
+
+	// Create hardware profile based on selected platform
+	profile = HardwareProfile::createInstance();
 
 	numCycles = 0;
 
@@ -130,6 +148,23 @@ unsigned BaseDatapath::getNumNodes() const {
 
 unsigned BaseDatapath::getNumEdges() const {
 	return boost::num_edges(graph);
+}
+
+void BaseDatapath::postDDDGBuild() {
+	BGL_FORALL_VERTICES(v, graph, Graph) nameToVertex[boost::get(boost::vertex_index, graph, v)] = v;
+	vertexToName = boost::get(boost::vertex_index, graph);
+
+	for(auto &it : PC.getFuncList()) {
+#ifdef LEGACY_SEPARATOR
+		size_t tagPos = it.find("-");
+#else
+		size_t tagPos = it.find(GLOBAL_SEPARATOR);
+#endif
+		std::string functionName = it.substr(0, tagPos);
+
+		//if(functionNames.end() == functionNames.find(functionName))
+		functionNames.insert(functionName);
+	}
 }
 
 void BaseDatapath::insertMicroop(int microop) {

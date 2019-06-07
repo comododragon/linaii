@@ -884,6 +884,23 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 			enablePipelining = found3 != pipelineLoopLevelVec.end();
 		}
 
+		int firstNonPerfectLoopLevel = -1;
+
+		// If non-perfect loop analysis is enabled, find the first loop to be non-perfect
+		if(args.fNPLA) {
+			for(unsigned i = 0; i < levelUnrollVec.size(); i++) {
+				std::string wholeLoopName = appendDepthToLoopName(loopName, i + 1);
+
+				wholeloopName2perfectOrNotMapTy::iterator found2 = wholeloopName2perfectOrNotMap.find(wholeLoopName);
+				assert(found2 != wholeloopName2perfectOrNotMap.end() && "Could not find loop in wholeloopName2perfectOrNotMap");
+
+				if(!(found2->second)) {
+					firstNonPerfectLoopLevel = i + 1;
+					break;
+				}
+			}
+		}
+
 		VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Target loop: " << targetWholeLoopName << "\n");
 		VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Target unroll factor: " << targetUnrollFactor << "\n");
 		VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Target loop bound: " << targetLoopBound << "\n");
@@ -922,13 +939,20 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 
 		VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Building dynamic datapath\n");
 
+		if(args.fNPLA && firstNonPerfectLoopLevel != -1) {
+			Multipath MD(kernelName, CM, &summaryFile, loopName, targetLoopLevel, firstNonPerfectLoopLevel, unrollFactor, enablePipelining, recII);
+
+			errs() << "[][][" << targetWholeLoopName << "] Estimated cycles: " << std::to_string(MD.getCycles()) << "\n";
+		}
+		else {
 #ifdef USE_FUTURE
-		DynamicDatapath DD(kernelName, CM, &summaryFile, loopName, targetLoopLevel, unrollFactor, &future, enablePipelining, recII);
+			DynamicDatapath DD(kernelName, CM, &summaryFile, loopName, targetLoopLevel, unrollFactor, &future, enablePipelining, recII);
 #else
-		DynamicDatapath DD(kernelName, CM, &summaryFile, loopName, targetLoopLevel, unrollFactor, enablePipelining, recII);
+			DynamicDatapath DD(kernelName, CM, &summaryFile, loopName, targetLoopLevel, unrollFactor, enablePipelining, recII);
 #endif
 
-		errs() << "[][][" << targetWholeLoopName << "] Estimated cycles: " << std::to_string(DD.getCycles()) << "\n";
+			errs() << "[][][" << targetWholeLoopName << "] Estimated cycles: " << std::to_string(DD.getCycles()) << "\n";
+		}
 	}
 
 	closeSummaryFile();

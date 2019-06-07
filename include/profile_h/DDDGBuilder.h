@@ -162,6 +162,8 @@ class DDDGBuilder {
 	void parseForward();
 	void parseParameter(int param);
 
+	bool lookaheadIsSameLoopLevel(gzFile &traceFile, unsigned loopLevel);
+
 	void writeDDDG();
 
 public:
@@ -171,7 +173,12 @@ public:
 	DDDGBuilder(BaseDatapath *datapath, ParsedTraceContainer &PC);
 #endif
 
+	intervalTy getTraceLineFromToBeforeNestedLoop(gzFile &traceFile);
+	intervalTy getTraceLineFromToAfterNestedLoop(gzFile &traceFile);
+	intervalTy getTraceLineFromToBetweenAfterAndBefore(gzFile &traceFile);
+
 	void buildInitialDDDG();
+	void buildInitialDDDG(intervalTy interval);
 
 	unsigned getNumOfRegisterDependencies();
 	unsigned getNumOfMemoryDependencies();

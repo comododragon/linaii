@@ -260,6 +260,12 @@ public:
 	);
 #endif
 
+	BaseDatapath(
+		std::string kernelName, ConfigurationManager &CM, ParsedTraceContainer &PC, std::ofstream *summaryFile,
+		std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
+		bool enablePipelining, uint64_t asapII
+	);
+
 	~BaseDatapath();
 
 	std::string getTargetLoopName() const;
@@ -268,6 +274,7 @@ public:
 	unsigned getNumNodes() const;
 	unsigned getNumEdges() const;
 
+	void postDDDGBuild();
 	void insertMicroop(int microop);
 	void insertDDDGEdge(unsigned from, unsigned to, uint8_t paramID);
 	bool edgeExists(unsigned from, unsigned to);

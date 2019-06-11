@@ -7,12 +7,32 @@ using namespace llvm;
 
 class Multipath {
 	uint64_t numCycles;
+	std::string kernelName;
+	ConfigurationManager &CM;
+	std::ofstream *summaryFile;
+	std::string loopName;
+	unsigned loopLevel;
+	unsigned firstNonPerfectLoopLevel;
+	uint64_t loopUnrollFactor;
+	std::vector<unsigned> &unrolls;
+	uint64_t actualLoopUnrollFactor;
+	bool enablePipelining;
+
+	void _Multipath();
+
+	void recursiveLookup(std::vector<std::tuple<unsigned, unsigned, uint64_t>> &pack, unsigned currLoopLevel, unsigned finalLoopLevel);
 
 public:
 	Multipath(
 		std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
-		std::string loopName, unsigned loopLevel, unsigned firstNonPerfectLoopLevel, uint64_t loopUnrollFactor,
-		bool enablePipelining, uint64_t asapII
+		std::string loopName, unsigned loopLevel, unsigned firstNonPerfectLoopLevel,
+		uint64_t loopUnrollFactor, std::vector<unsigned> &unrolls, uint64_t actualLoopUnrollFactor
+	);
+
+	Multipath(
+		std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
+		std::string loopName, unsigned loopLevel, unsigned firstNonPerfectLoopLevel,
+		uint64_t loopUnrollFactor, std::vector<unsigned> &unrolls
 	);
 
 	~Multipath();

@@ -65,15 +65,10 @@ BaseDatapath::BaseDatapath(
 	builder = new DDDGBuilder(this, PC);
 #endif
 	builder->buildInitialDDDG();
-	// TODO: I think this is a bug. microops.size() is one element bigger than the DDDG. This happens
-	// because on parseTraceLineFromTo, an additional instruction is added do microops, but its parameters
-	// are not evaluated. Therefore no edges are created and this orphan node apparently does not affect the
-	// program. The correct in IMHO would be numOfTotalNodes = getNumNodes();
-	// But I'm keeping the original code for now for comparison purposes
-	numOfTotalNodes = microops.size();
-	//numOfTotalNodes = getNumNodes();
 	delete builder;
 	builder = nullptr;
+	// XXX DEBUUUUUUUUUUUUGGGGGGGGGGGGGGGGGGGGGGGGGG
+	return;
 
 	postDDDGBuild();
 
@@ -92,14 +87,17 @@ BaseDatapath::BaseDatapath(
 	repeatedStoresRemoved = 0;
 }
 
+// TODO: i think that enablePipelining and asapII must not be provided with this constructor.
+// pipelining will only happen on a loop level where all the inner nests are fully unrolled
+// and when they're fully unrolled, this is the first level to perform normal analysis.
+// When normal analysis happens, this constructor is (supposedly) not used
 BaseDatapath::BaseDatapath(
-	std::string kernelName, ConfigurationManager &CM, ParsedTraceContainer &PC, std::ofstream *summaryFile,
-	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
-	bool enablePipelining, uint64_t asapII
+	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
+	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor
 ) :
 	kernelName(kernelName), CM(CM), summaryFile(summaryFile),
 	loopName(loopName), loopLevel(loopLevel), loopUnrollFactor(loopUnrollFactor),
-	PC(PC), enablePipelining(enablePipelining), asapII(asapII)
+	PC(kernelName), enablePipelining(false), asapII(0)
 {
 	builder = nullptr;
 	profile = nullptr;
@@ -151,6 +149,14 @@ unsigned BaseDatapath::getNumEdges() const {
 }
 
 void BaseDatapath::postDDDGBuild() {
+	// TODO: I think this is a bug. microops.size() is one element bigger than the DDDG. This happens
+	// because on parseTraceLineFromTo, an additional instruction is added do microops, but its parameters
+	// are not evaluated. Therefore no edges are created and this orphan node apparently does not affect the
+	// program. The correct in IMHO would be numOfTotalNodes = getNumNodes();
+	// But I'm keeping the original code for now for comparison purposes
+	numOfTotalNodes = microops.size();
+	//numOfTotalNodes = getNumNodes();
+
 	BGL_FORALL_VERTICES(v, graph, Graph) nameToVertex[boost::get(boost::vertex_index, graph, v)] = v;
 	vertexToName = boost::get(boost::vertex_index, graph);
 
@@ -1698,7 +1704,7 @@ void BaseDatapath::dumpSummary(
 }	
 
 void BaseDatapath::dumpGraph(bool isOptimised) {
-	std::string graphFileName(args.outWorkDir + loopName + (isOptimised? "_graph_opt.dot" : "_graph.dot"));
+	std::string graphFileName(args.outWorkDir + appendDepthToLoopName(loopName, loopLevel) + (isOptimised? "_graph_opt.dot" : "_graph.dot"));
 	std::ofstream out(graphFileName);
 
 	std::vector<std::string> functionNames;

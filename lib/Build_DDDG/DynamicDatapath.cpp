@@ -13,6 +13,8 @@ DynamicDatapath::DynamicDatapath(
 ) : BaseDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, false, 0) {
 	VERBOSE_PRINT(errs() << "[][][][dynamicDatapath] Analysing DDDG for loop \"" << loopName << "\"\n");
 #endif
+	// XXX DEBUUUUUUUUUUUUGGGGGGGGGGGGGGGGGGGGGGGGGG
+	return;
 
 	initBaseAddress();
 
@@ -43,6 +45,8 @@ DynamicDatapath::DynamicDatapath(
 	bool enablePipelining, uint64_t asapII
 ) : BaseDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, enablePipelining, asapII) {
 #endif
+	// XXX DEBUUUUUUUUUUUUGGGGGGGGGGGGGGGGGGGGGGGGGG
+	return;
 	VERBOSE_PRINT(errs() << "[][][][dynamicDatapath] Analysing DDDG for loop \"" << loopName << "\"\n");
 
 	initBaseAddress();
@@ -53,6 +57,61 @@ DynamicDatapath::DynamicDatapath(
 	numCycles = fpgaEstimation();
 
 	VERBOSE_PRINT(errs() << "[][][][dynamicDatapath] Finished\n");
+
+#ifdef DBG_PRINT_ALL
+	printDatabase();
+#endif
+}
+
+// XXX: enablePipeliningand asapII are not set here. See the new BaseDapath constructor comments for the reason
+DynamicDatapath::DynamicDatapath(
+	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
+	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor, unsigned datapathType
+) : BaseDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor) {
+	VERBOSE_PRINT(errs() << "\tBuild initial DDDG\n");
+
+	std::string traceFileName = args.workDir + FILE_DYNAMIC_TRACE;
+	gzFile traceFile;
+
+	traceFile = gzopen(traceFileName.c_str(), "r");
+	assert(traceFile != Z_NULL && "Could not open trace input file");
+
+	builder = new DDDGBuilder(this, PC);
+	intervalTy interval;
+	if(DynamicDatapath::NON_PERFECT_BEFORE == datapathType)
+		interval = builder->getTraceLineFromToBeforeNestedLoop(traceFile);
+	else if(DynamicDatapath::NON_PERFECT_BETWEEN == datapathType)
+		interval = builder->getTraceLineFromToBetweenAfterAndBefore(traceFile);
+	else if(DynamicDatapath::NON_PERFECT_AFTER == datapathType)
+		interval = builder->getTraceLineFromToAfterNestedLoop(traceFile);
+	else
+		assert(false && "Invalid type of datapath passed to this type of dynamic datapath constructor");
+
+	if(DynamicDatapath::NON_PERFECT_BEFORE == datapathType)
+		std::cout << "!!!!!!!!! BEFORE " << loopName << " " << std::to_string(loopLevel) << " byteFrom: " << std::to_string(std::get<0>(interval)) << " to: " << std::to_string(std::get<1>(interval)) << " instCount: " << std::to_string(std::get<2>(interval)) << "\n";
+	else if(DynamicDatapath::NON_PERFECT_BETWEEN == datapathType)
+		std::cout << "!!!!!!!!! BETWEEN " << loopName << " " << std::to_string(loopLevel) << " byteFrom: " << std::to_string(std::get<0>(interval)) << " to: " << std::to_string(std::get<1>(interval)) << " instCount: " << std::to_string(std::get<2>(interval)) << "\n";
+	else if(DynamicDatapath::NON_PERFECT_AFTER == datapathType)
+		std::cout << "!!!!!!!!! AFTER " << loopName << " " << std::to_string(loopLevel) << " byteFrom: " << std::to_string(std::get<0>(interval)) << " to: " << std::to_string(std::get<1>(interval)) << " instCount: " << std::to_string(std::get<2>(interval)) << "\n";
+	// XXX DEBUUUUUUUUUUUUGGGGGGGGGGGGGGGGGGGGGGGGGG
+	return;
+
+	builder->buildInitialDDDG(interval);
+	delete builder;
+	builder = nullptr;
+
+	postDDDGBuild();
+
+	VERBOSE_PRINT(errs() << "[][][][][dynamicDatapath] Analysing DDDG for loop \"" << loopName << "\"\n");
+
+	initBaseAddress();
+
+	if(args.showPreOptDDDG)
+		dumpGraph();
+
+	numCycles = fpgaEstimation();
+
+	VERBOSE_PRINT(errs() << "[][][][][dynamicDatapath] Finished\n");
 
 #ifdef DBG_PRINT_ALL
 	printDatabase();

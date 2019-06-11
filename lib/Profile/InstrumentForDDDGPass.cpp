@@ -912,39 +912,49 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 #else
 		unsigned unrollFactor = (targetLoopBound < targetUnrollFactor && targetLoopBound)? targetLoopBound : targetUnrollFactor;
 #endif
-		unsigned recII = 0;
-
-		// TODO: if actualUnrollFactor != unrollFactor, both dynamicdapataths will calculate the same recII at the end of the
-		// asapScheduling. Therefore, it may not be necessary to calculate it twice
-		// we could change this if condition to something like if(enablePipelining && unrollFactor != actualUnrollFactor
-		// and then create some logic inside fpgaEstimation() to check if it should use the recII calculated just after asapScheduling
-		// (the case where unroll factors are the same) or to use the recII provided at the construction of the DD (the case where
-		// the unrolls are not the same)
-		// Get recurrence-constrained II
-		if(enablePipelining) {
-			VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Building dynamic datapath for recurrence-constrained II calculation\n");
-
-			unsigned actualUnrollFactor = (targetLoopBound < (targetUnrollFactor << 1) && targetLoopBound)? targetLoopBound : (targetUnrollFactor << 1);
-#ifdef USE_FUTURE
-			// The future cache receives some parsed data that can be reused when the DynamicDatapath is regenerated, saving some processing time
-			DynamicDatapath DD(kernelName, CM, &summaryFile, loopName, targetLoopLevel, actualUnrollFactor, &future);
-#else
-			DynamicDatapath DD(kernelName, CM, &summaryFile, loopName, targetLoopLevel, actualUnrollFactor);
-#endif
-			// TODO: This may be a place to insert a new scheduling?
-			recII = DD.getASAPII();
-
-			VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Recurrence-constrained II: " << recII << "\n");
-		}
-
-		VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Building dynamic datapath\n");
 
 		if(args.fNPLA && firstNonPerfectLoopLevel != -1) {
-			Multipath MD(kernelName, CM, &summaryFile, loopName, targetLoopLevel, firstNonPerfectLoopLevel, unrollFactor, enablePipelining, recII);
+			VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Non-perfect loop analysis triggered: building multipaths\n");
 
-			errs() << "[][][" << targetWholeLoopName << "] Estimated cycles: " << std::to_string(MD.getCycles()) << "\n";
+			if(enablePipelining) {
+				unsigned actualUnrollFactor = (targetLoopBound < (targetUnrollFactor << 1) && targetLoopBound)? targetLoopBound : (targetUnrollFactor << 1);
+
+				Multipath MD(kernelName, CM, &summaryFile, loopName, targetLoopLevel, firstNonPerfectLoopLevel, unrollFactor, levelUnrollVec, actualUnrollFactor);
+				errs() << "[][][" << targetWholeLoopName << "] Estimated cycles: " << std::to_string(MD.getCycles()) << "\n";
+			}
+			else {
+				Multipath MD(kernelName, CM, &summaryFile, loopName, targetLoopLevel, firstNonPerfectLoopLevel, unrollFactor, levelUnrollVec);
+				errs() << "[][][" << targetWholeLoopName << "] Estimated cycles: " << std::to_string(MD.getCycles()) << "\n";
+			}
 		}
 		else {
+			unsigned recII = 0;
+
+			// TODO: if actualUnrollFactor != unrollFactor, both dynamicdapataths will calculate the same recII at the end of the
+			// asapScheduling. Therefore, it may not be necessary to calculate it twice
+			// we could change this if condition to something like if(enablePipelining && unrollFactor != actualUnrollFactor
+			// and then create some logic inside fpgaEstimation() to check if it should use the recII calculated just after asapScheduling
+			// (the case where unroll factors are the same) or to use the recII provided at the construction of the DD (the case where
+			// the unrolls are not the same)
+			// Get recurrence-constrained II
+			if(enablePipelining) {
+				VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Building dynamic datapath for recurrence-constrained II calculation\n");
+
+				unsigned actualUnrollFactor = (targetLoopBound < (targetUnrollFactor << 1) && targetLoopBound)? targetLoopBound : (targetUnrollFactor << 1);
+#ifdef USE_FUTURE
+				// The future cache receives some parsed data that can be reused when the DynamicDatapath is regenerated, saving some processing time
+				DynamicDatapath DD(kernelName, CM, &summaryFile, loopName, targetLoopLevel, actualUnrollFactor, &future);
+#else
+				DynamicDatapath DD(kernelName, CM, &summaryFile, loopName, targetLoopLevel, actualUnrollFactor);
+#endif
+				// TODO: This may be a place to insert a new scheduling?
+				recII = DD.getASAPII();
+
+				VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Recurrence-constrained II: " << recII << "\n");
+			}
+
+			VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Building dynamic datapath\n");
+
 #ifdef USE_FUTURE
 			DynamicDatapath DD(kernelName, CM, &summaryFile, loopName, targetLoopLevel, unrollFactor, &future, enablePipelining, recII);
 #else

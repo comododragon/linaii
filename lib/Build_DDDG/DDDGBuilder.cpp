@@ -648,7 +648,7 @@ intervalTy DDDGBuilder::getTraceLineFromToBeforeNestedLoop(gzFile &traceFile) {
 			}
 
 			// Mark the last line right before another loop nest
-			if(!lookaheadIsSameLoopLevel(traceFile, loopLevel)) {
+			if(!firstTraverseHeader && !lookaheadIsSameLoopLevel(traceFile, loopLevel)) {
 				to = count;
 
 				// If we don't need to calculate runtime loop bound, we can stop now
@@ -813,6 +813,7 @@ intervalTy DDDGBuilder::getTraceLineFromToAfterNestedLoop(gzFile &traceFile) {
 				if(currLoopLevel < prevLoopLevel && currLoopLevel == loopLevel) {
 					// Save in byteFrom the amount of bytes between beginning of trace of file and first instruction after the nested loop
 					byteFrom = gztell(traceFile) - line.size();
+					instCount--;
 					firstTraverse = false;
 
 #ifdef PROGRESSIVE_TRACE_CURSOR
@@ -897,19 +898,20 @@ intervalTy DDDGBuilder::getTraceLineFromToBetweenAfterAndBefore(gzFile &traceFil
 				if(currLoopLevel < prevLoopLevel && currLoopLevel == loopLevel) {
 					// Save in byteFrom the amount of bytes between beginning of trace of file and first instruction after the nested loop
 					byteFrom = gztell(traceFile) - line.size();
+					instCount--;
 					firstTraverse = false;
 
 #ifdef PROGRESSIVE_TRACE_CURSOR
-					if(args.progressive) {
-						progressiveTraceCursor = byteFrom;
-						progressiveTraceInstCount = instCount;
-					}
+					//if(args.progressive) {
+					//	progressiveTraceCursor = byteFrom;
+					//	progressiveTraceInstCount = instCount;
+					//}
 #endif
 				}
 			}
 
 			// Mark the last line right before another loop nest
-			if(!lookaheadIsSameLoopLevel(traceFile, loopLevel)) {
+			if(!firstTraverse && !lookaheadIsSameLoopLevel(traceFile, loopLevel)) {
 				to = count;
 
 				break;
@@ -942,6 +944,9 @@ void DDDGBuilder::buildInitialDDDG() {
 	VERBOSE_PRINT(errs() << "\t\tUsing cached interval of trace to analyse\n");
 #else
 	intervalTy interval = getTraceLineFromTo(traceFile);
+	std::cout << "!!!!!!!!! NORMAL " << datapath->getTargetLoopName() << " " << std::to_string(datapath->getTargetLoopLevel()) << " byteFrom: " << std::to_string(std::get<0>(interval)) << " to: " << std::to_string(std::get<1>(interval)) << " instCount: " << std::to_string(std::get<2>(interval)) << "\n";
+	// XXX DEBUUUUUUUUUUUUGGGGGGGGGGGGGGGGGGGGGGGGGG
+	return;
 #endif
 
 	VERBOSE_PRINT(errs() << "\t\tSkipping " << std::to_string(std::get<0>(interval)) << " bytes from trace\n");
@@ -1710,13 +1715,13 @@ bool DDDGBuilder::lookaheadIsSameLoopLevel(gzFile &traceFile, unsigned loopLevel
 			assert(currLoopLevel >= loopLevel && "Trace lookahead resulted in upper loop level, which is not expected in non-perfect loops");
 
 			// Save if this next instruction is part of another loop level
-			result = currLoopLevel != loopLevel;
+			result = currLoopLevel == loopLevel;
 			break;
 		}
 	}
 
 	// Rollback
-	gzseek(traceFile, rollbackBytes, SEEK_CUR);
+	gzseek(traceFile, -rollbackBytes, SEEK_CUR);
 
 	return result;
 }

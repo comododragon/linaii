@@ -234,8 +234,6 @@ private:
 	unsigned loopLevel;
 	uint64_t loopUnrollFactor;
 
-	DDDGBuilder *builder;
-	ParsedTraceContainer PC;
 #ifdef USE_FUTURE
 	FutureCache *future;
 #endif
@@ -261,9 +259,8 @@ public:
 #endif
 
 	BaseDatapath(
-		std::string kernelName, ConfigurationManager &CM, ParsedTraceContainer &PC, std::ofstream *summaryFile,
-		std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
-		bool enablePipelining, uint64_t asapII
+		std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
+		std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor
 	);
 
 	~BaseDatapath();
@@ -294,6 +291,9 @@ protected:
 	enum {
 		EXTRA_ENTER_EXIT_LOOP_LATENCY = 2
 	};
+
+	DDDGBuilder *builder;
+	ParsedTraceContainer PC;
 
 	bool enablePipelining;
 	uint64_t asapII;

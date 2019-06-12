@@ -8,7 +8,7 @@
 
 #define ENABLE_TIMER
 
-//#define DBG_PRINT_ALL
+#define DBG_PRINT_ALL
 //#define USE_FUTURE
 // XXX: According to https://github.com/llvm-mirror/llvm/blob/6b547686c5410b7528212e898fe30fc7ee7a70a3/lib/Analysis/LoopPass.cpp,
 // the loop queue that runOnLoop is called is populated in reverse program order. Assuming that runOnLoop() will execute following
@@ -23,6 +23,7 @@
 #include <map>
 #include <queue>
 #include <unordered_map>
+#include <set>
 
 #include "profile_h/ArgPack.h"
 
@@ -176,6 +177,52 @@ public:
 	unsigned front();
 	unsigned back();
 	size_t getSize();
+};
+
+class Pack {
+	std::vector<std::tuple<std::string, unsigned, unsigned>> structure;
+	std::unordered_map<std::string, std::vector<uint64_t>> unsignedContent;
+	std::unordered_map<std::string, std::vector<int64_t>> signedContent;
+	std::unordered_map<std::string, std::vector<float>> floatContent;
+	std::unordered_map<std::string, std::vector<std::string>> stringContent;
+
+public:
+	enum {
+		AGGREGATE_NONE,
+		AGGREGATE_MAX,
+		AGGREGATE_MIN,
+		AGGREGATE_SUM,
+		AGGREGATE_EQUAL,
+		AGGREGATE_SET
+	};
+	enum {
+		TYPE_UNSIGNED,
+		TYPE_SIGNED,
+		TYPE_FLOAT,
+		TYPE_STRING
+	};
+
+	void addDescriptor(std::string name, unsigned aggregateMode, unsigned type);
+
+	void addUnsignedElement(std::string name, uint64_t value);
+	void addSignedElement(std::string name, int64_t value);
+	void addFloatElement(std::string name, float value);
+	void addStringElement(std::string name, std::string value);
+
+	std::vector<std::tuple<std::string, unsigned, unsigned>> getStructure();
+	std::vector<uint64_t> getUnsignedElements(std::string name);
+	std::vector<int64_t> getSignedElements(std::string name);
+	std::vector<float> getFloatElements(std::string name);
+	std::vector<std::string> getStringElements(std::string name);
+
+	std::string aggregateUnsignedElements(std::string name);
+	std::string aggregateSignedElements(std::string name);
+	std::string aggregateFloatElements(std::string name);
+	std::string aggregateStringElements(std::string name);
+
+	bool hasSameStructure(Pack &P);
+	void merge(Pack &P);
+	void clear();
 };
 
 }

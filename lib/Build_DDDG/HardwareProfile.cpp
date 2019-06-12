@@ -133,6 +133,29 @@ std::tuple<std::string, uint64_t> HardwareProfile::calculateResIIOp() {
 		return std::make_tuple("none", 1);
 }
 
+void HardwareProfile::fillPack(Pack &P) {
+	P.addDescriptor("fAdd units", Pack::AGGREGATE_MAX, Pack::TYPE_UNSIGNED);
+	P.addUnsignedElement("fAdd units", fAddGetAmount());
+	P.addDescriptor("fSub units", Pack::AGGREGATE_MAX, Pack::TYPE_UNSIGNED);
+	P.addUnsignedElement("fSub units", fSubGetAmount());
+	P.addDescriptor("fMul units", Pack::AGGREGATE_MAX, Pack::TYPE_UNSIGNED);
+	P.addUnsignedElement("fMul units", fMulGetAmount());
+	P.addDescriptor("fDiv units", Pack::AGGREGATE_MAX, Pack::TYPE_UNSIGNED);
+	P.addUnsignedElement("fDiv units", fDivGetAmount());
+
+	for(auto &it : arrayGetNumOfPartitions()) {
+		P.addDescriptor("Number of partitions for array \"" + it.first + "\"", Pack::AGGREGATE_EQUAL, Pack::TYPE_UNSIGNED);
+		P.addUnsignedElement("Number of partitions for array \"" + it.first + "\"", it.second);
+	}
+	for(auto &it : arrayGetEfficiency()) {
+		P.addDescriptor("Memory efficiency for array \"" + it.first + "\"", Pack::AGGREGATE_EQUAL, Pack::TYPE_FLOAT);
+		P.addFloatElement("Memory efficiency for array \"" + it.first + "\"", it.second);
+	}
+
+
+
+}
+
 unsigned HardwareProfile::arrayGetNumOfPartitions(std::string arrayName) {
 	// XXX: If the arrayName doesn't exist, this access will add it automatically. Is this desired behaviour?
 	return arrayNameToNumOfPartitions[arrayName];
@@ -824,6 +847,24 @@ void XilinxHardwareProfile::constrainHardware(
 	setResourceLimits();
 
 	HardwareProfile::constrainHardware(arrayInfoCfgMap, partitionCfgMap, completePartitionCfgMap);
+}
+
+void XilinxHardwareProfile::fillPack(Pack &P) {
+	P.addDescriptor("DSPs", Pack::AGGREGATE_MAX, Pack::TYPE_UNSIGNED);
+	P.addUnsignedElement("DSPs", resourcesGetDSPs());
+	P.addDescriptor("FFs", Pack::AGGREGATE_MAX, Pack::TYPE_UNSIGNED);
+	P.addUnsignedElement("FFs", resourcesGetFFs());
+	P.addDescriptor("LUTs", Pack::AGGREGATE_MAX, Pack::TYPE_UNSIGNED);
+	P.addUnsignedElement("LUTs", resourcesGetLUTs());
+	P.addDescriptor("BRAM18k", Pack::AGGREGATE_EQUAL, Pack::TYPE_UNSIGNED);
+	P.addUnsignedElement("BRAM18k", resourcesGetBRAM18k());
+
+	HardwareProfile::fillPack(P);
+
+	for(auto &it : arrayGetUsedBRAM18k()) {
+		P.addDescriptor("Used BRAM18k for array \"" + it.first + "\"", Pack::AGGREGATE_EQUAL, Pack::TYPE_UNSIGNED);
+		P.addUnsignedElement("Used BRAM18k for array \"" + it.first + "\"", it.second);
+	}
 }
 
 void XilinxHardwareProfile::arrayAddPartition(std::string arrayName) {

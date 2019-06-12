@@ -9,14 +9,6 @@ using namespace llvm;
 
 class DynamicDatapath : public BaseDatapath {
 public:
-	enum {
-		NORMAL_LOOP,
-		PERFECT_LOOP,
-		NON_PERFECT_BEFORE,
-		NON_PERFECT_BETWEEN,
-		NON_PERFECT_AFTER
-	};
-
 #ifdef USE_FUTURE
 	DynamicDatapath(
 		std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,

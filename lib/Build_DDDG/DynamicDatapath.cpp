@@ -14,7 +14,7 @@ DynamicDatapath::DynamicDatapath(
 	VERBOSE_PRINT(errs() << "[][][][dynamicDatapath] Analysing DDDG for loop \"" << loopName << "\"\n");
 #endif
 	// XXX DEBUUUUUUUUUUUUGGGGGGGGGGGGGGGGGGGGGGGGGG
-	return;
+	//return;
 
 	initBaseAddress();
 
@@ -46,7 +46,7 @@ DynamicDatapath::DynamicDatapath(
 ) : BaseDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, enablePipelining, asapII) {
 #endif
 	// XXX DEBUUUUUUUUUUUUGGGGGGGGGGGGGGGGGGGGGGGGGG
-	return;
+	//return;
 	VERBOSE_PRINT(errs() << "[][][][dynamicDatapath] Analysing DDDG for loop \"" << loopName << "\"\n");
 
 	initBaseAddress();
@@ -67,7 +67,7 @@ DynamicDatapath::DynamicDatapath(
 DynamicDatapath::DynamicDatapath(
 	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
 	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor, unsigned datapathType
-) : BaseDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor) {
+) : BaseDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, datapathType) {
 	VERBOSE_PRINT(errs() << "\tBuild initial DDDG\n");
 
 	std::string traceFileName = args.workDir + FILE_DYNAMIC_TRACE;
@@ -78,23 +78,25 @@ DynamicDatapath::DynamicDatapath(
 
 	builder = new DDDGBuilder(this, PC);
 	intervalTy interval;
-	if(DynamicDatapath::NON_PERFECT_BEFORE == datapathType)
+	if(NON_PERFECT_BEFORE == datapathType)
 		interval = builder->getTraceLineFromToBeforeNestedLoop(traceFile);
-	else if(DynamicDatapath::NON_PERFECT_BETWEEN == datapathType)
+	else if(NON_PERFECT_BETWEEN == datapathType)
 		interval = builder->getTraceLineFromToBetweenAfterAndBefore(traceFile);
-	else if(DynamicDatapath::NON_PERFECT_AFTER == datapathType)
+	else if(NON_PERFECT_AFTER == datapathType)
 		interval = builder->getTraceLineFromToAfterNestedLoop(traceFile);
 	else
 		assert(false && "Invalid type of datapath passed to this type of dynamic datapath constructor");
 
-	if(DynamicDatapath::NON_PERFECT_BEFORE == datapathType)
+#if 0
+	if(NON_PERFECT_BEFORE == datapathType)
 		std::cout << "!!!!!!!!! BEFORE " << loopName << " " << std::to_string(loopLevel) << " byteFrom: " << std::to_string(std::get<0>(interval)) << " to: " << std::to_string(std::get<1>(interval)) << " instCount: " << std::to_string(std::get<2>(interval)) << "\n";
-	else if(DynamicDatapath::NON_PERFECT_BETWEEN == datapathType)
+	else if(NON_PERFECT_BETWEEN == datapathType)
 		std::cout << "!!!!!!!!! BETWEEN " << loopName << " " << std::to_string(loopLevel) << " byteFrom: " << std::to_string(std::get<0>(interval)) << " to: " << std::to_string(std::get<1>(interval)) << " instCount: " << std::to_string(std::get<2>(interval)) << "\n";
-	else if(DynamicDatapath::NON_PERFECT_AFTER == datapathType)
+	else if(NON_PERFECT_AFTER == datapathType)
 		std::cout << "!!!!!!!!! AFTER " << loopName << " " << std::to_string(loopLevel) << " byteFrom: " << std::to_string(std::get<0>(interval)) << " to: " << std::to_string(std::get<1>(interval)) << " instCount: " << std::to_string(std::get<2>(interval)) << "\n";
+#endif
 	// XXX DEBUUUUUUUUUUUUGGGGGGGGGGGGGGGGGGGGGGGGGG
-	return;
+	//return;
 
 	builder->buildInitialDDDG(interval);
 	delete builder;

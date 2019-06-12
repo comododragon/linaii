@@ -65,6 +65,7 @@ public:
 	);
 	std::tuple<std::string, uint64_t> calculateResIIOp();
 
+	virtual void fillPack(Pack &P);
 	std::set<int> getConstrainedUnits() { return limitedBy; }
 
 	virtual void arrayAddPartition(std::string arrayName) = 0;
@@ -104,7 +105,6 @@ public:
 	void storeRelease(std::string arrayPartitionName);
 	void intOpRelease(unsigned opcode);
 	void callRelease();
-
 };
 
 class XilinxHardwareProfile : public HardwareProfile {
@@ -184,6 +184,8 @@ public:
 		const ConfigurationManager::partitionCfgMapTy &partitionCfgMap,
 		const ConfigurationManager::partitionCfgMapTy &completePartitionCfgMap
 	);
+
+	void fillPack(Pack &P);
 
 	void arrayAddPartition(std::string arrayName);
 	void arrayAddPartitions(std::string arrayName, unsigned amount);

@@ -944,9 +944,11 @@ void DDDGBuilder::buildInitialDDDG() {
 	VERBOSE_PRINT(errs() << "\t\tUsing cached interval of trace to analyse\n");
 #else
 	intervalTy interval = getTraceLineFromTo(traceFile);
+#if 0
 	std::cout << "!!!!!!!!! NORMAL " << datapath->getTargetLoopName() << " " << std::to_string(datapath->getTargetLoopLevel()) << " byteFrom: " << std::to_string(std::get<0>(interval)) << " to: " << std::to_string(std::get<1>(interval)) << " instCount: " << std::to_string(std::get<2>(interval)) << "\n";
+#endif
 	// XXX DEBUUUUUUUUUUUUGGGGGGGGGGGGGGGGGGGGGGGGGG
-	return;
+	//return;
 #endif
 
 	VERBOSE_PRINT(errs() << "\t\tSkipping " << std::to_string(std::get<0>(interval)) << " bytes from trace\n");

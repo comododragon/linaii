@@ -70,6 +70,14 @@ typedef struct {
 
 class BaseDatapath {
 public:
+	enum {
+		NORMAL_LOOP,
+		PERFECT_LOOP,
+		NON_PERFECT_BEFORE,
+		NON_PERFECT_BETWEEN,
+		NON_PERFECT_AFTER
+	};
+
 	class TCScheduler {
 		typedef std::pair<double, std::vector<unsigned>> pathTy;
 
@@ -260,7 +268,7 @@ public:
 
 	BaseDatapath(
 		std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
-		std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor
+		std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor, unsigned datapathType
 	);
 
 	~BaseDatapath();
@@ -270,6 +278,8 @@ public:
 	uint64_t getTargetLoopUnrollFactor() const;
 	unsigned getNumNodes() const;
 	unsigned getNumEdges() const;
+	uint64_t getRCIL() const;
+	Pack &getPack();
 
 	void postDDDGBuild();
 	void insertMicroop(int microop);
@@ -292,12 +302,14 @@ protected:
 		EXTRA_ENTER_EXIT_LOOP_LATENCY = 2
 	};
 
-	DDDGBuilder *builder;
-	ParsedTraceContainer PC;
-
+	unsigned datapathType;
 	bool enablePipelining;
 	uint64_t asapII;
 	uint64_t numCycles;
+
+	DDDGBuilder *builder;
+	ParsedTraceContainer PC;
+	Pack P;
 
 	// A map from node ID to its microop
 	std::vector<int> microops;
@@ -331,6 +343,8 @@ protected:
 	std::map<std::string, uint64_t> arrayPartitionToNumOfReads;
 	// Number of writes inside an array partition
 	std::map<std::string, uint64_t> arrayPartitionToNumOfWrites;
+	// Final latency of the loop, without performing the nest calculations
+	uint64_t rcIL;
 
 	// Optimisation counters
 	uint64_t sharedLoadsRemoved;
@@ -357,10 +371,10 @@ protected:
 	std::pair<uint64_t, double> rcScheduling();
 	std::tuple<std::string, uint64_t> calculateResIIMem();
 	uint64_t calculateRecII(uint64_t currAsapII);
-	uint64_t getLoopTotalLatency(uint64_t rcIL, uint64_t maxII);
+	uint64_t getLoopTotalLatency(uint64_t maxII);
 
 	void dumpSummary(
-		uint64_t numCycles, uint64_t asapII, uint64_t rcIL, double achievedPeriod,
+		uint64_t numCycles, uint64_t asapII, double achievedPeriod,
 		uint64_t maxII, std::tuple<std::string, uint64_t> resIIMem, std::tuple<std::string, uint64_t> resIIOp, uint64_t recII
 	);
 	void dumpGraph(bool isOptimised = false);

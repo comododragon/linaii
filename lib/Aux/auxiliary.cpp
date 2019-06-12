@@ -450,3 +450,401 @@ unsigned LimitedQueue::back() {
 size_t LimitedQueue::getSize() {
 	return size;
 }
+
+void Pack::addDescriptor(std::string name, unsigned aggregateMode, unsigned type) {
+	structure.push_back(std::make_tuple(name, aggregateMode, type));
+}
+
+void Pack::addUnsignedElement(std::string name, uint64_t value) {
+	std::unordered_map<std::string, std::vector<uint64_t>>::iterator found = unsignedContent.find(name);
+
+	if(unsignedContent.end() == found) {
+		std::vector<uint64_t> vec;
+		vec.push_back(value);
+		unsignedContent[name] = vec;
+	}
+	else {
+		found->second.push_back(value);
+	}
+}
+
+void Pack::addSignedElement(std::string name, int64_t value) { 
+	std::unordered_map<std::string, std::vector<int64_t>>::iterator found = signedContent.find(name);
+
+	if(signedContent.end() == found) {
+		std::vector<int64_t> vec;
+		vec.push_back(value);
+		signedContent[name] = vec;
+	}
+	else {
+		found->second.push_back(value);
+	}
+}
+
+void Pack::addFloatElement(std::string name, float value) {
+	std::unordered_map<std::string, std::vector<float>>::iterator found = floatContent.find(name);
+
+	if(floatContent.end() == found) {
+		std::vector<float> vec;
+		vec.push_back(value);
+		floatContent[name] = vec;
+	}
+	else {
+		found->second.push_back(value);
+	}
+}
+
+void Pack::addStringElement(std::string name, std::string value) {
+	std::unordered_map<std::string, std::vector<std::string>>::iterator found = stringContent.find(name);
+
+	if(stringContent.end() == found) {
+		std::vector<std::string> vec;
+		vec.push_back(value);
+		stringContent[name] = vec;
+	}
+	else {
+		found->second.push_back(value);
+	}
+}
+
+std::vector<std::tuple<std::string, unsigned, unsigned>> Pack::getStructure() {
+	return structure;
+}
+
+std::vector<uint64_t> Pack::getUnsignedElements(std::string name) {
+	return unsignedContent[name];
+}
+
+std::vector<int64_t> Pack::getSignedElements(std::string name) {
+	return signedContent[name];
+}
+
+std::vector<float> Pack::getFloatElements(std::string name) {
+	return floatContent[name];
+}
+
+std::vector<std::string> Pack::getStringElements(std::string name) {
+	return stringContent[name];
+}
+
+std::string Pack::aggregateUnsignedElements(std::string name) {
+	uint64_t aggrElem;
+	std::string aggrString;
+	bool isEqual = true;
+	bool firstElem = true;
+	std::set<uint64_t> set;
+
+	std::tuple<std::string, unsigned, unsigned> elem;
+	bool found = false;
+	for(auto &it : structure) {
+		if(!(std::get<0>(it).compare(name))) {
+			elem = it;
+			found = true;
+		}
+	}
+	assert(found && "Element was not found");
+
+	switch(std::get<1>(elem)) {
+		case AGGREGATE_MAX:
+			aggrElem = std::numeric_limits<uint64_t>::min();
+
+			for(auto &it : unsignedContent.at(name)) {
+				if(it > aggrElem)
+					aggrElem = it;
+			}
+
+			return std::to_string(aggrElem);
+		case AGGREGATE_MIN:
+			aggrElem = std::numeric_limits<uint64_t>::max();
+
+			for(auto &it : unsignedContent.at(name)) {
+				if(it < aggrElem)
+					aggrElem = it;
+			}
+
+			return std::to_string(aggrElem);
+		case AGGREGATE_SUM:
+			aggrElem = 0;
+
+			for(auto &it : unsignedContent.at(name))
+				aggrElem += it;
+
+			return std::to_string(aggrElem);
+		case AGGREGATE_EQUAL:
+			aggrElem = unsignedContent.at(name)[0];
+
+			for(auto &it : unsignedContent.at(name)) {
+				if(aggrElem != it)
+					isEqual = false;
+			}
+
+			return isEqual? "true" : "false";
+		case AGGREGATE_SET:
+			for(auto &it : unsignedContent.at(name))
+				set.insert(it);
+
+			for(auto &it : set) {
+				if(firstElem) {
+					aggrString = std::to_string(it);
+					firstElem = false;
+				}
+				else {
+					aggrString += std::to_string(it);
+				}
+			}
+
+			return aggrString;
+		default:
+			assert(false && "Cannot aggregate, aggregation type is AGGREGATE_NONE");
+	}
+}
+
+std::string Pack::aggregateSignedElements(std::string name) {
+	int64_t aggrElem;
+	std::string aggrString;
+	bool isEqual = true;
+	bool firstElem = true;
+	std::set<int64_t> set;
+
+	std::tuple<std::string, unsigned, unsigned> elem;
+	bool found = false;
+	for(auto &it : structure) {
+		if(!(std::get<0>(it).compare(name))) {
+			elem = it;
+			found = true;
+		}
+	}
+	assert(found && "Element was not found");
+
+	switch(std::get<1>(elem)) {
+		case AGGREGATE_MAX:
+			aggrElem = std::numeric_limits<int64_t>::min();
+
+			for(auto &it : signedContent.at(name)) {
+				if(it > aggrElem)
+					aggrElem = it;
+			}
+
+			return std::to_string(aggrElem);
+		case AGGREGATE_MIN:
+			aggrElem = std::numeric_limits<int64_t>::max();
+
+			for(auto &it : signedContent.at(name)) {
+				if(it < aggrElem)
+					aggrElem = it;
+			}
+
+			return std::to_string(aggrElem);
+		case AGGREGATE_SUM:
+			aggrElem = 0;
+
+			for(auto &it : signedContent.at(name))
+				aggrElem += it;
+
+			return std::to_string(aggrElem);
+		case AGGREGATE_EQUAL:
+			aggrElem = signedContent.at(name)[0];
+
+			for(auto &it : signedContent.at(name)) {
+				if(aggrElem != it)
+					isEqual = false;
+			}
+
+			return isEqual? "true" : "false";
+		case AGGREGATE_SET:
+			for(auto &it : signedContent.at(name))
+				set.insert(it);
+
+			for(auto &it : set) {
+				if(firstElem) {
+					aggrString = std::to_string(it);
+					firstElem = false;
+				}
+				else {
+					aggrString += std::to_string(it);
+				}
+			}
+
+			return aggrString;
+		default:
+			assert(false && "Cannot aggregate, aggregation type is AGGREGATE_NONE");
+	}
+}
+
+std::string Pack::aggregateFloatElements(std::string name) {
+	float aggrElem;
+	std::string aggrString;
+	bool isEqual = true;
+
+	std::tuple<std::string, unsigned, unsigned> elem;
+	bool found = false;
+	for(auto &it : structure) {
+		if(!(std::get<0>(it).compare(name))) {
+			elem = it;
+			found = true;
+		}
+	}
+	assert(found && "Element was not found");
+
+	switch(std::get<1>(elem)) {
+		case AGGREGATE_MAX:
+			aggrElem = std::numeric_limits<float>::min();
+
+			for(auto &it : floatContent.at(name)) {
+				if(it > aggrElem)
+					aggrElem = it;
+			}
+
+			return std::to_string(aggrElem);
+		case AGGREGATE_MIN:
+			aggrElem = std::numeric_limits<float>::max();
+
+			for(auto &it : floatContent.at(name)) {
+				if(it < aggrElem)
+					aggrElem = it;
+			}
+
+			return std::to_string(aggrElem);
+		case AGGREGATE_SUM:
+			aggrElem = 0;
+
+			for(auto &it : floatContent.at(name))
+				aggrElem += it;
+
+			return std::to_string(aggrElem);
+		case AGGREGATE_EQUAL:
+			aggrElem = floatContent.at(name)[0];
+
+			for(auto &it : floatContent.at(name)) {
+				if(fabs(aggrElem - it) > 0.0001)
+					isEqual = false;
+			}
+
+			return isEqual? "true" : "false";
+		case AGGREGATE_SET:
+			assert(false && "Cannot aggregate, invalid aggregation type for float (AGGREGATE_SET)");
+		default:
+			assert(false && "Cannot aggregate, aggregation type is AGGREGATE_NONE");
+	}
+}
+
+std::string Pack::aggregateStringElements(std::string name) {
+	std::string aggrString;
+	bool isEqual = true;
+	bool firstElem = true;
+	std::set<std::string> set;
+
+	std::tuple<std::string, unsigned, unsigned> elem;
+	bool found = false;
+	for(auto &it : structure) {
+		if(!(std::get<0>(it).compare(name))) {
+			elem = it;
+			found = true;
+		}
+	}
+	assert(found && "Element was not found");
+
+	switch(std::get<1>(elem)) {
+		case AGGREGATE_MAX:
+			assert(false && "Cannot aggregate, invalid aggregation type for string (AGGREGATE_MAX)");
+		case AGGREGATE_MIN:
+			assert(false && "Cannot aggregate, invalid aggregation type for string (AGGREGATE_MIN)");
+		case AGGREGATE_SUM:
+			assert(false && "Cannot aggregate, invalid aggregation type for string (AGGREGATE_SUM");
+		case AGGREGATE_EQUAL:
+			aggrString = stringContent.at(name)[0];
+
+			for(auto &it : stringContent.at(name)) {
+				if(aggrString.compare(it))
+					isEqual = false;
+			}
+
+			return isEqual? "true" : "false";
+		case AGGREGATE_SET:
+			for(auto &it : stringContent.at(name))
+				set.insert(it);
+
+			for(auto &it : set) {
+				if(firstElem) {
+					aggrString = it;
+					firstElem = false;
+				}
+				else {
+					aggrString += it;
+				}
+			}
+
+			return aggrString;
+		default:
+			assert(false && "Cannot aggregate, aggregation type is AGGREGATE_NONE");
+	}
+}
+
+bool Pack::hasSameStructure(Pack &P) {
+	std::vector<std::tuple<std::string, unsigned, unsigned>> otherStructure = P.getStructure();
+
+	if(structure.size() != otherStructure.size())
+		return false;
+
+	for(unsigned i = 0; i < structure.size(); i++) {
+		if(std::get<0>(structure[i]).compare(std::get<0>(otherStructure[i])))
+			return false;
+		if(std::get<1>(structure[i]) != std::get<1>(otherStructure[i]))
+			return false;
+		if(std::get<2>(structure[i]) != std::get<2>(otherStructure[i]))
+			return false;
+	}
+
+	return true;
+}
+
+void Pack::merge(Pack &P) {
+	if(!(structure.size())) {
+		for(auto &it : P.getStructure())
+			structure.push_back(it);
+	}
+
+	assert(hasSameStructure(P) && "Attempt to merge a pack with different structure");
+
+	std::vector<uint64_t> otherUnsignedStuff;
+	std::vector<int64_t> otherSignedStuff;
+	std::vector<float> otherFloatStuff;
+	std::vector<std::string> otherStringStuff;
+
+	for(auto &it : structure) {
+		switch(std::get<2>(it)) {
+			case TYPE_UNSIGNED:
+				otherUnsignedStuff = P.getUnsignedElements(std::get<0>(it));
+				for(auto &it2 : otherUnsignedStuff)
+					addUnsignedElement(std::get<0>(it), it2);
+				break;
+			case TYPE_SIGNED:
+				otherSignedStuff = P.getSignedElements(std::get<0>(it));
+				for(auto &it2 : otherSignedStuff)
+					addSignedElement(std::get<0>(it), it2);
+				break;
+			case TYPE_FLOAT:
+				otherFloatStuff = P.getFloatElements(std::get<0>(it));
+				for(auto &it2 : otherFloatStuff)
+					addFloatElement(std::get<0>(it), it2);
+				break;
+			case TYPE_STRING:
+				otherStringStuff = P.getStringElements(std::get<0>(it));
+				for(auto &it2 : otherStringStuff)
+					addStringElement(std::get<0>(it), it2);
+				break;
+			default:
+				assert(false && "Invalid type of element");
+				break;
+		}
+	}
+}
+
+void Pack::clear() {
+	std::vector<std::tuple<std::string, unsigned, unsigned>>().swap(structure);
+	// TODO: I don't know if this does not leak because of the inner vectors
+	std::unordered_map<std::string, std::vector<uint64_t>>().swap(unsignedContent);
+	std::unordered_map<std::string, std::vector<int64_t>>().swap(signedContent);
+	std::unordered_map<std::string, std::vector<float>>().swap(floatContent);
+	std::unordered_map<std::string, std::vector<std::string>>().swap(stringContent);
+}

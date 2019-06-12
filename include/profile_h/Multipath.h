@@ -18,9 +18,12 @@ class Multipath {
 	uint64_t actualLoopUnrollFactor;
 	bool enablePipelining;
 
+	std::vector<std::tuple<unsigned, unsigned, uint64_t>> latencies;
+	Pack P;
+
 	void _Multipath();
 
-	void recursiveLookup(std::vector<std::tuple<unsigned, unsigned, uint64_t>> &pack, unsigned currLoopLevel, unsigned finalLoopLevel);
+	void recursiveLookup(unsigned currLoopLevel, unsigned finalLoopLevel);
 
 public:
 	Multipath(

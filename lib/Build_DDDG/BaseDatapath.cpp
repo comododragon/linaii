@@ -37,8 +37,8 @@ BaseDatapath::BaseDatapath(
 	bool enablePipelining, uint64_t asapII
 ) :
 	kernelName(kernelName), CM(CM), summaryFile(summaryFile),
-	loopName(loopName), loopLevel(loopLevel), loopUnrollFactor(loopUnrollFactor),
-	PC(kernelName), future(future), enablePipelining(enablePipelining), asapII(asapII)
+	loopName(loopName), loopLevel(loopLevel), loopUnrollFactor(loopUnrollFactor), datapathType(NORMAL_LOOP),
+	future(future), enablePipelining(enablePipelining), asapII(asapII), PC(kernelName)
 {
 #else
 BaseDatapath::BaseDatapath(
@@ -47,8 +47,8 @@ BaseDatapath::BaseDatapath(
 	bool enablePipelining, uint64_t asapII
 ) :
 	kernelName(kernelName), CM(CM), summaryFile(summaryFile),
-	loopName(loopName), loopLevel(loopLevel), loopUnrollFactor(loopUnrollFactor),
-	PC(kernelName), enablePipelining(enablePipelining), asapII(asapII) {
+	loopName(loopName), loopLevel(loopLevel), loopUnrollFactor(loopUnrollFactor), datapathType(NORMAL_LOOP),
+	enablePipelining(enablePipelining), asapII(asapII), PC(kernelName) {
 #endif
 	builder = nullptr;
 	profile = nullptr;
@@ -68,11 +68,12 @@ BaseDatapath::BaseDatapath(
 	delete builder;
 	builder = nullptr;
 	// XXX DEBUUUUUUUUUUUUGGGGGGGGGGGGGGGGGGGGGGGGGG
-	return;
+	//return;
 
 	postDDDGBuild();
 
 	numCycles = 0;
+	rcIL = 0;
 
 	///FIXME: We set numOfPortsPerPartition to 1000, so that we do not have memory port limitations. 
 	/// 1000 ports are sufficient. 
@@ -93,11 +94,11 @@ BaseDatapath::BaseDatapath(
 // When normal analysis happens, this constructor is (supposedly) not used
 BaseDatapath::BaseDatapath(
 	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
-	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor
+	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor, unsigned datapathType
 ) :
 	kernelName(kernelName), CM(CM), summaryFile(summaryFile),
-	loopName(loopName), loopLevel(loopLevel), loopUnrollFactor(loopUnrollFactor),
-	PC(kernelName), enablePipelining(false), asapII(0)
+	loopName(loopName), loopLevel(loopLevel), loopUnrollFactor(loopUnrollFactor), datapathType(datapathType),
+	enablePipelining(false), asapII(0), PC(kernelName)
 {
 	builder = nullptr;
 	profile = nullptr;
@@ -107,6 +108,7 @@ BaseDatapath::BaseDatapath(
 	profile = HardwareProfile::createInstance();
 
 	numCycles = 0;
+	rcIL = 0;
 
 	///FIXME: We set numOfPortsPerPartition to 1000, so that we do not have memory port limitations. 
 	/// 1000 ports are sufficient. 
@@ -148,14 +150,23 @@ unsigned BaseDatapath::getNumEdges() const {
 	return boost::num_edges(graph);
 }
 
+uint64_t BaseDatapath::getRCIL() const {
+	return rcIL;
+}
+
+Pack &BaseDatapath::getPack() {
+	return P;
+}
+
 void BaseDatapath::postDDDGBuild() {
+	// TODO: Changed to the "correct" logic. I will change it back if things start to get ugly
 	// TODO: I think this is a bug. microops.size() is one element bigger than the DDDG. This happens
 	// because on parseTraceLineFromTo, an additional instruction is added do microops, but its parameters
 	// are not evaluated. Therefore no edges are created and this orphan node apparently does not affect the
 	// program. The correct in IMHO would be numOfTotalNodes = getNumNodes();
 	// But I'm keeping the original code for now for comparison purposes
-	numOfTotalNodes = microops.size();
-	//numOfTotalNodes = getNumNodes();
+	//numOfTotalNodes = microops.size();
+	numOfTotalNodes = getNumNodes();
 
 	BGL_FORALL_VERTICES(v, graph, Graph) nameToVertex[boost::get(boost::vertex_index, graph, v)] = v;
 	vertexToName = boost::get(boost::vertex_index, graph);
@@ -369,7 +380,7 @@ uint64_t BaseDatapath::fpgaEstimation() {
 
 	VERBOSE_PRINT(errs() << "\tStarting resource-constrained scheduling\n");
 	std::pair<uint64_t, double> rcPair = rcScheduling();
-	uint64_t rcIL = rcPair.first;
+	rcIL = rcPair.first;
 	double achievedPeriod = rcPair.second;
 
 	VERBOSE_PRINT(errs() << "\tGetting memory-constrained II\n");
@@ -395,6 +406,27 @@ uint64_t BaseDatapath::fpgaEstimation() {
 		removeRepeatedStores();
 #endif
 
+	P.clear();
+	profile->fillPack(P);
+	for(auto &it : P.getStructure()) {
+		VERBOSE_PRINT(errs() << "\t" << std::get<0>(it) << ": ");
+
+		switch(std::get<2>(it)) {
+			case Pack::TYPE_UNSIGNED:
+				VERBOSE_PRINT(errs() << std::to_string(P.getUnsignedElements(std::get<0>(it))[0]) << "\n");
+				break;
+			case Pack::TYPE_SIGNED:
+				VERBOSE_PRINT(errs() << std::to_string(P.getSignedElements(std::get<0>(it))[0]) << "\n");
+				break;
+			case Pack::TYPE_FLOAT:
+				VERBOSE_PRINT(errs() << std::to_string(P.getFloatElements(std::get<0>(it))[0]) << "\n");
+				break;
+			case Pack::TYPE_STRING:
+				VERBOSE_PRINT(errs() << P.getStringElements(std::get<0>(it))[0] << "\n");
+				break;
+		}
+	}
+#if 0
 	if(XilinxHardwareProfile *fpgaProfile = dynamic_cast<XilinxHardwareProfile *>(profile)) {
 		VERBOSE_PRINT(errs() << "\tDSPs: " << std::to_string(fpgaProfile->resourcesGetDSPs()) << "\n");
 		VERBOSE_PRINT(errs() << "\tFFs: " << std::to_string(fpgaProfile->resourcesGetFFs()) << "\n");
@@ -413,6 +445,7 @@ uint64_t BaseDatapath::fpgaEstimation() {
 		for(auto &it : fpgaProfile->arrayGetUsedBRAM18k())
 			VERBOSE_PRINT(errs() << "\tUsed BRAM18k for array \"" << it.first << "\": " << std::to_string(it.second) << "\n");
 	}
+#endif
 	VERBOSE_PRINT(errs() << "\n\tAchieved period: " << std::to_string(achievedPeriod) << "\n");
 	VERBOSE_PRINT(errs() << "\tIL: " << std::to_string(rcIL) << "\n");
 	VERBOSE_PRINT(errs() << "\tII: " << std::to_string(maxII) << "\n");
@@ -431,8 +464,36 @@ uint64_t BaseDatapath::fpgaEstimation() {
 #endif
 
 	// TODO: I think if we want to support nested loops with instructions in between, changes would be needed here
-	uint64_t numCycles = getLoopTotalLatency(rcIL, maxII);
-	dumpSummary(numCycles, std::get<0>(asapResult), rcIL, achievedPeriod, maxII, resIIMem, resIIOp, recII);
+	uint64_t numCycles = getLoopTotalLatency(maxII);
+	dumpSummary(numCycles, std::get<0>(asapResult), achievedPeriod, maxII, resIIMem, resIIOp, recII);
+
+	P.addDescriptor("Achieved period", Pack::AGGREGATE_MAX, Pack::TYPE_FLOAT);
+	P.addFloatElement("Achieved period", achievedPeriod);
+	P.addDescriptor("Number of shared loads detected", Pack::AGGREGATE_SUM, Pack::TYPE_UNSIGNED);
+	P.addUnsignedElement("Number of shared loads detected", sharedLoadsRemoved);
+	P.addDescriptor("Number of repeated stores detected", Pack::AGGREGATE_SUM, Pack::TYPE_UNSIGNED);
+	P.addUnsignedElement("Number of repeated stores detected", repeatedStoresRemoved);
+	if(!(args.fNoFPUThresOpt)) {
+		P.addDescriptor("Units limited by DSP usage", Pack::AGGREGATE_SET, Pack::TYPE_STRING);
+		for(auto &i : profile->getConstrainedUnits()) {
+			P.addUnsignedElement("Units limited by DSP usage", i);
+			switch(i) {
+				case HardwareProfile::LIMITED_BY_FADD:
+					P.addStringElement("Units limited by DSP usage", "fadd");
+					break;
+				case HardwareProfile::LIMITED_BY_FSUB:
+					P.addStringElement("Units limited by DSP usage", "fsub");
+					break;
+				case HardwareProfile::LIMITED_BY_FMUL:
+					P.addStringElement("Units limited by DSP usage", "fmul");
+					break;
+				case HardwareProfile::LIMITED_BY_FDIV:
+					P.addStringElement("Units limited by DSP usage", "fdiv");
+					break;
+			}
+		}
+	}
+	// TODO: adicionar aqui também resII, resIIMem e resIIOp, pensar qual a melhor maneira de agregar esses valores
 
 	return numCycles;
 }
@@ -1190,6 +1251,28 @@ void BaseDatapath::alapScheduling(std::tuple<uint64_t, uint64_t> asapResult) {
 	// XXX: Precisa desse clear?
 	std::map<uint64_t, std::vector<unsigned>>().swap(minTimesNodesMap);
 
+	P.clear();
+	profile->fillPack(P);
+	for(auto &it : P.getStructure()) {
+		VERBOSE_PRINT(errs() << "\t" << std::get<0>(it) << ": ");
+
+		switch(std::get<2>(it)) {
+			case Pack::TYPE_UNSIGNED:
+				VERBOSE_PRINT(errs() << std::to_string(P.getUnsignedElements(std::get<0>(it))[0]) << "\n");
+				break;
+			case Pack::TYPE_SIGNED:
+				VERBOSE_PRINT(errs() << std::to_string(P.getSignedElements(std::get<0>(it))[0]) << "\n");
+				break;
+			case Pack::TYPE_FLOAT:
+				VERBOSE_PRINT(errs() << std::to_string(P.getFloatElements(std::get<0>(it))[0]) << "\n");
+				break;
+			case Pack::TYPE_STRING:
+				VERBOSE_PRINT(errs() << P.getStringElements(std::get<0>(it))[0] << "\n");
+				break;
+		}
+	}
+
+#if 0
 	if(XilinxHardwareProfile *fpgaProfile = dynamic_cast<XilinxHardwareProfile *>(profile)) {
 		VERBOSE_PRINT(errs() << "\t\tDSPs: " << std::to_string(fpgaProfile->resourcesGetDSPs()) << "\n");
 		VERBOSE_PRINT(errs() << "\t\tFFs: " << std::to_string(fpgaProfile->resourcesGetFFs()) << "\n");
@@ -1201,6 +1284,7 @@ void BaseDatapath::alapScheduling(std::tuple<uint64_t, uint64_t> asapResult) {
 	VERBOSE_PRINT(errs() << "\t\tfDiv units: " << std::to_string(profile->fDivGetAmount()) << "\n");
 	for(auto &it : arrayInfoCfgMap)
 		VERBOSE_PRINT(errs() << "\t\tNumber of partitions for array \"" << it.first << "\": " << std::to_string(profile->arrayGetNumOfPartitions(it.first)) << "\n");
+#endif
 	VERBOSE_PRINT(errs() << "\t\tALAP scheduling finished\n");
 }
 
@@ -1527,7 +1611,7 @@ void BaseDatapath::calculateMaxRWPerBank() {
 }
 #endif
 
-uint64_t BaseDatapath::getLoopTotalLatency(uint64_t rcIL, uint64_t maxII) {
+uint64_t BaseDatapath::getLoopTotalLatency(uint64_t maxII) {
 	//calculateMaxRWPerBank();
 	uint64_t noPipelineLatency = 0, pipelinedLatency = 0;
 
@@ -1604,7 +1688,7 @@ uint64_t BaseDatapath::getLoopTotalLatency(uint64_t rcIL, uint64_t maxII) {
 }
 
 void BaseDatapath::dumpSummary(
-	uint64_t numCycles, uint64_t asapII, uint64_t rcIL, double achievedPeriod,
+	uint64_t numCycles, uint64_t asapII, double achievedPeriod,
 	uint64_t maxII, std::tuple<std::string, uint64_t> resIIMem, std::tuple<std::string, uint64_t> resIIOp, uint64_t recII
 ) {
 	*summaryFile << "================================================\n";
@@ -1617,6 +1701,22 @@ void BaseDatapath::dumpSummary(
 	*summaryFile << "Achieved clock period: " << std::to_string(achievedPeriod) << " ns\n";
 	*summaryFile << "Loop name: " << loopName << "\n";
 	*summaryFile << "Loop level: " << std::to_string(loopLevel) << "\n";
+
+	*summaryFile << "DDDG type: ";
+	switch(datapathType) {
+		case NON_PERFECT_BEFORE:
+			*summaryFile << "anterior part of loop body (before any nested loops)\n";
+			break;
+		case NON_PERFECT_AFTER:
+			*summaryFile << "posterior part of loop body (after any nested loops)\n";
+			break;
+		case NON_PERFECT_BETWEEN:
+			*summaryFile << "posterior + anterior (between unrolled iterations)\n";
+			break;
+		default:
+			*summaryFile << "full loop body\n";
+	}
+
 	*summaryFile << "Loop unrolling factor: " << std::to_string(loopUnrollFactor) << "\n";
 	*summaryFile << "Loop pipelining enabled? " << (enablePipelining? "yes" : "no") << "\n";
 	*summaryFile << "Total cycles: " << std::to_string(numCycles) << "\n";
@@ -1683,6 +1783,26 @@ void BaseDatapath::dumpSummary(
 		*summaryFile << "------------------------------------------------\n";
 	}
 
+	for(auto &it : P.getStructure()) {
+		*summaryFile << std::get<0>(it) << ": ";
+
+		switch(std::get<2>(it)) {
+			case Pack::TYPE_UNSIGNED:
+				*summaryFile << std::to_string(P.getUnsignedElements(std::get<0>(it))[0]) << "\n";
+				break;
+			case Pack::TYPE_SIGNED:
+				*summaryFile << std::to_string(P.getSignedElements(std::get<0>(it))[0]) << "\n";
+				break;
+			case Pack::TYPE_FLOAT:
+				*summaryFile << std::to_string(P.getFloatElements(std::get<0>(it))[0]) << "\n";
+				break;
+			case Pack::TYPE_STRING:
+				*summaryFile << P.getStringElements(std::get<0>(it))[0] << "\n";
+				break;
+		}
+	}
+
+#if 0
 	if(XilinxHardwareProfile *fpgaProfile = dynamic_cast<XilinxHardwareProfile *>(profile)) {
 		*summaryFile << "DSPs: " << std::to_string(fpgaProfile->resourcesGetDSPs()) << "\n";
 		*summaryFile << "FFs: " << std::to_string(fpgaProfile->resourcesGetFFs()) << "\n";
@@ -1701,10 +1821,19 @@ void BaseDatapath::dumpSummary(
 		for(auto &it : fpgaProfile->arrayGetUsedBRAM18k())
 			*summaryFile << "Used BRAM18k for array \"" << it.first << "\": " << std::to_string(it.second) << "\n";
 	}
+#endif
 }	
 
 void BaseDatapath::dumpGraph(bool isOptimised) {
-	std::string graphFileName(args.outWorkDir + appendDepthToLoopName(loopName, loopLevel) + (isOptimised? "_graph_opt.dot" : "_graph.dot"));
+	std::string datapathTypeStr(
+		(NON_PERFECT_BEFORE == datapathType)? "_before" : ((NON_PERFECT_AFTER == datapathType)? "_after" : ((NON_PERFECT_BETWEEN == datapathType)? "_inter" : "" ))
+	);
+	std::string graphFileName(
+		args.outWorkDir
+			+ appendDepthToLoopName(loopName, loopLevel)
+			+ datapathTypeStr
+			+ (isOptimised? "_graph_opt.dot" : "_graph.dot")
+	);
 	std::ofstream out(graphFileName);
 
 	std::vector<std::string> functionNames;

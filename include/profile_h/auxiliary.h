@@ -18,6 +18,9 @@
 // monotonically crescent vector, which is enforced in validations performed at lin-profile.cpp 
 #define PROGRESSIVE_TRACE_CURSOR
 
+// If enabled, sanity checks are performed in the multipath vector
+#define CHECK_MULTIPATH_STATE
+
 #include <fstream>
 #include <list>
 #include <map>
@@ -188,12 +191,12 @@ class Pack {
 
 public:
 	enum {
-		AGGREGATE_NONE,
-		AGGREGATE_MAX,
-		AGGREGATE_MIN,
-		AGGREGATE_SUM,
-		AGGREGATE_EQUAL,
-		AGGREGATE_SET
+		MERGE_NONE,
+		MERGE_MAX,
+		MERGE_MIN,
+		MERGE_SUM,
+		MERGE_EQUAL,
+		MERGE_SET
 	};
 	enum {
 		TYPE_UNSIGNED,
@@ -202,23 +205,14 @@ public:
 		TYPE_STRING
 	};
 
-	void addDescriptor(std::string name, unsigned aggregateMode, unsigned type);
+	void addDescriptor(std::string name, unsigned mergeMode, unsigned type);
 
-	void addUnsignedElement(std::string name, uint64_t value);
-	void addSignedElement(std::string name, int64_t value);
-	void addFloatElement(std::string name, float value);
-	void addStringElement(std::string name, std::string value);
+	template<typename T> void addElement(std::string name, T value);
 
 	std::vector<std::tuple<std::string, unsigned, unsigned>> getStructure();
-	std::vector<uint64_t> getUnsignedElements(std::string name);
-	std::vector<int64_t> getSignedElements(std::string name);
-	std::vector<float> getFloatElements(std::string name);
-	std::vector<std::string> getStringElements(std::string name);
+	template<typename T> std::vector<T> getElements(std::string name);
 
-	std::string aggregateUnsignedElements(std::string name);
-	std::string aggregateSignedElements(std::string name);
-	std::string aggregateFloatElements(std::string name);
-	std::string aggregateStringElements(std::string name);
+	template<typename T> std::string mergeElements(std::string name);
 
 	bool hasSameStructure(Pack &P);
 	void merge(Pack &P);

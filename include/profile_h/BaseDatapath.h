@@ -77,6 +77,10 @@ public:
 		NON_PERFECT_BETWEEN,
 		NON_PERFECT_AFTER
 	};
+	// Additional costs for latency calculation
+	enum {
+		EXTRA_ENTER_EXIT_LOOP_LATENCY = 2
+	};
 
 	class TCScheduler {
 		typedef std::pair<double, std::vector<unsigned>> pathTy;
@@ -296,10 +300,6 @@ protected:
 	enum {
 		EDGE_CONTROL = 200,
 		EDGE_PIPE = 201
-	};
-	// Additional costs for latency calculation
-	enum {
-		EXTRA_ENTER_EXIT_LOOP_LATENCY = 2
 	};
 
 	unsigned datapathType;

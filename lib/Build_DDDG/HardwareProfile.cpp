@@ -134,22 +134,22 @@ std::tuple<std::string, uint64_t> HardwareProfile::calculateResIIOp() {
 }
 
 void HardwareProfile::fillPack(Pack &P) {
-	P.addDescriptor("fAdd units", Pack::AGGREGATE_MAX, Pack::TYPE_UNSIGNED);
-	P.addUnsignedElement("fAdd units", fAddGetAmount());
-	P.addDescriptor("fSub units", Pack::AGGREGATE_MAX, Pack::TYPE_UNSIGNED);
-	P.addUnsignedElement("fSub units", fSubGetAmount());
-	P.addDescriptor("fMul units", Pack::AGGREGATE_MAX, Pack::TYPE_UNSIGNED);
-	P.addUnsignedElement("fMul units", fMulGetAmount());
-	P.addDescriptor("fDiv units", Pack::AGGREGATE_MAX, Pack::TYPE_UNSIGNED);
-	P.addUnsignedElement("fDiv units", fDivGetAmount());
+	P.addDescriptor("fAdd units", Pack::MERGE_MAX, Pack::TYPE_UNSIGNED);
+	P.addElement<uint64_t>("fAdd units", fAddGetAmount());
+	P.addDescriptor("fSub units", Pack::MERGE_MAX, Pack::TYPE_UNSIGNED);
+	P.addElement<uint64_t>("fSub units", fSubGetAmount());
+	P.addDescriptor("fMul units", Pack::MERGE_MAX, Pack::TYPE_UNSIGNED);
+	P.addElement<uint64_t>("fMul units", fMulGetAmount());
+	P.addDescriptor("fDiv units", Pack::MERGE_MAX, Pack::TYPE_UNSIGNED);
+	P.addElement<uint64_t>("fDiv units", fDivGetAmount());
 
 	for(auto &it : arrayGetNumOfPartitions()) {
-		P.addDescriptor("Number of partitions for array \"" + it.first + "\"", Pack::AGGREGATE_EQUAL, Pack::TYPE_UNSIGNED);
-		P.addUnsignedElement("Number of partitions for array \"" + it.first + "\"", it.second);
+		P.addDescriptor("Number of partitions for array \"" + it.first + "\"", Pack::MERGE_EQUAL, Pack::TYPE_UNSIGNED);
+		P.addElement<uint64_t>("Number of partitions for array \"" + it.first + "\"", it.second);
 	}
 	for(auto &it : arrayGetEfficiency()) {
-		P.addDescriptor("Memory efficiency for array \"" + it.first + "\"", Pack::AGGREGATE_EQUAL, Pack::TYPE_FLOAT);
-		P.addFloatElement("Memory efficiency for array \"" + it.first + "\"", it.second);
+		P.addDescriptor("Memory efficiency for array \"" + it.first + "\"", Pack::MERGE_EQUAL, Pack::TYPE_FLOAT);
+		P.addElement<float>("Memory efficiency for array \"" + it.first + "\"", it.second);
 	}
 
 
@@ -850,20 +850,20 @@ void XilinxHardwareProfile::constrainHardware(
 }
 
 void XilinxHardwareProfile::fillPack(Pack &P) {
-	P.addDescriptor("DSPs", Pack::AGGREGATE_MAX, Pack::TYPE_UNSIGNED);
-	P.addUnsignedElement("DSPs", resourcesGetDSPs());
-	P.addDescriptor("FFs", Pack::AGGREGATE_MAX, Pack::TYPE_UNSIGNED);
-	P.addUnsignedElement("FFs", resourcesGetFFs());
-	P.addDescriptor("LUTs", Pack::AGGREGATE_MAX, Pack::TYPE_UNSIGNED);
-	P.addUnsignedElement("LUTs", resourcesGetLUTs());
-	P.addDescriptor("BRAM18k", Pack::AGGREGATE_EQUAL, Pack::TYPE_UNSIGNED);
-	P.addUnsignedElement("BRAM18k", resourcesGetBRAM18k());
+	P.addDescriptor("DSPs", Pack::MERGE_MAX, Pack::TYPE_UNSIGNED);
+	P.addElement<uint64_t>("DSPs", resourcesGetDSPs());
+	P.addDescriptor("FFs", Pack::MERGE_MAX, Pack::TYPE_UNSIGNED);
+	P.addElement<uint64_t>("FFs", resourcesGetFFs());
+	P.addDescriptor("LUTs", Pack::MERGE_MAX, Pack::TYPE_UNSIGNED);
+	P.addElement<uint64_t>("LUTs", resourcesGetLUTs());
+	P.addDescriptor("BRAM18k", Pack::MERGE_EQUAL, Pack::TYPE_UNSIGNED);
+	P.addElement<uint64_t>("BRAM18k", resourcesGetBRAM18k());
 
 	HardwareProfile::fillPack(P);
 
 	for(auto &it : arrayGetUsedBRAM18k()) {
-		P.addDescriptor("Used BRAM18k for array \"" + it.first + "\"", Pack::AGGREGATE_EQUAL, Pack::TYPE_UNSIGNED);
-		P.addUnsignedElement("Used BRAM18k for array \"" + it.first + "\"", it.second);
+		P.addDescriptor("Used BRAM18k for array \"" + it.first + "\"", Pack::MERGE_EQUAL, Pack::TYPE_UNSIGNED);
+		P.addElement<uint64_t>("Used BRAM18k for array \"" + it.first + "\"", it.second);
 	}
 }
 

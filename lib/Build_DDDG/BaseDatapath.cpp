@@ -299,6 +299,7 @@ uint64_t BaseDatapath::fpgaEstimationOneMoreSubtraceForRecIICalculation() {
 	// Put the node latency using selected architecture as edge weights in the graph
 	VERBOSE_PRINT(errs() << "\tUpdating DDDG edges with operation latencies according to selected hardware\n");
 	//EdgeWeightMap edgeWeightMap = boost::get(boost::edge_weight, graph);
+	bool nonNullFound = false;
 	EdgeIterator edgei, edgeEnd;
 	for(std::tie(edgei, edgeEnd) = boost::edges(graph); edgei != edgeEnd; edgei++) {
 		uint8_t weight = edgeToWeight[*edgei];
@@ -312,7 +313,15 @@ uint64_t BaseDatapath::fpgaEstimationOneMoreSubtraceForRecIICalculation() {
 			unsigned opcode = microops.at(nodeID);
 			unsigned latency = profile->getLatency(opcode);
 			boost::put(boost::edge_weight, graph, *edgei, latency);
+
+			if(latency)
+				nonNullFound = true;
 		}
+	}
+
+	if(!nonNullFound) {
+		VERBOSE_PRINT(errs() << "\tThis DDDG has no latency\n");
+		return 0;
 	}
 
 	VERBOSE_PRINT(errs() << "\tStarting ASAP scheduling\n");
@@ -349,6 +358,7 @@ uint64_t BaseDatapath::fpgaEstimation() {
 	// Put the node latency using selected architecture as edge weights in the graph
 	VERBOSE_PRINT(errs() << "\tUpdating DDDG edges with operation latencies according to selected hardware\n");
 	//EdgeWeightMap edgeWeightMap = boost::get(boost::edge_weight, graph);
+	bool nonNullFound = false;
 	EdgeIterator edgei, edgeEnd;
 	for(std::tie(edgei, edgeEnd) = boost::edges(graph); edgei != edgeEnd; edgei++) {
 		uint8_t weight = edgeToWeight[*edgei];
@@ -362,7 +372,15 @@ uint64_t BaseDatapath::fpgaEstimation() {
 			unsigned opcode = microops.at(nodeID);
 			unsigned latency = profile->getLatency(opcode);
 			boost::put(boost::edge_weight, graph, *edgei, latency);
+
+			if(latency)
+				nonNullFound = true;
 		}
+	}
+
+	if(!nonNullFound) {
+		VERBOSE_PRINT(errs() << "\tThis DDDG has no latency\n");
+		return 0;
 	}
 
 	// XXX: In the original code, the following stuff happens here before asap:
@@ -413,16 +431,16 @@ uint64_t BaseDatapath::fpgaEstimation() {
 
 		switch(std::get<2>(it)) {
 			case Pack::TYPE_UNSIGNED:
-				VERBOSE_PRINT(errs() << std::to_string(P.getUnsignedElements(std::get<0>(it))[0]) << "\n");
+				VERBOSE_PRINT(errs() << std::to_string(P.getElements<uint64_t>(std::get<0>(it))[0]) << "\n");
 				break;
 			case Pack::TYPE_SIGNED:
-				VERBOSE_PRINT(errs() << std::to_string(P.getSignedElements(std::get<0>(it))[0]) << "\n");
+				VERBOSE_PRINT(errs() << std::to_string(P.getElements<int64_t>(std::get<0>(it))[0]) << "\n");
 				break;
 			case Pack::TYPE_FLOAT:
-				VERBOSE_PRINT(errs() << std::to_string(P.getFloatElements(std::get<0>(it))[0]) << "\n");
+				VERBOSE_PRINT(errs() << std::to_string(P.getElements<float>(std::get<0>(it))[0]) << "\n");
 				break;
 			case Pack::TYPE_STRING:
-				VERBOSE_PRINT(errs() << P.getStringElements(std::get<0>(it))[0] << "\n");
+				VERBOSE_PRINT(errs() << P.getElements<std::string>(std::get<0>(it))[0] << "\n");
 				break;
 		}
 	}
@@ -467,28 +485,28 @@ uint64_t BaseDatapath::fpgaEstimation() {
 	uint64_t numCycles = getLoopTotalLatency(maxII);
 	dumpSummary(numCycles, std::get<0>(asapResult), achievedPeriod, maxII, resIIMem, resIIOp, recII);
 
-	P.addDescriptor("Achieved period", Pack::AGGREGATE_MAX, Pack::TYPE_FLOAT);
-	P.addFloatElement("Achieved period", achievedPeriod);
-	P.addDescriptor("Number of shared loads detected", Pack::AGGREGATE_SUM, Pack::TYPE_UNSIGNED);
-	P.addUnsignedElement("Number of shared loads detected", sharedLoadsRemoved);
-	P.addDescriptor("Number of repeated stores detected", Pack::AGGREGATE_SUM, Pack::TYPE_UNSIGNED);
-	P.addUnsignedElement("Number of repeated stores detected", repeatedStoresRemoved);
+	P.addDescriptor("Achieved period", Pack::MERGE_MAX, Pack::TYPE_FLOAT);
+	P.addElement<float>("Achieved period", achievedPeriod);
+	P.addDescriptor("Number of shared loads detected", Pack::MERGE_SUM, Pack::TYPE_UNSIGNED);
+	P.addElement<uint64_t>("Number of shared loads detected", sharedLoadsRemoved);
+	P.addDescriptor("Number of repeated stores detected", Pack::MERGE_SUM, Pack::TYPE_UNSIGNED);
+	P.addElement<uint64_t>("Number of repeated stores detected", repeatedStoresRemoved);
 	if(!(args.fNoFPUThresOpt)) {
-		P.addDescriptor("Units limited by DSP usage", Pack::AGGREGATE_SET, Pack::TYPE_STRING);
+		P.addDescriptor("Units limited by DSP usage", Pack::MERGE_SET, Pack::TYPE_STRING);
 		for(auto &i : profile->getConstrainedUnits()) {
-			P.addUnsignedElement("Units limited by DSP usage", i);
+			P.addElement<uint64_t>("Units limited by DSP usage", i);
 			switch(i) {
 				case HardwareProfile::LIMITED_BY_FADD:
-					P.addStringElement("Units limited by DSP usage", "fadd");
+					P.addElement<std::string>("Units limited by DSP usage", "fadd");
 					break;
 				case HardwareProfile::LIMITED_BY_FSUB:
-					P.addStringElement("Units limited by DSP usage", "fsub");
+					P.addElement<std::string>("Units limited by DSP usage", "fsub");
 					break;
 				case HardwareProfile::LIMITED_BY_FMUL:
-					P.addStringElement("Units limited by DSP usage", "fmul");
+					P.addElement<std::string>("Units limited by DSP usage", "fmul");
 					break;
 				case HardwareProfile::LIMITED_BY_FDIV:
-					P.addStringElement("Units limited by DSP usage", "fdiv");
+					P.addElement<std::string>("Units limited by DSP usage", "fdiv");
 					break;
 			}
 		}
@@ -1258,16 +1276,16 @@ void BaseDatapath::alapScheduling(std::tuple<uint64_t, uint64_t> asapResult) {
 
 		switch(std::get<2>(it)) {
 			case Pack::TYPE_UNSIGNED:
-				VERBOSE_PRINT(errs() << std::to_string(P.getUnsignedElements(std::get<0>(it))[0]) << "\n");
+				VERBOSE_PRINT(errs() << std::to_string(P.getElements<uint64_t>(std::get<0>(it))[0]) << "\n");
 				break;
 			case Pack::TYPE_SIGNED:
-				VERBOSE_PRINT(errs() << std::to_string(P.getSignedElements(std::get<0>(it))[0]) << "\n");
+				VERBOSE_PRINT(errs() << std::to_string(P.getElements<int64_t>(std::get<0>(it))[0]) << "\n");
 				break;
 			case Pack::TYPE_FLOAT:
-				VERBOSE_PRINT(errs() << std::to_string(P.getFloatElements(std::get<0>(it))[0]) << "\n");
+				VERBOSE_PRINT(errs() << std::to_string(P.getElements<float>(std::get<0>(it))[0]) << "\n");
 				break;
 			case Pack::TYPE_STRING:
-				VERBOSE_PRINT(errs() << P.getStringElements(std::get<0>(it))[0] << "\n");
+				VERBOSE_PRINT(errs() << P.getElements<std::string>(std::get<0>(it))[0] << "\n");
 				break;
 		}
 	}
@@ -1788,16 +1806,16 @@ void BaseDatapath::dumpSummary(
 
 		switch(std::get<2>(it)) {
 			case Pack::TYPE_UNSIGNED:
-				*summaryFile << std::to_string(P.getUnsignedElements(std::get<0>(it))[0]) << "\n";
+				*summaryFile << std::to_string(P.getElements<uint64_t>(std::get<0>(it))[0]) << "\n";
 				break;
 			case Pack::TYPE_SIGNED:
-				*summaryFile << std::to_string(P.getSignedElements(std::get<0>(it))[0]) << "\n";
+				*summaryFile << std::to_string(P.getElements<int64_t>(std::get<0>(it))[0]) << "\n";
 				break;
 			case Pack::TYPE_FLOAT:
-				*summaryFile << std::to_string(P.getFloatElements(std::get<0>(it))[0]) << "\n";
+				*summaryFile << std::to_string(P.getElements<float>(std::get<0>(it))[0]) << "\n";
 				break;
 			case Pack::TYPE_STRING:
-				*summaryFile << P.getStringElements(std::get<0>(it))[0] << "\n";
+				*summaryFile << P.getElements<std::string>(std::get<0>(it))[0] << "\n";
 				break;
 		}
 	}

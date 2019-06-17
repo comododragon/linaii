@@ -82,27 +82,45 @@ void Multipath::_Multipath() {
 		}
 	}
 
-#if 0
 	for(auto &it : P.getStructure()) {
 		std::string name = std::get<0>(it);
+		unsigned mergeType = std::get<1>(it);
 		unsigned type = std::get<2>(it);
 
-		switch(type) {
-			case Pack::TYPE_UNSIGNED:
+		if(Pack::MERGE_EQUAL == mergeType) {
+			if(Pack::TYPE_UNSIGNED == type) {
+				assert("true" == P.mergeElements<uint64_t>(name) && "Merged values from datapaths differ where it should not differ");
+				VERBOSE_PRINT(errs() << "\t" << name << ": " << std::to_string(P.getElements<uint64_t>(name)[0]) << "\n");
+			}
+			else if(Pack::TYPE_SIGNED == type) {
+				assert("true" == P.mergeElements<int64_t>(name) && "Merged values from datapaths differ where it should not differ");
+				VERBOSE_PRINT(errs() << "\t" << name << ": " << std::to_string(P.getElements<int64_t>(name)[0]) << "\n");
+			}
+			else if(Pack::TYPE_FLOAT == type) {
+				assert("true" == P.mergeElements<float>(name) && "Merged values from datapaths differ where it should not differ");
+				VERBOSE_PRINT(errs() << "\t" << name << ": " << std::to_string(P.getElements<float>(name)[0]) << "\n");
+			}
+			else if(Pack::TYPE_STRING == type) {
+				assert("true" == P.mergeElements<std::string>(name) && "Merged values from datapaths differ where it should not differ");
+				VERBOSE_PRINT(errs() << "\t" << name << ": " << P.getElements<std::string>(name)[0] << "\n");
+			}
+		}
+		else {
+			if(Pack::TYPE_UNSIGNED == type) {
 				VERBOSE_PRINT(errs() << "\t" << name << ": " << P.mergeElements<uint64_t>(name) << "\n");
-				break;
-			case Pack::TYPE_SIGNED:
+			}
+			else if(Pack::TYPE_SIGNED == type) {
 				VERBOSE_PRINT(errs() << "\t" << name << ": " << P.mergeElements<int64_t>(name) << "\n");
-				break;
-			case Pack::TYPE_FLOAT:
+			}
+			else if(Pack::TYPE_FLOAT == type) {
 				VERBOSE_PRINT(errs() << "\t" << name << ": " << P.mergeElements<float>(name) << "\n");
-				break;
-			case Pack::TYPE_STRING:
-				VERBOSE_PRINT(errs() << "\t" << name << ": " << P.mergeElements<std::string>(name) << "\n");
-				break;
+			}
+			else if(Pack::TYPE_STRING == type) {
+				std::string mergeResult = P.mergeElements<std::string>(name);
+				VERBOSE_PRINT(errs() << "\t" << name << ": " << (("" == mergeResult)? "none" : mergeResult) << "\n");
+			}
 		}
 	}
-#endif
 
 	VERBOSE_PRINT(errs() << "[][][][multipath] Finished\n");
 

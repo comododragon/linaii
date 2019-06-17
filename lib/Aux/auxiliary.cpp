@@ -548,7 +548,7 @@ template<> std::string Pack::mergeElements<uint64_t>(std::string name) {
 		case MERGE_MAX:
 			aggrElem = std::numeric_limits<uint64_t>::min();
 
-			for(auto &it : unsignedContent.at(name)) {
+			for(auto &it : unsignedContent[name]) {
 				if(it > aggrElem)
 					aggrElem = it;
 			}
@@ -557,7 +557,7 @@ template<> std::string Pack::mergeElements<uint64_t>(std::string name) {
 		case MERGE_MIN:
 			aggrElem = std::numeric_limits<uint64_t>::max();
 
-			for(auto &it : unsignedContent.at(name)) {
+			for(auto &it : unsignedContent[name]) {
 				if(it < aggrElem)
 					aggrElem = it;
 			}
@@ -566,21 +566,21 @@ template<> std::string Pack::mergeElements<uint64_t>(std::string name) {
 		case MERGE_SUM:
 			aggrElem = 0;
 
-			for(auto &it : unsignedContent.at(name))
+			for(auto &it : unsignedContent[name])
 				aggrElem += it;
 
 			return std::to_string(aggrElem);
 		case MERGE_EQUAL:
-			aggrElem = unsignedContent.at(name)[0];
+			aggrElem = unsignedContent[name][0];
 
-			for(auto &it : unsignedContent.at(name)) {
+			for(auto &it : unsignedContent[name]) {
 				if(aggrElem != it)
 					isEqual = false;
 			}
 
 			return isEqual? "true" : "false";
 		case MERGE_SET:
-			for(auto &it : unsignedContent.at(name))
+			for(auto &it : unsignedContent[name])
 				set.insert(it);
 
 			for(auto &it : set) {
@@ -620,7 +620,7 @@ template<> std::string Pack::mergeElements<int64_t>(std::string name) {
 		case MERGE_MAX:
 			aggrElem = std::numeric_limits<int64_t>::min();
 
-			for(auto &it : signedContent.at(name)) {
+			for(auto &it : signedContent[name]) {
 				if(it > aggrElem)
 					aggrElem = it;
 			}
@@ -629,7 +629,7 @@ template<> std::string Pack::mergeElements<int64_t>(std::string name) {
 		case MERGE_MIN:
 			aggrElem = std::numeric_limits<int64_t>::max();
 
-			for(auto &it : signedContent.at(name)) {
+			for(auto &it : signedContent[name]) {
 				if(it < aggrElem)
 					aggrElem = it;
 			}
@@ -638,21 +638,21 @@ template<> std::string Pack::mergeElements<int64_t>(std::string name) {
 		case MERGE_SUM:
 			aggrElem = 0;
 
-			for(auto &it : signedContent.at(name))
+			for(auto &it : signedContent[name])
 				aggrElem += it;
 
 			return std::to_string(aggrElem);
 		case MERGE_EQUAL:
-			aggrElem = signedContent.at(name)[0];
+			aggrElem = signedContent[name][0];
 
-			for(auto &it : signedContent.at(name)) {
+			for(auto &it : signedContent[name]) {
 				if(aggrElem != it)
 					isEqual = false;
 			}
 
 			return isEqual? "true" : "false";
 		case MERGE_SET:
-			for(auto &it : signedContent.at(name))
+			for(auto &it : signedContent[name])
 				set.insert(it);
 
 			for(auto &it : set) {
@@ -690,7 +690,7 @@ template<> std::string Pack::mergeElements<float>(std::string name) {
 		case MERGE_MAX:
 			aggrElem = std::numeric_limits<float>::min();
 
-			for(auto &it : floatContent.at(name)) {
+			for(auto &it : floatContent[name]) {
 				if(it > aggrElem)
 					aggrElem = it;
 			}
@@ -699,7 +699,7 @@ template<> std::string Pack::mergeElements<float>(std::string name) {
 		case MERGE_MIN:
 			aggrElem = std::numeric_limits<float>::max();
 
-			for(auto &it : floatContent.at(name)) {
+			for(auto &it : floatContent[name]) {
 				if(it < aggrElem)
 					aggrElem = it;
 			}
@@ -708,14 +708,14 @@ template<> std::string Pack::mergeElements<float>(std::string name) {
 		case MERGE_SUM:
 			aggrElem = 0;
 
-			for(auto &it : floatContent.at(name))
+			for(auto &it : floatContent[name])
 				aggrElem += it;
 
 			return std::to_string(aggrElem);
 		case MERGE_EQUAL:
-			aggrElem = floatContent.at(name)[0];
+			aggrElem = floatContent[name][0];
 
-			for(auto &it : floatContent.at(name)) {
+			for(auto &it : floatContent[name]) {
 				if(fabs(aggrElem - it) > 0.0001)
 					isEqual = false;
 			}
@@ -752,16 +752,16 @@ template<> std::string Pack::mergeElements<std::string>(std::string name) {
 		case MERGE_SUM:
 			assert(false && "Cannot merge, invalid aggregation type for string (MERGE_SUM");
 		case MERGE_EQUAL:
-			aggrString = stringContent.at(name)[0];
+			aggrString = stringContent[name][0];
 
-			for(auto &it : stringContent.at(name)) {
+			for(auto &it : stringContent[name]) {
 				if(aggrString.compare(it))
 					isEqual = false;
 			}
 
 			return isEqual? "true" : "false";
 		case MERGE_SET:
-			for(auto &it : stringContent.at(name))
+			for(auto &it : stringContent[name])
 				set.insert(it);
 
 			for(auto &it : set) {

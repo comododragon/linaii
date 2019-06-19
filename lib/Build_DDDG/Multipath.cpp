@@ -82,6 +82,18 @@ void Multipath::_Multipath() {
 		}
 	}
 
+	// Finish latency calculation by multiplying the loop bounds that were above our analysis
+	for(unsigned i = firstNonPerfectLoopLevel - 2; i + 1; i--) {
+		std::string wholeLoopName = appendDepthToLoopName(loopName, i + 1);
+		wholeloopName2loopBoundMapTy::iterator found = wholeloopName2loopBoundMap.find(wholeLoopName);
+		assert(found != wholeloopName2loopBoundMap.end() && "Could not find loop in wholeloopName2loopBoundMap");
+
+		uint64_t loopBound = found->second;
+		unsigned currUnrollFactor = unrolls.at(i);
+
+		numCycles = numCycles * (loopBound / currUnrollFactor) + BaseDatapath::EXTRA_ENTER_EXIT_LOOP_LATENCY;
+	}
+
 	for(auto &it : P.getStructure()) {
 		std::string name = std::get<0>(it);
 		unsigned mergeType = std::get<1>(it);
@@ -129,6 +141,14 @@ void Multipath::_Multipath() {
 #endif
 }
 
+// XXX: This may be a good place to implement some global optimisations.
+// For example, the gemm case, where loadstoreinstcombine transforms the last store in the inner loop as a phi-store in the header, that could be detected here.
+// Performing this optimisation post-DDDG may have some benefits, for example being sensitive to post-DDDG optimisations such as unroll, pipeline, etc.
+// For now, I am performing instcombine before DDDG generation due to simplicity.
+// One approach for global optimisation is: in this method, generate the DynamicDatapath but stop RIGHT AFTER DDDG is generated. Save all DDs in a vector
+// Then, iterate over all DDs in loop nest order and detect for optimisations. Optimise, then schedule.
+// One possible issue is regarding the global variables that are used. We must ensure that one DD messing in the global vars does not interfere with the other DDs
+// And this is why I hate global variables...
 void Multipath::recursiveLookup(unsigned currLoopLevel, unsigned finalLoopLevel) {
 	unsigned recII = 0;
 

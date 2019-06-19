@@ -1272,7 +1272,7 @@ void BaseDatapath::alapScheduling(std::tuple<uint64_t, uint64_t> asapResult) {
 	P.clear();
 	profile->fillPack(P);
 	for(auto &it : P.getStructure()) {
-		VERBOSE_PRINT(errs() << "\t" << std::get<0>(it) << ": ");
+		VERBOSE_PRINT(errs() << "\t\t" << std::get<0>(it) << ": ");
 
 		switch(std::get<2>(it)) {
 			case Pack::TYPE_UNSIGNED:

@@ -1667,6 +1667,12 @@ uint64_t BaseDatapath::getLoopTotalLatency(uint64_t maxII) {
 
 			noPipelineLatency *= upperLoopUnrollFactor;
 
+			// We consider EXTRA_ENTER_EXIT_LOOP_LATENCY as the overhead latency for a loop. When two consecutive loops
+			// are present, a cycle for each loop overhead can be merged (i.e. the exit condition of a loop can be evaluated
+			// at the same time as the enter condition of the following loop). Since right now consecutive inner loops are only
+			// possible with unroll, we compensate this cycle difference with the loop unroll factor
+			noPipelineLatency -= (upperLoopUnrollFactor - 1);
+
 			//if(enablePipelining)
 			//	calculateArrayName2maxReadWrite(upperLoopUnrollFactor);
 

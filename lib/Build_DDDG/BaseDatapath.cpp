@@ -1348,7 +1348,11 @@ std::pair<uint64_t, double> BaseDatapath::rcScheduling() {
 
 	profile->constrainHardware(CM.getArrayInfoCfgMap(), CM.getPartitionCfgMap(), CM.getCompletePartitionCfgMap());
 
-	RCScheduler rcSched(loopName, microops, graph, numOfTotalNodes, nameToVertex, vertexToName, *profile, baseAddress, asapScheduledTime, alapScheduledTime, rcScheduledTime);
+	RCScheduler rcSched(
+		loopName, loopLevel, datapathType,
+		microops, graph, numOfTotalNodes, nameToVertex, vertexToName,
+		*profile, baseAddress, asapScheduledTime, alapScheduledTime, rcScheduledTime
+	);
 	std::pair<uint64_t, double> rcPair = rcSched.schedule();
 
 	VERBOSE_PRINT(errs() << "\t\tResource-constrained scheduling finished\n");
@@ -1651,13 +1655,10 @@ uint64_t BaseDatapath::getLoopTotalLatency(uint64_t maxII) {
 
 		if(loopLevel - 1 == i)
 			noPipelineLatency = rcIL * (currentLoopBound / unrollFactor) + EXTRA_ENTER_EXIT_LOOP_LATENCY;
-		// TODO: I think if we want to support nested loops with instructions in between, changes would be needed here
-		else if(1 == i) {
+		else if(i)
 			noPipelineLatency = noPipelineLatency * (currentLoopBound / unrollFactor) + EXTRA_ENTER_EXIT_LOOP_LATENCY;
-		}
-		else {
+		else
 			noPipelineLatency = noPipelineLatency * (currentLoopBound / unrollFactor);
-		}
 
 		//if(!enablePipelining)
 		//	calculateArrayName2maxReadWrite(currentLoopBound / unrollFactor);
@@ -1883,7 +1884,7 @@ void BaseDatapath::dumpGraph(bool isOptimised) {
 }
 
 BaseDatapath::RCScheduler::RCScheduler(
-	const std::string loopName,
+	const std::string loopName, const unsigned loopLevel, const unsigned datapathType,
 	const std::vector<int> &microops,
 	const Graph &graph, unsigned numOfTotalNodes,
 	const std::unordered_map<unsigned, Vertex> &nameToVertex, const VertexNameMap &vertexToName,
@@ -1958,7 +1959,10 @@ BaseDatapath::RCScheduler::RCScheduler(
 	}
 
 	if(args.showScheduling) {
-		dumpFile.open(args.outWorkDir + loopName + ".sched.rpt");
+		std::string datapathTypeStr(
+			(NON_PERFECT_BEFORE == datapathType)? "_before" : ((NON_PERFECT_AFTER == datapathType)? "_after" : ((NON_PERFECT_BETWEEN == datapathType)? "_inter" : "" ))
+		);
+		dumpFile.open(args.outWorkDir + appendDepthToLoopName(loopName, loopLevel) + datapathTypeStr + ".sched.rpt");
 
 		dumpFile << "================================================\n";
 		dumpFile << "Lin-analyzer scheduling report file\n";

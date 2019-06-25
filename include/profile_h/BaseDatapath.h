@@ -194,7 +194,7 @@ public:
 
 	public:
 		RCScheduler(
-			const std::string loopName,
+			const std::string loopName, const unsigned loopLevel, const unsigned datapathType,
 			const std::vector<int> &microops,
 			const Graph &graph, unsigned numOfTotalNodes,
 			const std::unordered_map<unsigned, Vertex> &nameToVertex, const VertexNameMap &vertexToName,

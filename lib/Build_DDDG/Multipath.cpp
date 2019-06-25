@@ -61,11 +61,13 @@ void Multipath::_Multipath() {
 		if(BaseDatapath::NORMAL_LOOP == latencyType) {
 			numCycles = latency * (loopBound / currUnrollFactor) + BaseDatapath::EXTRA_ENTER_EXIT_LOOP_LATENCY;
 		}
-		// TODO: I have to check better how unrolling affects this type of loop.
-		// In my sense, unrolling a loop that has only another loop inside (PERFECT_LOOP) will only cause code replication.
-		// So in my opinion nothing else will happen. Maybe EXTRA_ENTER_EXIT_LOOP_LATENCY will be verified more times (unrollFactor * EXTRA_ENTER_EXIT maybe?)
 		else if(BaseDatapath::PERFECT_LOOP == latencyType) {
 			numCycles = numCycles * loopBound + BaseDatapath::EXTRA_ENTER_EXIT_LOOP_LATENCY;
+			// We consider EXTRA_ENTER_EXIT_LOOP_LATENCY as the overhead latency for a loop. When two consecutive loops
+			// are present, a cycle for each loop overhead can be merged (i.e. the exit condition of a loop can be evaluated
+			// at the same time as the enter condition of the following loop). Since right now consecutive inner loops are only
+			// possible with unroll, we compensate this cycle difference with the loop unroll factor
+			numCycles -= (currUnrollFactor - 1) * (loopBound / currUnrollFactor);
 		}
 		else if(BaseDatapath::NON_PERFECT_BEFORE == latencyType) {
 			uint64_t afterLatency = std::get<2>(latencies[i + 1]);
@@ -73,6 +75,15 @@ void Multipath::_Multipath() {
 			uint64_t betweenLatency = 0;
 			if(currUnrollFactor > 1)
 				betweenLatency = std::get<2>(latencies[i + 2]);
+
+			// XXX: Check if this is the correct way to compensate the unrolling effects!
+			// XXX: Check if this is the correct way to compensate the unrolling effects!
+			// XXX: Check if this is the correct way to compensate the unrolling effects!
+			// These in-between DDDGs can be solved at the same time as the enter/exit loop procedures, so we remove 1 cycle to mimic this behaviour
+			latency = latency? latency - 1 : 0;
+			afterLatency = afterLatency? afterLatency - 1 : 0;
+			// This latency is compensated twice, as it is virtually a beforeLatency + afterLatency
+			betweenLatency = (betweenLatency > 1)? betweenLatency - 2 : 0;
 
 			numCycles = (latency + afterLatency + (betweenLatency * (currUnrollFactor - 1)) + (numCycles * currUnrollFactor)) * (loopBound / currUnrollFactor)
 				+ BaseDatapath::EXTRA_ENTER_EXIT_LOOP_LATENCY;
@@ -91,8 +102,13 @@ void Multipath::_Multipath() {
 		uint64_t loopBound = found->second;
 		unsigned currUnrollFactor = unrolls.at(i);
 
-		numCycles = numCycles * (loopBound / currUnrollFactor) + BaseDatapath::EXTRA_ENTER_EXIT_LOOP_LATENCY;
+		numCycles = numCycles * loopBound + BaseDatapath::EXTRA_ENTER_EXIT_LOOP_LATENCY;
+		// See explanation above, in the if(BaseDatapath::PERFECT_LOOP == ...)
+		numCycles -= (currUnrollFactor - 1) * (loopBound / currUnrollFactor);
 	}
+
+	// Remove the enter/exit loop latency that was added to the top loop
+	numCycles -= BaseDatapath::EXTRA_ENTER_EXIT_LOOP_LATENCY;
 
 	for(auto &it : P.getStructure()) {
 		std::string name = std::get<0>(it);

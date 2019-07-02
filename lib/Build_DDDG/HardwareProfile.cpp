@@ -392,7 +392,7 @@ void HardwareProfile::fDivRelease() {
 }
 
 void HardwareProfile::fCmpRelease() {
-	assert(false && "fCmp is not constrained");
+	//assert(false && "fCmp is not constrained");
 }
 
 void HardwareProfile::loadRelease(std::string arrayPartitionName) {

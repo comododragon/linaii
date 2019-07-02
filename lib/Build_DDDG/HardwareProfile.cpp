@@ -424,11 +424,11 @@ void HardwareProfile::storeRelease(std::string arrayPartitionName) {
 }
 
 void HardwareProfile::intOpRelease(unsigned opcode) {
-	assert(false && "Integer ops are not constrained");
+	//assert(false && "Integer ops are not constrained");
 }
 
 void HardwareProfile::callRelease() {
-	assert(false && "Calls are not constrained");
+	//assert(false && "Calls are not constrained");
 }
 
 XilinxHardwareProfile::XilinxHardwareProfile() {

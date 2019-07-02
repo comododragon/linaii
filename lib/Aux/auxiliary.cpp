@@ -122,8 +122,7 @@ ConfigurationManager::ConfigurationManager(std::string kernelName) : kernelName(
 void ConfigurationManager::appendToPipeliningCfg(std::string funcName, unsigned loopNo, unsigned loopLevel) {
 	pipeliningCfgTy elem;
 
-	std::map<std::string, std::string>::iterator found = functionName2MangledNameMap.find(funcName);
-	elem.funcName = (functionName2MangledNameMap.end() == found)? funcName : found->second;
+	elem.funcName = funcName;
 	elem.loopNo = loopNo;
 	elem.loopLevel = loopLevel;
 
@@ -133,8 +132,7 @@ void ConfigurationManager::appendToPipeliningCfg(std::string funcName, unsigned 
 void ConfigurationManager::appendToUnrollingCfg(std::string funcName, unsigned loopNo, unsigned loopLevel, int lineNo, uint64_t unrollFactor) {
 	unrollingCfgTy elem;
 
-	std::map<std::string, std::string>::iterator found = functionName2MangledNameMap.find(funcName);
-	elem.funcName = (functionName2MangledNameMap.end() == found)? funcName : found->second;
+	elem.funcName = funcName;
 	elem.loopNo = loopNo;
 	elem.loopLevel = loopLevel;
 	elem.lineNo = lineNo;
@@ -255,9 +253,11 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 			sscanf(i.c_str(), "%*[^,],%[^,],%u,%u\n", buff, &loopNo, &loopLevel);
 
 			std::string funcName(buff);
-			std::string loopName = constructLoopName(funcName, loopNo);
+			std::map<std::string, std::string>::iterator mangledFound = functionName2MangledNameMap.find(funcName);
+			std::string mangledFuncName = (functionName2MangledNameMap.end() == mangledFound)? funcName : mangledFound->second;
+			std::string loopName = constructLoopName(mangledFuncName, loopNo);
 
-			appendToPipeliningCfg(funcName, loopNo, loopLevel);
+			appendToPipeliningCfg(mangledFuncName, loopNo, loopLevel);
 
 			LpName2numLevelMapTy::iterator found = LpName2numLevelMap.find(loopName);
 			assert(found != LpName2numLevelMap.end() && "Cannot find loop name provided in configuration file");
@@ -308,19 +308,21 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 			sscanf(i.c_str(), "%*[^,],%[^,],%u,%u,%d,%lu\n", buff, &loopNo, &loopLevel, &lineNo, &unrollFactor);
 
 			std::string funcName(buff);
-			std::string wholeLoopName = constructLoopName(funcName, loopNo, loopLevel);
+			std::map<std::string, std::string>::iterator mangledFound = functionName2MangledNameMap.find(funcName);
+			std::string mangledFuncName = (functionName2MangledNameMap.end() == mangledFound)? funcName : mangledFound->second;
+			std::string wholeLoopName = constructLoopName(mangledFuncName, loopNo, loopLevel);
 			unrollWholeLoopNameStr.push_back(wholeLoopName);
 
 			std::map<std::string, uint64_t>::iterator found = wholeLoopName2CompUnrollFactorMap.find(wholeLoopName);
 			if(wholeLoopName2CompUnrollFactorMap.end() == found) {
-				appendToUnrollingCfg(funcName, loopNo, loopLevel, lineNo, unrollFactor);
+				appendToUnrollingCfg(mangledFuncName, loopNo, loopLevel, lineNo, unrollFactor);
 			}
 			else {
 				uint64_t staticBound = found->second;
 				if(staticBound)
-					appendToUnrollingCfg(funcName, loopNo, loopLevel, lineNo, staticBound);
+					appendToUnrollingCfg(mangledFuncName, loopNo, loopLevel, lineNo, staticBound);
 				else
-					appendToUnrollingCfg(funcName, loopNo, loopLevel, lineNo, unrollFactor);
+					appendToUnrollingCfg(mangledFuncName, loopNo, loopLevel, lineNo, unrollFactor);
 			}
 		}
 

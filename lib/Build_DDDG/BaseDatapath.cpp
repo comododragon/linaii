@@ -712,9 +712,9 @@ void BaseDatapath::initScratchpadPartitions() {
 
 		ConfigurationManager::partitionCfgMapTy::const_iterator found = partitionMap.find(label);
 		if(found != partitionMap.end()) {
-			unsigned type = found->second->type;
-			uint64_t size = found->second->size;
-			uint64_t pFactor = found->second->pFactor;
+			unsigned type = found->second.type;
+			uint64_t size = found->second.size;
+			uint64_t pFactor = found->second.pFactor;
 
 			if(1 == pFactor)
 				continue;

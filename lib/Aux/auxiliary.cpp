@@ -151,7 +151,7 @@ void ConfigurationManager::appendToPartitionCfg(unsigned type, std::string baseA
 	elem.pFactor = pFactor;
 
 	partitionCfg.push_back(elem);
-	partitionCfgMap.insert(std::make_pair(baseAddr, &(partitionCfg.back())));
+	partitionCfgMap.insert(std::make_pair(baseAddr, elem));
 }
 
 void ConfigurationManager::appendToCompletePartitionCfg(std::string baseAddr, uint64_t size) {
@@ -164,7 +164,7 @@ void ConfigurationManager::appendToCompletePartitionCfg(std::string baseAddr, ui
 	elem.pFactor = 0;
 
 	completePartitionCfg.push_back(elem);
-	completePartitionCfgMap.insert(std::make_pair(baseAddr, &(completePartitionCfg.back())));
+	completePartitionCfgMap.insert(std::make_pair(baseAddr, elem));
 }
 
 void ConfigurationManager::appendToArrayInfoCfg(std::string arrayName, uint64_t totalSize, size_t wordSize) {

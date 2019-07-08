@@ -705,9 +705,9 @@ void XilinxHardwareProfile::setMemoryCurrentUsage(
 		ConfigurationManager::partitionCfgMapTy::const_iterator found2 = partitionCfgMap.find(arrayName);
 
 		if(found != completePartitionCfgMap.end())
-			arrayNameToConfig.insert(std::make_pair(arrayName, std::make_tuple(0, found->second->size, wordSizeInByte))); 
+			arrayNameToConfig.insert(std::make_pair(arrayName, std::make_tuple(0, found->second.size, wordSizeInByte))); 
 		else if(found2 != partitionCfgMap.end())
-			arrayNameToConfig.insert(std::make_pair(arrayName, std::make_tuple(found2->second->pFactor, found2->second->size, found2->second->wordSize)));
+			arrayNameToConfig.insert(std::make_pair(arrayName, std::make_tuple(found2->second.pFactor, found2->second.size, found2->second.wordSize)));
 		else
 			arrayNameToConfig.insert(std::make_pair(arrayName, std::make_tuple(1, sizeInByte, wordSizeInByte)));
 	}

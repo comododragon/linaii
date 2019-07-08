@@ -282,6 +282,7 @@ public:
 	uint64_t getTargetLoopUnrollFactor() const;
 	unsigned getNumNodes() const;
 	unsigned getNumEdges() const;
+	uint64_t getMaxII() const;
 	uint64_t getRCIL() const;
 	Pack &getPack();
 
@@ -343,6 +344,8 @@ protected:
 	std::map<std::string, uint64_t> arrayPartitionToNumOfReads;
 	// Number of writes inside an array partition
 	std::map<std::string, uint64_t> arrayPartitionToNumOfWrites;
+	// Maximum Initiation Interval for pipelined loops
+	uint64_t maxII;
 	// Final latency of the loop, without performing the nest calculations
 	uint64_t rcIL;
 

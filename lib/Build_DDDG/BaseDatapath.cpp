@@ -73,6 +73,7 @@ BaseDatapath::BaseDatapath(
 	postDDDGBuild();
 
 	numCycles = 0;
+	maxII = 0;
 	rcIL = 0;
 
 	///FIXME: We set numOfPortsPerPartition to 1000, so that we do not have memory port limitations. 
@@ -148,6 +149,10 @@ unsigned BaseDatapath::getNumNodes() const {
 
 unsigned BaseDatapath::getNumEdges() const {
 	return boost::num_edges(graph);
+}
+
+uint64_t BaseDatapath::getMaxII() const {
+	return maxII;
 }
 
 uint64_t BaseDatapath::getRCIL() const {
@@ -412,7 +417,7 @@ uint64_t BaseDatapath::fpgaEstimation() {
 	uint64_t recII = calculateRecII(std::get<0>(asapResult));
 
 	uint64_t resII = (std::get<1>(resIIMem) > std::get<1>(resIIOp))? std::get<1>(resIIMem) : std::get<1>(resIIOp);
-	uint64_t maxII = (resII > recII)? resII : recII;
+	maxII = (resII > recII)? resII : recII;
 
 #if 0
 	// If shared loads were not removed, remove it now to inform the user the impact of this optimisations

@@ -18,7 +18,7 @@ class Multipath {
 	uint64_t actualLoopUnrollFactor;
 	bool enablePipelining;
 
-	std::vector<std::tuple<unsigned, unsigned, uint64_t>> latencies;
+	std::vector<std::tuple<unsigned, unsigned, uint64_t, uint64_t>> latencies;
 	Pack P;
 
 	void _Multipath();

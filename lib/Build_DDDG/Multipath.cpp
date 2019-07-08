@@ -12,10 +12,11 @@ void Multipath::_Multipath() {
 	unsigned checkerState = 0;
 #endif
 	for(unsigned i = 0; i < latencies.size(); i++) {
-		std::tuple<unsigned, unsigned, uint64_t> elem = latencies[i];
+		std::tuple<unsigned, unsigned, uint64_t, uint64_t> elem = latencies[i];
 		unsigned currLoopLevel = std::get<0>(elem);
 		unsigned latencyType = std::get<1>(elem);
 		uint64_t latency = std::get<2>(elem);
+		uint64_t maxII = std::get<3>(elem);
 
 		std::string wholeLoopName = appendDepthToLoopName(loopName, currLoopLevel);
 		wholeloopName2loopBoundMapTy::iterator found = wholeloopName2loopBoundMap.find(wholeLoopName);
@@ -59,7 +60,12 @@ void Multipath::_Multipath() {
 #endif
 
 		if(BaseDatapath::NORMAL_LOOP == latencyType) {
-			numCycles = latency * (loopBound / currUnrollFactor) + BaseDatapath::EXTRA_ENTER_EXIT_LOOP_LATENCY;
+			uint64_t unrolledBound = loopBound / currUnrollFactor;
+
+			if(enablePipelining)
+				numCycles = maxII * (unrolledBound - 1) + latency + BaseDatapath::EXTRA_ENTER_EXIT_LOOP_LATENCY;
+			else
+				numCycles = latency * unrolledBound + BaseDatapath::EXTRA_ENTER_EXIT_LOOP_LATENCY;
 		}
 		else if(BaseDatapath::PERFECT_LOOP == latencyType) {
 			numCycles = numCycles * loopBound + BaseDatapath::EXTRA_ENTER_EXIT_LOOP_LATENCY;
@@ -76,14 +82,44 @@ void Multipath::_Multipath() {
 			if(currUnrollFactor > 1)
 				betweenLatency = std::get<2>(latencies[i + 2]);
 
+			// These in-between DDDGs may be solved at the same time as the enter/exit loop procedures. But this depends on
+			// which of them are non-zero
+			if(latency && afterLatency) {
+				latency -= 1;
+				afterLatency -= 1;
+
+				if(betweenLatency > 1)
+					betweenLatency -= 2;
+				else if(betweenLatency)
+					betweenLatency -= 1;
+			}
+			else if(latency && !afterLatency) {
+				latency -= 1;
+
+				if(betweenLatency > 1)
+					betweenLatency -= 2;
+				else if(betweenLatency)
+					betweenLatency -= 1;
+			}
+			else if(!latency && afterLatency) {
+				afterLatency -= 2;
+
+				if(betweenLatency > 2)
+					betweenLatency -= 3;
+				else if(betweenLatency > 1)
+					betweenLatency -= 2;
+				else if(betweenLatency)
+					betweenLatency -= 1;
+			}
+
 			// XXX: Check if this is the correct way to compensate the unrolling effects!
 			// XXX: Check if this is the correct way to compensate the unrolling effects!
 			// XXX: Check if this is the correct way to compensate the unrolling effects!
 			// These in-between DDDGs can be solved at the same time as the enter/exit loop procedures, so we remove 1 cycle to mimic this behaviour
-			latency = latency? latency - 1 : 0;
-			afterLatency = afterLatency? afterLatency - 1 : 0;
+			//latency = latency? latency - 1 : 0;
+			//afterLatency = (afterLatency > 1)? afterLatency - 2 : (afterLatency? afterLatency - 1 : 0);
 			// This latency is compensated twice, as it is virtually a beforeLatency + afterLatency
-			betweenLatency = (betweenLatency > 1)? betweenLatency - 2 : 0;
+			//betweenLatency = (betweenLatency > 1)? betweenLatency - 2 : (betweenLatency? betweenLatency - 1 : 0);
 
 			numCycles = (latency + afterLatency + (betweenLatency * (currUnrollFactor - 1)) + (numCycles * currUnrollFactor)) * (loopBound / currUnrollFactor)
 				+ BaseDatapath::EXTRA_ENTER_EXIT_LOOP_LATENCY;
@@ -188,7 +224,7 @@ void Multipath::recursiveLookup(unsigned currLoopLevel, unsigned finalLoopLevel)
 		VERBOSE_PRINT(errs() << "[][][][multipath][" << std::to_string(finalLoopLevel) << "] Estimated cycles: " << std::to_string(DD.getCycles()) << "\n");
 		VERBOSE_PRINT(errs() << "[][][][multipath][" << std::to_string(finalLoopLevel) << "] Finished\n");
 
-		latencies.push_back(std::make_tuple(finalLoopLevel, BaseDatapath::NORMAL_LOOP, DD.getRCIL()));
+		latencies.push_back(std::make_tuple(finalLoopLevel, BaseDatapath::NORMAL_LOOP, DD.getRCIL(), DD.getMaxII()));
 		P.merge(DD.getPack());
 
 		return;
@@ -208,7 +244,7 @@ void Multipath::recursiveLookup(unsigned currLoopLevel, unsigned finalLoopLevel)
 			VERBOSE_PRINT(errs() << "[][][][multipath][" << std::to_string(currLoopLevel) << "] This loop nest is perfect. Proceeding to next level\n");
 
 			recursiveLookup(currLoopLevel + 1, finalLoopLevel);
-			latencies.push_back(std::make_tuple(currLoopLevel, BaseDatapath::PERFECT_LOOP, 0));
+			latencies.push_back(std::make_tuple(currLoopLevel, BaseDatapath::PERFECT_LOOP, 0, 0));
 
 			VERBOSE_PRINT(errs() << "[][][][multipath][" << std::to_string(currLoopLevel) << "] Finished\n");
 		}
@@ -220,19 +256,19 @@ void Multipath::recursiveLookup(unsigned currLoopLevel, unsigned finalLoopLevel)
 
 			VERBOSE_PRINT(errs() << "[][][][multipath][" << std::to_string(currLoopLevel) << "] Building dynamic datapath for the region before the nested loop\n");
 			DynamicDatapath DD(kernelName, CM, summaryFile, loopName, currLoopLevel, targetUnrollFactor, BaseDatapath::NON_PERFECT_BEFORE);
-			latencies.push_back(std::make_tuple(currLoopLevel, BaseDatapath::NON_PERFECT_BEFORE, DD.getRCIL()));
+			latencies.push_back(std::make_tuple(currLoopLevel, BaseDatapath::NON_PERFECT_BEFORE, DD.getRCIL(), 0));
 			P.merge(DD.getPack());
 
 			VERBOSE_PRINT(errs() << "[][][][multipath][" << std::to_string(currLoopLevel) << "] Building dynamic datapath for the region after the nested loop\n");
 			DynamicDatapath DD2(kernelName, CM, summaryFile, loopName, currLoopLevel, targetUnrollFactor, BaseDatapath::NON_PERFECT_AFTER);
-			latencies.push_back(std::make_tuple(currLoopLevel, BaseDatapath::NON_PERFECT_AFTER, DD2.getRCIL()));
+			latencies.push_back(std::make_tuple(currLoopLevel, BaseDatapath::NON_PERFECT_AFTER, DD2.getRCIL(), 0));
 			P.merge(DD2.getPack());
 
 			// Unroll detected. Since the code is statically replicated, we also calculate the inter-iteration scheduling to improve acurracy
 			if(targetUnrollFactor > 1) {
 				VERBOSE_PRINT(errs() << "[][][][multipath][" << std::to_string(currLoopLevel) << "] Building dynamic datapath for the region between the unrolled nested loops\n");
 				DynamicDatapath DD3(kernelName, CM, summaryFile, loopName, currLoopLevel, targetUnrollFactor, BaseDatapath::NON_PERFECT_BETWEEN);
-				latencies.push_back(std::make_tuple(currLoopLevel, BaseDatapath::NON_PERFECT_BETWEEN, DD3.getRCIL()));
+				latencies.push_back(std::make_tuple(currLoopLevel, BaseDatapath::NON_PERFECT_BETWEEN, DD3.getRCIL(), 0));
 				P.merge(DD3.getPack());
 			}
 

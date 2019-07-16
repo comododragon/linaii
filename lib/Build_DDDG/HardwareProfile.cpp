@@ -371,6 +371,28 @@ bool HardwareProfile::callTryAllocate(bool commit) {
 	return true;
 }
 
+void HardwareProfile::pipelinedRelease() {
+	// Release constrained pipelined functional units
+	if(isPipelined(LLVM_IR_FAdd))
+		fAddInUse = 0;
+	if(isPipelined(LLVM_IR_FSub))
+		fSubInUse = 0;
+	if(isPipelined(LLVM_IR_FMul))
+		fMulInUse = 0;
+	if(isPipelined(LLVM_IR_FDiv))
+		fDivInUse = 0;
+
+	// Release memory ports if load/store are pipelined
+	if(isPipelined(LLVM_IR_Load)) {
+		for(auto &it : arrayPartitionToReadPortsInUse)
+			it.second = 0;
+	}
+	if(isPipelined(LLVM_IR_Store)) {
+		for(auto &it : arrayPartitionToWritePortsInUse)
+			it.second = 0;
+	}
+}
+
 void HardwareProfile::fAddRelease() {
 	assert(fAddInUse && "Attempt to release fAdd unit when none is allocated");
 	fAddInUse--;
@@ -1031,7 +1053,10 @@ unsigned XilinxZCU102HardwareProfile::getLatency(unsigned opcode) {
 		case LLVM_IR_Xor:
 		case LLVM_IR_ICmp:
 		case LLVM_IR_Br:
+			return 0;
 		case LLVM_IR_IndexAdd:
+			// Even though a normal add/sub is performed here, it is not registered, so no latency (but it has an in-cycle latency!)
+			return 0;
 		case LLVM_IR_IndexSub:
 			return 0;
 		case LLVM_IR_Add:
@@ -1076,9 +1101,11 @@ double XilinxZCU102HardwareProfile::getInCycleLatency(unsigned opcode) {
 		case LLVM_IR_Xor:
 		case LLVM_IR_ICmp:
 		case LLVM_IR_Br:
-		case LLVM_IR_IndexAdd:
-		case LLVM_IR_IndexSub:
 			return 0;
+		case LLVM_IR_IndexAdd:
+			return effectiveLatencies[LATENCY_ADD].second;
+		case LLVM_IR_IndexSub:
+			return effectiveLatencies[LATENCY_SUB].second;
 		case LLVM_IR_Add:
 			return effectiveLatencies[LATENCY_ADD].second;
 		case LLVM_IR_Sub: 

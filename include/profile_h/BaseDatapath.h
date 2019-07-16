@@ -16,6 +16,7 @@
 #ifdef __GNUC__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#pragma GCC diagnostic ignored "-Wdeprecated-copy"
 #pragma GCC diagnostic ignored "-Wparentheses"
 #endif
 #include <boost/config.hpp>
@@ -115,6 +116,7 @@ public:
 		typedef std::list<std::pair<unsigned, uint64_t>> nodeTickTy;
 		typedef std::list<unsigned> selectedListTy;
 		typedef std::map<unsigned, unsigned> executingMapTy;
+		typedef std::vector<unsigned> executedListTy;
 
 		const std::vector<int> &microops;
 		const Graph &graph;
@@ -134,6 +136,9 @@ public:
 		uint64_t cycleTick;
 		bool isNullCycle;
 		double achievedPeriod;
+		bool readyChanged;
+		uint64_t alapShift;
+		bool criticalPathAllocated;
 
 		TCScheduler tcSched;
 
@@ -170,6 +175,16 @@ public:
 		executingMapTy intOpExecuting;
 		executingMapTy callExecuting;
 
+		executedListTy fAddExecuted;
+		executedListTy fSubExecuted;
+		executedListTy fMulExecuted;
+		executedListTy fDivExecuted;
+		executedListTy fCmpExecuted;
+		executedListTy loadExecuted;
+		executedListTy storeExecuted;
+		executedListTy intOpExecuted;
+		executedListTy callExecuted;
+
 		std::ofstream dumpFile;
 
 		bool dummyAllocate() { return true; }
@@ -187,9 +202,9 @@ public:
 		void enqueueExecute(unsigned opcode, selectedListTy &selected, executingMapTy &executing, void (HardwareProfile::*release)());
 		void enqueueExecute(selectedListTy &selected, executingMapTy &executing, void (HardwareProfile::*releaseInt)(unsigned));
 		void enqueueExecute(unsigned opcde, selectedListTy &selected, executingMapTy &executing, void (HardwareProfile::*releaseMem)(std::string));
-		void tryRelease(unsigned opcode, executingMapTy &executing, void (HardwareProfile::*release)());
-		void tryRelease(executingMapTy &executing, void (HardwareProfile::*releaseInt)(unsigned));
-		void tryRelease(unsigned opcode, executingMapTy &executing, void (HardwareProfile::*releaseMem)(std::string));
+		void tryRelease(unsigned opcode, executingMapTy &executing, executedListTy &executed, void (HardwareProfile::*release)());
+		void tryRelease(executingMapTy &executing, executedListTy &executed, void (HardwareProfile::*releaseInt)(unsigned));
+		void tryRelease(unsigned opcode, executingMapTy &executing, executedListTy &executed, void (HardwareProfile::*releaseMem)(std::string));
 		void setScheduledAndAssignReadyChildren(unsigned nodeID);
 
 	public:

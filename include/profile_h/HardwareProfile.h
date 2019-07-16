@@ -96,6 +96,7 @@ public:
 	bool intOpTryAllocate(unsigned opcode, bool commit = true);
 	bool callTryAllocate(bool commit = true);
 
+	void pipelinedRelease();
 	void fAddRelease();
 	void fSubRelease();
 	void fMulRelease();

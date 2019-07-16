@@ -1908,6 +1908,7 @@ BaseDatapath::RCScheduler::RCScheduler(
 	totalConnectedNodes = 0;
 	scheduledNodeCount = 0;
 	achievedPeriod = 0;
+	alapShift = 0;
 
 	startingNodes.clear();
 
@@ -2026,11 +2027,51 @@ std::pair<uint64_t, double> BaseDatapath::RCScheduler::schedule() {
 				tcSched.tryAllocate(it.first, false);
 		}
 
+		// Nodes must be executed only once per clock tick. These lists hold which nodes were already executed
+		fAddExecuted.clear();
+		fSubExecuted.clear();
+		fMulExecuted.clear();
+		fDivExecuted.clear();
+		fCmpExecuted.clear();
+		loadExecuted.clear();
+		storeExecuted.clear();
+		intOpExecuted.clear();
+		callExecuted.clear();
+
+		// Normal cycle allocation
+		readyChanged = false;
 		select();
 		execute();
 		release();
+
+		// Cycle allocation using remaining timing budget
+		if(!(args.fNoTCS)) {
+			while(readyChanged) {
+				criticalPathAllocated = false;
+				readyChanged = false;
+
+				select();
+				execute();
+				release();
+
+				// If any critical path node was allocated, since we are allocating nodes before their actual ALAP time
+				// (cycle merging, due to timing budget), we must compensate the ALAP values, as the critical path is
+				// now a bit shorter. alapShift does the trick
+				if(criticalPathAllocated) {
+					alapShift++;
+
+					// Since we shifted the critical path, we check again if there are ready nodes to be solved in this shifted world
+					if(startingNodes.size())
+						assignReadyStartingNodes();
+				}
+			}
+		}
+
 		//std::cout << "~~ end " << std::to_string(cycleTick) << "\n";
 		//std::cout.flush();
+
+		// Release pipelined functional units for next clock tick
+		profile.pipelinedRelease();
 
 		if(args.fNoTCS) {
 			if(args.showScheduling)
@@ -2061,7 +2102,10 @@ std::pair<uint64_t, double> BaseDatapath::RCScheduler::schedule() {
 	}
 
 	// Deduce null cycles
-	cycleTick -= nullCycles;
+	// XXX: Deactivating for now. It was removing cycles where indexadds happened, which is not right
+	// XXX: I think that nullCycles was used for deducing silentstore cycles. Maybe I should adapt the logic accordingly
+	// (i.e. only deduce the cycles with silent stores)
+	//cycleTick -= nullCycles;
 
 	// XXX: I could not clearly get why (i - 1) and (i + 1) but not (i) and (i + 1)
 	//return (args.fExtraScalar)? cycleTick + 1 : cycleTick - 1;
@@ -2078,7 +2122,8 @@ void BaseDatapath::RCScheduler::assignReadyStartingNodes() {
 		uint64_t alapTime = startingNodes.front().second;
 
 		// If the cycle tick equals to the node's ALAP time, this node has to be solved now!
-		if(cycleTick == alapTime) {
+		// (the alapShift compensates for critical path reduction if nodes were merged before their intended cycle due to timing budget)
+		if(alapTime - cycleTick <= alapShift) {
 			//std::cout << "~~ assigned ready: " << std::to_string(currNodeID) << "\n";
 			pushReady(currNodeID, alapTime);
 			startingNodes.pop_front();
@@ -2097,15 +2142,19 @@ void BaseDatapath::RCScheduler::select() {
 	while(othersReady.size()) {
 		unsigned currNodeID = othersReady.front().first;
 
-		if(args.showScheduling) {
-			unsigned opcode = microops.at(currNodeID);
-			dumpFile << "\t[RELEASED] [0/" <<  std::to_string(profile.getLatency(opcode)) << "] Node " << currNodeID << " (" << reverseOpcodeMap.at(opcode) << ")\n";
-		}
+		// If selecting the current node does not violate timing in any way, proceed
+		if(args.fNoTCS || tcSched.tryAllocate(currNodeID)) {
+			if(args.showScheduling) {
+				unsigned opcode = microops.at(currNodeID);
+				dumpFile << "\t[RELEASED] [0/" <<  std::to_string(profile.getLatency(opcode)) << "] Node " << currNodeID << " (" << reverseOpcodeMap.at(opcode) << ")\n";
+			}
 
-		//std::cout << "~~ done (others): " << std::to_string(currNodeID) << "\n";
-		othersReady.pop_front();
-		rc[currNodeID] = cycleTick;
-		setScheduledAndAssignReadyChildren(currNodeID);
+			readyChanged = true;
+			//std::cout << "~~ done (others): " << std::to_string(currNodeID) << "\n";
+			othersReady.pop_front();
+			rc[currNodeID] = cycleTick;
+			setScheduledAndAssignReadyChildren(currNodeID);
+		}
 	}
 
 	// Attempt to allocate resources to the most urgent nodes
@@ -2144,18 +2193,20 @@ void BaseDatapath::RCScheduler::execute() {
 
 void BaseDatapath::RCScheduler::release() {
 	// Try to release resources that are being held by executing nodes
-	tryRelease(LLVM_IR_FAdd, fAddExecuting, &HardwareProfile::fAddRelease);
-	tryRelease(LLVM_IR_FSub, fSubExecuting, &HardwareProfile::fSubRelease);
-	tryRelease(LLVM_IR_FMul, fMulExecuting, &HardwareProfile::fMulRelease);
-	tryRelease(LLVM_IR_FDiv, fDivExecuting, &HardwareProfile::fDivRelease);
-	tryRelease(LLVM_IR_FCmp, fCmpExecuting, &HardwareProfile::fCmpRelease);
-	tryRelease(LLVM_IR_Load, loadExecuting, &HardwareProfile::loadRelease);
-	tryRelease(LLVM_IR_Store, storeExecuting, &HardwareProfile::storeRelease);
-	tryRelease(intOpExecuting, &HardwareProfile::intOpRelease);
-	tryRelease(LLVM_IR_Call, callExecuting, &HardwareProfile::callRelease);
+	tryRelease(LLVM_IR_FAdd, fAddExecuting, fAddExecuted, &HardwareProfile::fAddRelease);
+	tryRelease(LLVM_IR_FSub, fSubExecuting, fSubExecuted, &HardwareProfile::fSubRelease);
+	tryRelease(LLVM_IR_FMul, fMulExecuting, fMulExecuted, &HardwareProfile::fMulRelease);
+	tryRelease(LLVM_IR_FDiv, fDivExecuting, fDivExecuted, &HardwareProfile::fDivRelease);
+	tryRelease(LLVM_IR_FCmp, fCmpExecuting, fCmpExecuted, &HardwareProfile::fCmpRelease);
+	tryRelease(LLVM_IR_Load, loadExecuting, loadExecuted, &HardwareProfile::loadRelease);
+	tryRelease(LLVM_IR_Store, storeExecuting, storeExecuted, &HardwareProfile::storeRelease);
+	tryRelease(intOpExecuting, intOpExecuted, &HardwareProfile::intOpRelease);
+	tryRelease(LLVM_IR_Call, callExecuting, callExecuted, &HardwareProfile::callRelease);
 }
 
 void BaseDatapath::RCScheduler::pushReady(unsigned nodeID, uint64_t tick) {
+	readyChanged = true;
+
 	switch(microops.at(nodeID)) {
 		case LLVM_IR_FAdd:
 			fAddReady.push_back(std::make_pair(nodeID, tick));
@@ -2224,9 +2275,15 @@ void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &sel
 
 				// No timing-constraint, allocate
 				if(!timingConstrained) {
+					// If this node is in critical path, notify. This is used when allocation is being performed over the
+					// intended cycle tick to consume the timing budget (if TCS is enabled)
+					if(alap[nodeID] == asap[nodeID])
+						criticalPathAllocated = true;
+
 					//std::cout << "~~ selected: " << std::to_string(nodeID) << "\n";
 					selected.push_back(nodeID);
 					ready.pop_front();
+					readyChanged = true;
 					rc[nodeID] = cycleTick;
 				}
 				// Timing contention, not able to allocate now
@@ -2269,9 +2326,15 @@ void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &sel
 
 				// No timing-constraint, allocate
 				if(!timingConstrained) {
+					// If this node is in critical path, notify. This is used when allocation is being performed over the
+					// intended cycle tick to consume the timing budget (if TCS is enabled)
+					if(alap[nodeID] == asap[nodeID])
+						criticalPathAllocated = true;
+
 					//std::cout << "~~ selected (intOp): " << std::to_string(nodeID) << "\n";
 					selected.push_back(nodeID);
 					ready.pop_front();
+					readyChanged = true;
 					rc[nodeID] = cycleTick;
 				}
 				// Timing contention, not able to allocate now
@@ -2317,9 +2380,15 @@ void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &sel
 
 				// No timing-constraint, allocate
 				if(!timingConstrained) {
+					// If this node is in critical path, notify. This is used when allocation is being performed over the
+					// intended cycle tick to consume the timing budget (if TCS is enabled)
+					if(alap[nodeID] == asap[nodeID])
+						criticalPathAllocated = true;
+
 					//std::cout << "~~ selected (memory: " << arrayPartitionName << "): " << std::to_string(nodeID) << "\n";
 					selected.push_back(nodeID);
 					ready.pop_front();
+					readyChanged = true;
 					rc[nodeID] = cycleTick;
 				}
 				// Timing contention, not able to allocate now
@@ -2362,8 +2431,8 @@ void BaseDatapath::RCScheduler::enqueueExecute(unsigned opcode, selectedListTy &
 		selected.pop_front();
 
 		// If this operation is pipelined, we can release the unit
-		if(profile.isPipelined(opcode))
-			(profile.*release)();
+		//if(profile.isPipelined(opcode))
+		//	(profile.*release)();
 	}
 }
 
@@ -2395,8 +2464,8 @@ void BaseDatapath::RCScheduler::enqueueExecute(selectedListTy &selected, executi
 		selected.pop_front();
 
 		// If this operation is pipelined, we can release the unit
-		if(profile.isPipelined(opcode))
-			(profile.*releaseInt)(opcode);
+		//if(profile.isPipelined(opcode))
+		//	(profile.*releaseInt)(opcode);
 	}
 }
 
@@ -2428,16 +2497,22 @@ void BaseDatapath::RCScheduler::enqueueExecute(unsigned opcode, selectedListTy &
 		selected.pop_front();
 
 		// If this operation is pipelined, we can release the unit
-		if(profile.isPipelined(opcode))
-			(profile.*releaseMem)(arrayName);
+		//if(profile.isPipelined(opcode))
+		//	(profile.*releaseMem)(arrayName);
 	}
 }
 
-void BaseDatapath::RCScheduler::tryRelease(unsigned opcode, executingMapTy &executing, void (HardwareProfile::*release)()) {
+void BaseDatapath::RCScheduler::tryRelease(unsigned opcode, executingMapTy &executing, executedListTy &executed, void (HardwareProfile::*release)()) {
 	std::vector<unsigned> toErase;
 
 	for(auto &it: executing) {
 		unsigned executingNodeID = it.first;
+
+		// Check if this node was already accounted in this clock tick. If positive, pass.
+		if(executed.end() == std::find(executed.begin(), executed.end(), executingNodeID))
+			executed.push_back(executingNodeID);
+		else
+			continue;
 
 		isNullCycle = false;
 
@@ -2466,12 +2541,18 @@ void BaseDatapath::RCScheduler::tryRelease(unsigned opcode, executingMapTy &exec
 		executing.erase(it);
 }
 
-void BaseDatapath::RCScheduler::tryRelease(executingMapTy &executing, void (HardwareProfile::*releaseInt)(unsigned)) {
+void BaseDatapath::RCScheduler::tryRelease(executingMapTy &executing, executedListTy &executed, void (HardwareProfile::*releaseInt)(unsigned)) {
 	std::vector<unsigned> toErase;
 
 	for(auto &it: executing) {
 		unsigned executingNodeID = it.first;
 		unsigned opcode = microops.at(executingNodeID);
+
+		// Check if this node was already accounted in this clock tick. If positive, pass.
+		if(executed.end() == std::find(executed.begin(), executed.end(), executingNodeID))
+			executed.push_back(executingNodeID);
+		else
+			continue;
 
 		isNullCycle = false;
 
@@ -2500,12 +2581,18 @@ void BaseDatapath::RCScheduler::tryRelease(executingMapTy &executing, void (Hard
 		executing.erase(it);
 }
 
-void BaseDatapath::RCScheduler::tryRelease(unsigned opcode, executingMapTy &executing, void (HardwareProfile::*releaseMem)(std::string)) {
+void BaseDatapath::RCScheduler::tryRelease(unsigned opcode, executingMapTy &executing, executedListTy &executed, void (HardwareProfile::*releaseMem)(std::string)) {
 	std::vector<unsigned> toErase;
 
 	for(auto &it: executing) {
 		unsigned executingNodeID = it.first;
 		std::string arrayName = baseAddress.at(executingNodeID).first;
+
+		// Check if this node was already accounted in this clock tick. If positive, pass.
+		if(executed.end() == std::find(executed.begin(), executed.end(), executingNodeID))
+			executed.push_back(executingNodeID);
+		else
+			continue;
 
 		isNullCycle = false;
 

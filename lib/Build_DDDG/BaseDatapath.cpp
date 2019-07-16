@@ -2139,7 +2139,8 @@ void BaseDatapath::RCScheduler::assignReadyStartingNodes() {
 void BaseDatapath::RCScheduler::select() {
 	//std::cout << "~~ finish latency0\n";
 	// Schedule/finish all instructions that we are not considering (i.e. latency 0)
-	while(othersReady.size()) {
+	unsigned failedAttempts = 0;
+	while(failedAttempts < othersReady.size()) {
 		unsigned currNodeID = othersReady.front().first;
 
 		// If selecting the current node does not violate timing in any way, proceed
@@ -2154,6 +2155,11 @@ void BaseDatapath::RCScheduler::select() {
 			othersReady.pop_front();
 			rc[currNodeID] = cycleTick;
 			setScheduledAndAssignReadyChildren(currNodeID);
+
+			failedAttempts = 0;
+		}
+		else {
+			failedAttempts++;
 		}
 	}
 
@@ -2680,6 +2686,10 @@ std::pair<std::vector<BaseDatapath::TCScheduler::pathTy *>, std::vector<BaseData
 						newPath.first += profile.getInCycleLatency(microops.at(*it3));
 						newPath.second.push_back(*it3);
 					}
+
+					// We must also add the last common node!
+					newPath.first += profile.getInCycleLatency(microops.at(it2));
+					newPath.second.push_back(it2);
 					pathsToCreate.push_back(newPath);
 				}
 			}

@@ -202,8 +202,6 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 	pipelineLoopLevelVec.clear();
 
 	while(!configFile.eof()) {
-		// TODO: is it necessary to clean it?
-		// line.clear();
 		std::getline(configFile, line);
 
 		if(!line.size())
@@ -268,7 +266,7 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 
 			assert(loopLevel <= numLevel && "Loop level is larger than number of levels");
 
-			// TODO: This is assuming that loop pipelining is already performed at the innermost level. Is this correct?
+			// XXX: Is this correct?
 			if(loopLevel == numLevel)
 				continue;
 
@@ -280,16 +278,10 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 
 				uint64_t loopBound = found2->second;
 
-#if 0
-				// TODO: This is a silent error/warning. Is this correct (i.e. nothing should be performed apart from informing the user)?
-				if(!loopBound)
-					VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Variable loop bound found for \"" << wholeLoopName2 << "\", pipelining not supported in current version\n");
-#else
 				// XXX: Changed to an error instead of warning. By detecting a variable loop bound when pipelining and putting a 0
 				// for unroll factor, DDDGBuilder is not able to construct the interval used for DDDG construction, leading to a 0-sized graph,
 				// which in original code leads to errors regarding reading the .gz files such as dynamic_funcid.gz
 				assert(loopBound && "Pipeline requested on a loop containing nested loops with variable bounds. Not supported in current version");
-#endif
 
 				wholeLoopName2CompUnrollFactorMap.insert(std::make_pair(wholeLoopName2, loopBound));
 			}	
@@ -299,7 +291,6 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 	if(unrollingCfgStr.size()) {
 		std::vector<std::string> unrollWholeLoopNameStr;
 
-		// TODO: IS lineNo REALLY NECESSARY?
 		for(std::string i : unrollingCfgStr) {
 			char buff[BUFF_STR_SZ];
 			unsigned loopNo, loopLevel;
@@ -382,7 +373,7 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 		}
 	}
 
-	// TODO: Y dis?
+	// Activate load latency increase if pipelining and partitioning was enabled
 	if(!pipeliningCfgStr.size()) {
 		for(partitionCfgTy i : partitionCfg) {
 			if(i.pFactor > 1) {
@@ -847,7 +838,7 @@ void Pack::merge(Pack &P) {
 
 void Pack::clear() {
 	std::vector<std::tuple<std::string, unsigned, unsigned>>().swap(structure);
-	// TODO: I don't know if this does not leak because of the inner vectors
+	// XXX: Double-check to see if there is no memory leak due to inner vectors
 	std::unordered_map<std::string, std::vector<uint64_t>>().swap(unsignedContent);
 	std::unordered_map<std::string, std::vector<int64_t>>().swap(signedContent);
 	std::unordered_map<std::string, std::vector<float>>().swap(floatContent);

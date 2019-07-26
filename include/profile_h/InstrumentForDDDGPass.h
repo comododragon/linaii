@@ -36,7 +36,6 @@
 #include "profile_h/SlotTracker.h"
 #include "profile_h/TraceFunctions.h"
 #include "profile_h/auxiliary.h"
-//#include "profile_h/generic_func.h"
 
 #define RESULT_LINE 19134
 #define FORWARD_LINE 24601
@@ -81,7 +80,6 @@ class InstrumentForDDDG : public ModulePass {
 		TRACE_DMA_LOAD = LLVM_IR_DMALoad
 	};
 
-	//std::unordered_map<int, int> unrollingConfig;
 	std::vector<std::string> pipelineLoopLevelVec;
 	std::ofstream summaryFile;
 
@@ -106,10 +104,6 @@ public:
 
 	bool performOnBasicBlock(BasicBlock &BB);
 
-#if 0
-	void getUnrollingConfiguration(lpNameLevelPair2headBBnameMapTy &lpNameLvPair2headerBBMap);
-	bool readUnrollingConfig(loopName2levelUnrollVecMapTy &lpName2levelUrPairVecMap, std::unordered_map<int, int> &unrollingConfig);
-#endif
 	void updateUnrollingDatabase(const std::vector<ConfigurationManager::unrollingCfgTy> &unrollingCfg);
 
 	void loopBasedTraceAnalysis();

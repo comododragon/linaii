@@ -162,7 +162,6 @@ void Injector::initialise(Module &M, TraceLogger &TL) {
 
 void Injector::injectTraceHeader(BasicBlock::iterator it, int lineNo, std::string funcID, std::string bbID, std::string instID, int opcode) {
 	//LLVMContext &C = M->getContext();
-	//CallInst *tlCall;
 	IRBuilder<> IRB(it);
 
 	// Create LLVM values for the provided arguments
@@ -174,9 +173,7 @@ void Injector::injectTraceHeader(BasicBlock::iterator it, int lineNo, std::strin
 	Constant *vvBB = createGlobalVariableAndGetGetElementPtr(bbID);
 	Constant *vvInst = createGlobalVariableAndGetGetElementPtr(instID);
 
-	// TODO: entender o que realmente signfica uma call para trace_logger_log0
 	// Call trace_logger_log0 with the aforementioned values
-	//tlCall = IRB.CreateCall5(TL->log0, vLineNo, vvFuncID, vvBB, vvInst, vOpcode);
 	IRB.CreateCall5(TL->log0, vLineNo, vvFuncID, vvBB, vvInst, vOpcode);
 
 	// Update databases
@@ -207,14 +204,11 @@ void Injector::injectTraceHeader(BasicBlock::iterator it, int lineNo, std::strin
 }
 
 void Injector::injectTrace(BasicBlock::iterator it, int lineNo, std::string regOrFuncID, Type *T, Value *value, bool isReg) {
-	//LLVMContext &C = M->getContext();
-	//CallInst *tlCall;
 	IRBuilder<> IRB(it);
 	int type = T->getTypeID();
 
 	// Create LLVM values for the provided arguments
 	Value *vLineNo = ConstantInt::get(IRB.getInt64Ty(), lineNo);
-	//Value *vType = ConstantInt::get(IRB.getInt64Ty(), type);
 	Value *vDataSize = ConstantInt::get(IRB.getInt64Ty(), getMemSizeInBits(T));
 	Value *vIsReg = ConstantInt::get(IRB.getInt64Ty(), isReg);
 	Value *vValue;
@@ -225,27 +219,22 @@ void Injector::injectTrace(BasicBlock::iterator it, int lineNo, std::string regO
 		if(value) {
 			if(llvm::Type::IntegerTyID == type) {
 				vValue = IRB.CreateZExt(value, IRB.getInt64Ty());
-				//tlCall = IRB.CreateCall5(TL->logInt, vLineNo, vDataSize, vValue, vIsReg, vvRegOrFuncID);
 				IRB.CreateCall5(TL->logInt, vLineNo, vDataSize, vValue, vIsReg, vvRegOrFuncID);
 			}
 			else if(type >= llvm::Type::HalfTyID && type <= llvm::Type::PPC_FP128TyID) {
 				vValue = IRB.CreateFPExt(value, IRB.getDoubleTy());
-				//tlCall = IRB.CreateCall5(TL->logDouble, vLineNo, vDataSize, vValue, vIsReg, vvRegOrFuncID);
 				IRB.CreateCall5(TL->logDouble, vLineNo, vDataSize, vValue, vIsReg, vvRegOrFuncID);
 			}
 			else if(llvm::Type::PointerTyID == type) {
 				vValue = IRB.CreatePtrToInt(value, IRB.getInt64Ty());
-				//tlCall = IRB.CreateCall5(TL->logInt, vLineNo, vDataSize, vValue, vIsReg, vvRegOrFuncID);
 				IRB.CreateCall5(TL->logInt, vLineNo, vDataSize, vValue, vIsReg, vvRegOrFuncID);
 			}
 			else {
-				// TODO: assert mesmo ou apenas um silent error?
 				assert(false && "Value is of unsupported type");
 			}
 		}
 		else {
 			vValue = ConstantInt::get(IRB.getInt64Ty(), 0);
-			//tlCall = IRB.CreateCall5(TL->logInt, vLineNo, vDataSize, vValue, vIsReg, vvRegOrFuncID);
 			IRB.CreateCall5(TL->logInt, vLineNo, vDataSize, vValue, vIsReg, vvRegOrFuncID);
 		}
 	}
@@ -253,27 +242,22 @@ void Injector::injectTrace(BasicBlock::iterator it, int lineNo, std::string regO
 		if(value) {
 			if(llvm::Type::IntegerTyID == type) {
 				vValue = IRB.CreateZExt(value, IRB.getInt64Ty());
-				//tlCall = IRB.CreateCall4(TL->logIntNoReg, vLineNo, vDataSize, vValue, vIsReg);
 				IRB.CreateCall4(TL->logIntNoReg, vLineNo, vDataSize, vValue, vIsReg);
 			}
 			else if(type >= llvm::Type::HalfTyID && type <= llvm::Type::PPC_FP128TyID) {
 				vValue = IRB.CreateFPExt(value, IRB.getDoubleTy());
-				//tlCall = IRB.CreateCall4(TL->logDoubleNoReg, vLineNo, vDataSize, vValue, vIsReg);
 				IRB.CreateCall4(TL->logDoubleNoReg, vLineNo, vDataSize, vValue, vIsReg);
 			}
 			else if(llvm::Type::PointerTyID == type) {
 				vValue = IRB.CreatePtrToInt(value, IRB.getInt64Ty());
-				//tlCall = IRB.CreateCall4(TL->logIntNoReg, vLineNo, vDataSize, vValue, vIsReg);
 				IRB.CreateCall4(TL->logIntNoReg, vLineNo, vDataSize, vValue, vIsReg);
 			}
 			else {
-				// TODO: assert mesmo ou apenas um silent error?
 				assert(false && "Value is of unsupported type");
 			}
 		}
 		else {
 			vValue = ConstantInt::get(IRB.getInt64Ty(), 0);
-			//tlCall = IRB.CreateCall4(TL->logIntNoReg, vLineNo, vDataSize, vValue, vIsReg);
 			IRB.CreateCall4(TL->logIntNoReg, vLineNo, vDataSize, vValue, vIsReg);
 		}
 	}
@@ -489,7 +473,6 @@ bool InstrumentForDDDG::runOnModule(Module &M) {
 	errs() << "========================================================\n";
 	errs() << "Starting code instrumentation for DDDG generation\n";
 
-	// TODO: Ver se ela logica ta OK pro result
 	bool result = false;
 	for(Module::iterator FI = M.begin(); FI != M.end(); FI++) {
 		if(isFunctionOfInterest(FI->getName())) {
@@ -576,7 +559,6 @@ bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 
 			// Inject phi node trace
 			IJ.injectTraceHeader(insIt, lineNumber, funcName, bbID, instID, opcode);
-			//printLine(insIt, 0, lineNumber, funcName, bbID, instID, opcode);
 
 			// Create calls to trace logger informing the inputs for phi
 			int numOfOperands = it->getNumOperands();
@@ -613,7 +595,7 @@ bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 					IJ.injectTrace(insIt, RESULT_LINE, instID, it->getType(), nullptr, isReg);
 				}
 				else if(it->isTerminator()) {
-					// TODO: put a silent warning or fail assert?
+					// XXX: put a silent warning or fail assert?
 				}
 				else {
 					IJ.injectTrace(insIt, RESULT_LINE, instID, it->getType(), it, isReg);
@@ -671,7 +653,6 @@ bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 			IJ.injectTrace(it, numOfOperands, operR, currOperand->getType(), currOperand, isReg);
 
 			const Function::ArgumentListType &AL(CI->getCalledFunction()->getArgumentList());
-			//int numOfCallOperands = CI->getNumArgOperands();
 			int callID = 0;
 
 			for(Function::ArgumentListType::const_iterator argIt = AL.begin(); argIt != AL.end(); argIt++) {
@@ -761,7 +742,7 @@ bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 				IJ.injectTrace(nextIt, RESULT_LINE, instID, it->getType(), nullptr, isReg);
 			}
 			else if(it->isTerminator()) {
-				// TODO: put a silent warning or fail assert?
+				// XXX: put a silent warning or fail assert?
 			}
 			else {
 				IJ.injectTrace(nextIt, RESULT_LINE, instID, it->getType(), it, isReg);
@@ -774,7 +755,6 @@ bool InstrumentForDDDG::performOnBasicBlock(BasicBlock &BB) {
 
 void InstrumentForDDDG::updateUnrollingDatabase(const std::vector<ConfigurationManager::unrollingCfgTy> &unrollingCfg) {
 	loopName2levelUnrollVecMap.clear();
-	//unrollingConfig.clear();
 
 	// Check how many levels inside a loop was asked to be unrolled, and also initialise unrolling factors vector
 	for(auto &it : lpNameLevelPair2headBBnameMap) {
@@ -831,8 +811,6 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 	ConfigurationManager CM(kernelName);
 	CM.parseAndPopulate(pipelineLoopLevelVec);
 	updateUnrollingDatabase(CM.getUnrollingCfg());
-	//removeConfig(kernelName);
-	//parseConfig(kernelName);
 
 	for(auto &it : loopName2levelUnrollVecMap) {
 		std::string loopName = it.first;
@@ -850,15 +828,7 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 		std::string targetWholeLoopName = appendDepthToLoopName(loopName, targetLoopLevel);
 		bool enablePipelining = false;
 
-		// XXX: I think that the bug possibility is now gone, see the inner ocmment explaining this loop
-		// TODO: THIS MAY BE A SOURCE FOR BUGS
-		// TODO: THIS MAY BE A SOURCE FOR BUGS
-		// TODO: THIS MAY BE A SOURCE FOR BUGS
-		// TODO: THIS MAY BE A SOURCE FOR BUGS
-		// TODO: THIS MAY BE A SOURCE FOR BUGS
-		// TODO: THIS MAY BE A SOURCE FOR BUGS
 		// Acquire target unroll factors, loop bound and pipelining flag
-		// XXX: this is very confusing. I just simplified from original code but it is still very confusing
 		for(int i = (int) (levelUnrollVec.size() - 1); i >= 0 && 1 == targetLoopLevel; i--) {
 			// This value is always > 0
 			targetUnrollFactor = levelUnrollVec.at(i);
@@ -930,36 +900,19 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 		else {
 			unsigned recII = 0;
 
-			// TODO: if actualUnrollFactor != unrollFactor, both dynamicdapataths will calculate the same recII at the end of the
-			// asapScheduling. Therefore, it may not be necessary to calculate it twice
-			// we could change this if condition to something like if(enablePipelining && unrollFactor != actualUnrollFactor
-			// and then create some logic inside fpgaEstimation() to check if it should use the recII calculated just after asapScheduling
-			// (the case where unroll factors are the same) or to use the recII provided at the construction of the DD (the case where
-			// the unrolls are not the same)
 			// Get recurrence-constrained II
 			if(enablePipelining) {
 				VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Building dynamic datapath for recurrence-constrained II calculation\n");
 
 				unsigned actualUnrollFactor = (targetLoopBound < (targetUnrollFactor << 1) && targetLoopBound)? targetLoopBound : (targetUnrollFactor << 1);
-#ifdef USE_FUTURE
-				// The future cache receives some parsed data that can be reused when the DynamicDatapath is regenerated, saving some processing time
-				DynamicDatapath DD(kernelName, CM, &summaryFile, loopName, targetLoopLevel, actualUnrollFactor, &future);
-#else
 				DynamicDatapath DD(kernelName, CM, &summaryFile, loopName, targetLoopLevel, actualUnrollFactor);
-#endif
-				// TODO: This may be a place to insert a new scheduling?
 				recII = DD.getASAPII();
 
 				VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Recurrence-constrained II: " << recII << "\n");
 			}
 
 			VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Building dynamic datapath\n");
-
-#ifdef USE_FUTURE
-			DynamicDatapath DD(kernelName, CM, &summaryFile, loopName, targetLoopLevel, unrollFactor, &future, enablePipelining, recII);
-#else
 			DynamicDatapath DD(kernelName, CM, &summaryFile, loopName, targetLoopLevel, unrollFactor, enablePipelining, recII);
-#endif
 
 			errs() << "[][][" << targetWholeLoopName << "] Estimated cycles: " << std::to_string(DD.getCycles()) << "\n";
 		}
@@ -1058,7 +1011,7 @@ ProfilingJITSingletonContext::ProfilingJITSingletonContext(ProfilingEngine *P) {
 ProfilingJITSingletonContext::~ProfilingJITSingletonContext() {
 	gJITContext->P = nullptr;
 
-	// TODO: Other cleanup?
+	// XXX: Other cleanup?
 }
 
 #ifdef DBG_PRINT_ALL

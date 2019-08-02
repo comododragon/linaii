@@ -9,20 +9,6 @@ using namespace llvm;
 
 class DynamicDatapath : public BaseDatapath {
 public:
-#ifdef USE_FUTURE
-	DynamicDatapath(
-		std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
-		std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
-		FutureCache *future
-	);
-
-	DynamicDatapath(
-		std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
-		std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
-		FutureCache *future,
-		bool enablePipelining, uint64_t asapII
-	);
-#else
 	DynamicDatapath(
 		std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
 		std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor
@@ -33,7 +19,6 @@ public:
 		std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
 		bool enablePipelining, uint64_t asapII
 	);
-#endif
 
 	DynamicDatapath(
 		std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,

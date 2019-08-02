@@ -35,7 +35,6 @@ extern funcBBNmPair2numInstInBBMapTy funcBBNmPair2numInstInBBMap;
 typedef std::map<std::string, bool> wholeloopName2perfectOrNotMapTy;
 extern wholeloopName2perfectOrNotMapTy wholeloopName2perfectOrNotMap;
 
-//typedef std::pair<uint64_t, uint64_t> lineFromToTy;
 typedef std::tuple<uint64_t, uint64_t, uint64_t> intervalTy;
 
 typedef std::map<std::string, std::pair<std::string, unsigned> > headerBBlastInst2loopNameLevelPairMapTy;
@@ -50,22 +49,6 @@ struct edgeNodeInfo {
 typedef std::unordered_multimap<unsigned, edgeNodeInfo> u2eMMap;
 
 typedef std::unordered_map<int64_t, unsigned> i642uMap;
-
-#ifdef USE_FUTURE
-class FutureCache {
-	unsigned unrollFactor;
-	intervalTy interval;
-	bool computed;
-
-public:
-	FutureCache(unsigned unrollFactor);
-
-	unsigned getUnrollFactor() { return unrollFactor; }
-	intervalTy getInterval() { return interval; }
-	bool isComputed() { return computed; }
-	void saveInterval(intervalTy interval);
-};
-#endif
 
 class BaseDatapath;
 
@@ -130,9 +113,6 @@ public:
 class DDDGBuilder {
 	BaseDatapath *datapath;
 	ParsedTraceContainer &PC;
-#ifdef USE_FUTURE
-	FutureCache *future;
-#endif
 
 	std::string rest;
 	uint8_t prevMicroop, currMicroop;
@@ -167,11 +147,7 @@ class DDDGBuilder {
 	void writeDDDG();
 
 public:
-#ifdef USE_FUTURE
-	DDDGBuilder(BaseDatapath *datapath, ParsedTraceContainer &PC, FutureCache *future);
-#else
 	DDDGBuilder(BaseDatapath *datapath, ParsedTraceContainer &PC);
-#endif
 
 	intervalTy getTraceLineFromToBeforeNestedLoop(gzFile &traceFile);
 	intervalTy getTraceLineFromToAfterNestedLoop(gzFile &traceFile);

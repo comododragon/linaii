@@ -42,7 +42,6 @@ public:
 	virtual void clear();
 
 	virtual unsigned getLatency(unsigned opcode) = 0;
-	virtual unsigned getSchedulingLatency(unsigned opcode) = 0;
 	virtual double getInCycleLatency(unsigned opcode) = 0;
 	virtual bool isPipelined(unsigned opcode) = 0;
 	virtual void calculateRequiredResources(
@@ -125,7 +124,6 @@ class XilinxHardwareProfile : public HardwareProfile {
 	enum {
 		SCHEDULING_LATENCY_LOAD = 1
 	};
-	// TODO: Couldn't we just glue the two enums below?
 	enum {
 		BRAM_PORTS_R = 2,
 		BRAM_PORTS_W = 1
@@ -165,7 +163,6 @@ public:
 	void clear();
 
 	virtual unsigned getLatency(unsigned opcode);
-	virtual unsigned getSchedulingLatency(unsigned opcode);
 	virtual double getInCycleLatency(unsigned opcode);
 	bool isPipelined(unsigned opcode);
 	void calculateRequiredResources(

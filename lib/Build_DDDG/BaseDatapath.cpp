@@ -29,27 +29,15 @@ void BaseDatapath::findMinimumRankPair(std::pair<unsigned, unsigned> &pair, std:
 	}
 }
 
-#ifdef USE_FUTURE
 BaseDatapath::BaseDatapath(
 	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
 	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
-	FutureCache *future,
 	bool enablePipelining, uint64_t asapII
 ) :
 	kernelName(kernelName), CM(CM), summaryFile(summaryFile),
 	loopName(loopName), loopLevel(loopLevel), loopUnrollFactor(loopUnrollFactor), datapathType(NORMAL_LOOP),
-	future(future), enablePipelining(enablePipelining), asapII(asapII), PC(kernelName)
+	enablePipelining(enablePipelining), asapII(asapII), PC(kernelName)
 {
-#else
-BaseDatapath::BaseDatapath(
-	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
-	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
-	bool enablePipelining, uint64_t asapII
-) :
-	kernelName(kernelName), CM(CM), summaryFile(summaryFile),
-	loopName(loopName), loopLevel(loopLevel), loopUnrollFactor(loopUnrollFactor), datapathType(NORMAL_LOOP),
-	enablePipelining(enablePipelining), asapII(asapII), PC(kernelName) {
-#endif
 	builder = nullptr;
 	profile = nullptr;
 	microops.clear();
@@ -59,16 +47,10 @@ BaseDatapath::BaseDatapath(
 
 	VERBOSE_PRINT(errs() << "\tBuild initial DDDG\n");
 
-#ifdef USE_FUTURE
-	builder = new DDDGBuilder(this, PC, future);
-#else
 	builder = new DDDGBuilder(this, PC);
-#endif
 	builder->buildInitialDDDG();
 	delete builder;
 	builder = nullptr;
-	// XXX DEBUUUUUUUUUUUUGGGGGGGGGGGGGGGGGGGGGGGGGG
-	//return;
 
 	postDDDGBuild();
 
@@ -89,10 +71,8 @@ BaseDatapath::BaseDatapath(
 	repeatedStoresRemoved = 0;
 }
 
-// TODO: i think that enablePipelining and asapII must not be provided with this constructor.
-// pipelining will only happen on a loop level where all the inner nests are fully unrolled
-// and when they're fully unrolled, this is the first level to perform normal analysis.
-// When normal analysis happens, this constructor is (supposedly) not used
+// This constructor does not perform DDDG generation. It should be generated externally via
+// child classes (e.g. DynamicDatapath)
 BaseDatapath::BaseDatapath(
 	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
 	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor, unsigned datapathType
@@ -164,13 +144,8 @@ Pack &BaseDatapath::getPack() {
 }
 
 void BaseDatapath::postDDDGBuild() {
-	// TODO: Changed to the "correct" logic. I will change it back if things start to get ugly
-	// TODO: I think this is a bug. microops.size() is one element bigger than the DDDG. This happens
-	// because on parseTraceLineFromTo, an additional instruction is added do microops, but its parameters
-	// are not evaluated. Therefore no edges are created and this orphan node apparently does not affect the
-	// program. The correct in IMHO would be numOfTotalNodes = getNumNodes();
-	// But I'm keeping the original code for now for comparison purposes
-	//numOfTotalNodes = microops.size();
+	// XXX: Changed from old logic that seemed buggish (i.e. numOfTotalNodes had always one more isolated node)
+	// that was read from getTraceLineFromTo()
 	numOfTotalNodes = getNumNodes();
 
 	BGL_FORALL_VERTICES(v, graph, Graph) nameToVertex[boost::get(boost::vertex_index, graph, v)] = v;
@@ -184,7 +159,6 @@ void BaseDatapath::postDDDGBuild() {
 #endif
 		std::string functionName = it.substr(0, tagPos);
 
-		//if(functionNames.end() == functionNames.find(functionName))
 		functionNames.insert(functionName);
 	}
 }
@@ -220,8 +194,6 @@ void BaseDatapath::updateRemoveDDDGNodes(std::vector<unsigned> &nodesToRemove) {
 }
 
 void BaseDatapath::initBaseAddress() {
-	//const std::vector<ConfigurationManager::partitionCfgTy> &partitionCfg = CM.getPartitionCfg();
-	//const std::vector<ConfigurationManager::partitionCfgTy> &completePartitionCfg = CM.getCompletePartitionCfg();
 	const ConfigurationManager::partitionCfgMapTy &partitionMap = CM.getPartitionCfgMap();
 	const ConfigurationManager::partitionCfgMapTy &completePartitionMap = CM.getCompletePartitionCfgMap();
 	const std::unordered_map<int, std::pair<std::string, int64_t>> &getElementPtrMap = PC.getGetElementPtrList();
@@ -278,7 +250,7 @@ void BaseDatapath::initBaseAddress() {
 		// Check if base address is inside a partition request. If not, add to a no-partition vector
 		// XXX: A partition sanity check was implemented in the original version.
 		// I've removed it because since my map and partition configuration are constructed together ("atomically"),
-		// I don't think that are possibilities of a partition not existing in the database (or at least I hope so...)
+		// I don't think that are possibilities of a partition not existing in the database
 		std::string baseAddr = baseAddress[nodeID].first;
 		if(partitionMap.end() == partitionMap.find(baseAddr) && completePartitionMap.end() == completePartitionMap.find(baseAddr))
 			noPartitionArrayName.insert(baseAddr);
@@ -303,13 +275,12 @@ uint64_t BaseDatapath::fpgaEstimationOneMoreSubtraceForRecIICalculation() {
 
 	// Put the node latency using selected architecture as edge weights in the graph
 	VERBOSE_PRINT(errs() << "\tUpdating DDDG edges with operation latencies according to selected hardware\n");
-	//EdgeWeightMap edgeWeightMap = boost::get(boost::edge_weight, graph);
 	bool nonNullFound = false;
 	EdgeIterator edgei, edgeEnd;
 	for(std::tie(edgei, edgeEnd) = boost::edges(graph); edgei != edgeEnd; edgei++) {
 		uint8_t weight = edgeToWeight[*edgei];
 
-		// XXX: Up to this point no control edges were added so far, I think...
+		// XXX: Up to this point no control edges were added so far, I think
 		if(EDGE_CONTROL == weight) {
 			boost::put(boost::edge_weight, graph, *edgei, 0);
 		}
@@ -332,9 +303,6 @@ uint64_t BaseDatapath::fpgaEstimationOneMoreSubtraceForRecIICalculation() {
 	VERBOSE_PRINT(errs() << "\tStarting ASAP scheduling\n");
 	std::tuple<uint64_t, uint64_t> asapResult = asapScheduling();
 
-	// XXX: O resultado dessa chamada não é usado (pelo menos nao na primeira geração de DynamicDatapath)!!!!
-	//std::tuple<uint64_t, uint64_t> alapResult = alapScheduling(asapResult);
-
 	return std::get<0>(asapResult);
 }
 
@@ -343,15 +311,6 @@ uint64_t BaseDatapath::fpgaEstimation() {
 
 	VERBOSE_PRINT(errs() << "\tRemoving induction dependencies\n");
 	removeInductionDependencies();
-#if 0
-	// XXX: a csv containing the instruction distribution was generated here. Since it is not used, it was not refactored
-	VERBOSE_PRINT(errs() << "\tCalculating instruction distribution\n");
-	calculateInstructionDistribution();
-	// XXX: some data structures containing the parallelism profile of the DDDG were generated here, but apparently not used
-	// XXX: Vertex2TimestampMap, parallelism_profile and instInlevels
-	VERBOSE_PRINT(errs() << "\tCalculating parallelism profile of the DDDG\n");
-	calculateParallelismProfileDDDG();
-#endif
 	VERBOSE_PRINT(errs() << "\tRemoving PHI nodes\n");
 	removePhiNodes();
 
@@ -362,13 +321,12 @@ uint64_t BaseDatapath::fpgaEstimation() {
 
 	// Put the node latency using selected architecture as edge weights in the graph
 	VERBOSE_PRINT(errs() << "\tUpdating DDDG edges with operation latencies according to selected hardware\n");
-	//EdgeWeightMap edgeWeightMap = boost::get(boost::edge_weight, graph);
 	bool nonNullFound = false;
 	EdgeIterator edgei, edgeEnd;
 	for(std::tie(edgei, edgeEnd) = boost::edges(graph); edgei != edgeEnd; edgei++) {
 		uint8_t weight = edgeToWeight[*edgei];
 
-		// XXX: Up to this point no control edges were added so far, I think...
+		// XXX: Up to this point no control edges were added so far, I think
 		if(EDGE_CONTROL == weight) {
 			boost::put(boost::edge_weight, graph, *edgei, 0);
 		}
@@ -387,10 +345,6 @@ uint64_t BaseDatapath::fpgaEstimation() {
 		VERBOSE_PRINT(errs() << "\tThis DDDG has no latency\n");
 		return 0;
 	}
-
-	// XXX: In the original code, the following stuff happens here before asap:
-	// XXX: readArrayInfo
-	// XXX: readPipeliningConfig, updating enable_pipeline global attribute of this graph
 
 	VERBOSE_PRINT(errs() << "\tStarting ASAP scheduling\n");
 	std::tuple<uint64_t, uint64_t> asapResult = asapScheduling();
@@ -419,16 +373,6 @@ uint64_t BaseDatapath::fpgaEstimation() {
 	uint64_t resII = (std::get<1>(resIIMem) > std::get<1>(resIIOp))? std::get<1>(resIIMem) : std::get<1>(resIIOp);
 	maxII = (resII > recII)? resII : recII;
 
-#if 0
-	// If shared loads were not removed, remove it now to inform the user the impact of this optimisations
-	if(!sharedLoadsRemoved)
-		removeSharedLoads();
-
-	// TODO: Do the same with repeated stores?
-	if(!repeatedStoresRemoved)
-		removeRepeatedStores();
-#endif
-
 	P.clear();
 	profile->fillPack(P);
 	for(auto &it : P.getStructure()) {
@@ -449,26 +393,6 @@ uint64_t BaseDatapath::fpgaEstimation() {
 				break;
 		}
 	}
-#if 0
-	if(XilinxHardwareProfile *fpgaProfile = dynamic_cast<XilinxHardwareProfile *>(profile)) {
-		VERBOSE_PRINT(errs() << "\tDSPs: " << std::to_string(fpgaProfile->resourcesGetDSPs()) << "\n");
-		VERBOSE_PRINT(errs() << "\tFFs: " << std::to_string(fpgaProfile->resourcesGetFFs()) << "\n");
-		VERBOSE_PRINT(errs() << "\tLUTs: " << std::to_string(fpgaProfile->resourcesGetLUTs()) << "\n");
-		VERBOSE_PRINT(errs() << "\tBRAM18k: " << std::to_string(fpgaProfile->resourcesGetBRAM18k()) << "\n");
-	}
-	VERBOSE_PRINT(errs() << "\tfAdd units: " << std::to_string(profile->fAddGetAmount()) << "\n");
-	VERBOSE_PRINT(errs() << "\tfSub units: " << std::to_string(profile->fSubGetAmount()) << "\n");
-	VERBOSE_PRINT(errs() << "\tfMul units: " << std::to_string(profile->fMulGetAmount()) << "\n");
-	VERBOSE_PRINT(errs() << "\tfDiv units: " << std::to_string(profile->fDivGetAmount()) << "\n");
-	for(auto &it : profile->arrayGetNumOfPartitions())
-		VERBOSE_PRINT(errs() << "\tNumber of partitions for array \"" << it.first << "\": " << std::to_string(it.second) << "\n");
-	for(auto &it : profile->arrayGetEfficiency())
-		VERBOSE_PRINT(errs() << "\tMemory efficiency for array \"" << it.first << "\": " << std::to_string(it.second) << "\n");
-	if(XilinxHardwareProfile *fpgaProfile = dynamic_cast<XilinxHardwareProfile *>(profile)) {
-		for(auto &it : fpgaProfile->arrayGetUsedBRAM18k())
-			VERBOSE_PRINT(errs() << "\tUsed BRAM18k for array \"" << it.first << "\": " << std::to_string(it.second) << "\n");
-	}
-#endif
 	VERBOSE_PRINT(errs() << "\n\tAchieved period: " << std::to_string(achievedPeriod) << "\n");
 	VERBOSE_PRINT(errs() << "\tIL: " << std::to_string(rcIL) << "\n");
 	VERBOSE_PRINT(errs() << "\tII: " << std::to_string(maxII) << "\n");
@@ -481,12 +405,6 @@ uint64_t BaseDatapath::fpgaEstimation() {
 	if(repeatedStoresRemoved)
 		VERBOSE_PRINT(errs() << "\tNumber of repeated stores detected: " << std::to_string(repeatedStoresRemoved) << "\n");
 
-#if 0
-	VERBOSE_PRINT(errs() << "\n\tCalculating maximum read/write per memory banks on arrays\n");
-	calculateMaxRWPerBank();
-#endif
-
-	// TODO: I think if we want to support nested loops with instructions in between, changes would be needed here
 	uint64_t numCycles = getLoopTotalLatency(maxII);
 	dumpSummary(numCycles, std::get<0>(asapResult), achievedPeriod, maxII, resIIMem, resIIOp, recII);
 
@@ -516,7 +434,8 @@ uint64_t BaseDatapath::fpgaEstimation() {
 			}
 		}
 	}
-	// TODO: adicionar aqui também resII, resIIMem e resIIOp, pensar qual a melhor maneira de agregar esses valores
+	// XXX: There is still missing reports for resII, resIIMem and resIIOp. I have to think on a better way of
+	// merging these values when multiple DDDGs are generated
 
 	return numCycles;
 }
@@ -533,9 +452,6 @@ void BaseDatapath::removeInductionDependencies() {
 		std::string nodeInstID = instID.at(nodeID);
 
 		if(nodeInstID.find("indvars") != std::string::npos) {
-			//if(LLVM_IR_Add == microops.at(nodeID))
-			//	microops.at(nodeID) = LLVM_IR_IndexAdd;
-			// XXX: Changing from add to every int operation
 			if(LLVM_IR_Add == microops.at(nodeID))
 				microops.at(nodeID) = LLVM_IR_IndexAdd;
 			else if(LLVM_IR_Sub == microops.at(nodeID))
@@ -547,14 +463,9 @@ void BaseDatapath::removeInductionDependencies() {
 				unsigned parentID = vertexToName[boost::source(*inEdgei, graph)];
 				std::string parentInstID = instID.at(parentID);
 
-				//if(std::string::npos == parentInstID.find("indvars"))
-				// XXX: changing the if to also consider parents that are already indexop
 				if(std::string::npos == parentInstID.find("indvars") && !isIndexOp(microops.at(parentID)))
 					continue;
 
-				//if(LLVM_IR_Add == microops.at(nodeID))
-				//	microops.at(nodeID) = LLVM_IR_IndexAdd;
-				// XXX: Changing from add to every int operation
 				if(LLVM_IR_Add == microops.at(nodeID))
 					microops.at(nodeID) = LLVM_IR_IndexAdd;
 				else if(LLVM_IR_Sub == microops.at(nodeID))
@@ -565,8 +476,6 @@ void BaseDatapath::removeInductionDependencies() {
 }
 
 void BaseDatapath::removePhiNodes() {
-	// TODO: There is a global attribute for this, should we always call this?
-	//EdgeWeightMap edgeToParamID = boost::get(boost::edge_weight, graph);
 	std::set<Edge> edgesToRemove;
 	std::vector<edgeTy> edgesToAdd;
 
@@ -602,7 +511,6 @@ void BaseDatapath::removePhiNodes() {
 				edgesToAdd.push_back({parentID, child.first, child.second});
 		}
 
-		// XXX: Not sure why the vector is being cleaned this way...
 		std::vector<std::pair<unsigned, uint8_t>>().swap(phiChild);
 	}
 
@@ -616,31 +524,23 @@ void BaseDatapath::enableStoreBufferOptimisation() {
 	const std::vector<std::string> &dynamicMethodID = PC.getFuncList();
 	const std::vector<std::string> &prevBB = PC.getPrevBBList();
 
-	// TODO: There is a global attribute for this, should we always call this?
-	//EdgeWeightMap edgeToParamID = boost::get(boost::edge_weight, graph);
-
 	std::vector<edgeTy> edgesToAdd;
 	std::vector<unsigned> nodesToRemove;
 
 	for(unsigned nodeID = 0; nodeID < numOfTotalNodes; nodeID++) {
 		// Node not found or with no connections
 		if(nameToVertex.end() == nameToVertex.find(nodeID) || !boost::degree(nameToVertex[nodeID], graph)) {
-			// TODO: Is this right? Aren't we jumping one node?
 			// XXX: We will check the child and also the parent of this node, therefore this might be the case
-			// XXX: why the counter is incremented (i.e. check in pairs), but I'm not sure if this is the
-			// XXX: best or even the correct way of doing that
+			// why the counter is incremented by 2 (i.e. check in pairs)
 			nodeID++;
 			continue;
 		}
 
 		if(isStoreOp(microops.at(nodeID))) {
 			std::string key = constructUniqueID(dynamicMethodID.at(nodeID), instID.at(nodeID), prevBB.at(nodeID));
-			// TODO: When enableStoreBufferOptimisation() is executed in pipeline analysis, dynamicMemoryOps is still empty!
-			// TODO: Is this something expected? Perhaps dynamicMemoryOps should be generated beforehand!
+			// XXX: Please note that dynamicMemoryOps is still not generated in pipeline analysis
 			// Dynamic store, cannot disambiguate in static time, cannot remove
 			if(dynamicMemoryOps.find(key) != dynamicMemoryOps.end()) {
-				// TODO: Is this right? Aren't we jumping one node?
-				// XXX: Check above
 				nodeID++;
 				continue;
 			}
@@ -696,10 +596,6 @@ void BaseDatapath::enableStoreBufferOptimisation() {
 }
 
 void BaseDatapath::initScratchpadPartitions() {
-	// TODO: Null-scratchpads for arrays without partition are created here
-
-	// TODO: Scratchpads for arrays with partition are created here
-
 	const ConfigurationManager::partitionCfgMapTy &partitionMap = CM.getPartitionCfgMap();
 	const std::unordered_map<int, std::pair<int64_t, unsigned>> &memoryTraceList = PC.getMemoryTraceList();
 
@@ -731,17 +627,11 @@ void BaseDatapath::initScratchpadPartitions() {
 			else
 				assert(false && "Invalid partition type found");
 
-			// TODO: This is really odd. According to original code, only the label is updated, inserting this information about partitions
-			// However. There is a FIXME comment just above stating that the address does not change. Should I see this as a bug? If
-			// Positive, obviously the problem is that finalAddress is being assigned to the wrong place
-			// By the way, is this necessary at all? Will find out as I keep refactoring...
 #ifdef LEGACY_SEPARATOR
 			baseAddress[nodeID] = std::make_pair(label + "-" + std::to_string(finalAddress), address);
 #else
 			baseAddress[nodeID] = std::make_pair(label + GLOBAL_SEPARATOR + std::to_string(finalAddress), address);
 #endif
-			// XXX: The code that I have the feeling to be the right one
-			//baseAddress[nodeID] = std::make_pair(label, finalAddress);
 		}
 	}
 }
@@ -781,9 +671,10 @@ void BaseDatapath::optimiseDDDG() {
 }
 
 void BaseDatapath::performMemoryDisambiguation() {
+	assert(false && "Memory disambiguation is untested for now and was deactivated");
+
 	std::unordered_multimap<std::string, std::string> loadStorePairs;
 	std::unordered_set<std::string> pairedStore;
-	//std::set<std::pair<std::string, std::string>> loadStorePair;
 	const std::vector<std::string> &dynamicMethodID = PC.getFuncList();
 	const std::vector<std::string> &instID = PC.getInstIDList();
 	const std::vector<std::string> &prevBB = PC.getPrevBBList();
@@ -819,8 +710,6 @@ void BaseDatapath::performMemoryDisambiguation() {
 			std::string storeUniqueID = constructUniqueID(nodeDynamicMethodID, instID.at(nodeID), prevBB.at(nodeID));
 			std::string loadUniqueID = constructUniqueID(childDynamicMethodID, instID.at(childID), prevBB.at(childID));
 
-			// Store this load-store pair to the set
-			//loadStorePair.push_back(std::make_pair(loadUniqueID, storeUniqueID));
 			// Mark this store as paired
 			pairedStore.insert(storeUniqueID);
 
@@ -838,8 +727,6 @@ void BaseDatapath::performMemoryDisambiguation() {
 		}
 	}
 
-	//if(!loadStorePair.size())
-	//	return;
 	// Return if no pairing happened
 	if(!loadStorePairs.size())
 		return;
@@ -882,19 +769,10 @@ void BaseDatapath::performMemoryDisambiguation() {
 				// Create a dependency for this load-store pair
 				unsigned prevStoreID = found->second;
 				if(!edgeExists(prevStoreID, nodeID)) {
-					// TODO: GIVE A MEANINGFUL NAME TO THIS EDGE WEIGHT??
-					// TODO: GIVE A MEANINGFUL NAME TO THIS EDGE WEIGHT??
-					// TODO: GIVE A MEANINGFUL NAME TO THIS EDGE WEIGHT??
-					// TODO: GIVE A MEANINGFUL NAME TO THIS EDGE WEIGHT??
-					// TODO: GIVE A MEANINGFUL NAME TO THIS EDGE WEIGHT??
+					// XXX: Perhaps a meaningful name should be given to this type of edge
 					edgesToAdd.push_back({prevStoreID, nodeID, 255});
-					// TODO: THIS SEEMS LIKE A BUG!!!! it->[first|second] is already a unique ID and we are appending one more element to it
-					// TODO: THIS SEEMS LIKE A BUG!!!! it->[first|second] is already a unique ID and we are appending one more element to it
-					// TODO: THIS SEEMS LIKE A BUG!!!! it->[first|second] is already a unique ID and we are appending one more element to it
-					// TODO: THIS SEEMS LIKE A BUG!!!! it->[first|second] is already a unique ID and we are appending one more element to it
-					// TODO: THIS SEEMS LIKE A BUG!!!! it->[first|second] is already a unique ID and we are appending one more element to it
-					// TODO: THIS SEEMS LIKE A BUG!!!! it->[first|second] is already a unique ID and we are appending one more element to it
-					// TODO: THIS SEEMS LIKE A BUG!!!! it->[first|second] is already a unique ID and we are appending one more element to it
+					// XXX: This seems quite odd and I have not tested
+					// it->[first|second] is already a unique ID and we are appending one more element to it
 					dynamicMemoryOps.insert(it->second + "-" + prevBB.at(prevStoreID));
 					dynamicMemoryOps.insert(it->first + "-" + prevBB.at(nodeID));
 				}
@@ -1134,7 +1012,6 @@ std::tuple<uint64_t, uint64_t> BaseDatapath::asapScheduling() {
 	VERBOSE_PRINT(errs() << "\t\tASAP scheduling started\n");
 
 	uint64_t maxCycles = 0, maxScheduledTime = 0;
-	//EdgeWeightMap edgeWeightMap = boost::get(boost::edge_weight, graph);
 
 	asapScheduledTime.assign(numOfTotalNodes, 0);
 
@@ -1175,12 +1052,6 @@ std::tuple<uint64_t, uint64_t> BaseDatapath::asapScheduling() {
 		maxTimesNodesMap[maxCurrStartTime].push_back(nodeID);
 	}
 
-	// XXX: Tenho a impressao de que esse cálculo nao é necessário aqui ainda, por isso comentei
-#if 0
-	const ConfigurationManager::arrayInfoCfgMapTy &arrayInfoCfgMap = CM.getArrayInfoCfgMap();
-	profile->calculateRequiredResources(microops, arrayInfoCfgMap, baseAddress, maxTimesNodesMap);
-#endif
-
 	// Find the path with the maximum scheduled time
 	std::vector<uint64_t>::iterator found = std::max_element(asapScheduledTime.begin(), asapScheduledTime.end());
 	maxScheduledTime = *found;
@@ -1198,26 +1069,9 @@ std::tuple<uint64_t, uint64_t> BaseDatapath::asapScheduling() {
 
 	maxCycles = (args.fExtraScalar)? maxScheduledTime + maxLatency : maxScheduledTime + maxLatency - 1;
 
-	// TODO: Salvar maxCycles em IL_asap como no código original??
-
-	// XXX: Precisa desse clear?
 	std::map<uint64_t, std::vector<unsigned>>().swap(maxTimesNodesMap);
 
 	VERBOSE_PRINT(errs() << "\t\tLatency: " << std::to_string(maxCycles) << "\n");
-	// TODO: Report desativado por ora, já que o resource scheduling foi desativado
-#if 0
-	if(XilinxHardwareProfile *fpgaProfile = dynamic_cast<XilinxHardwareProfile *>(profile)) {
-		VERBOSE_PRINT(errs() << "\t\tDSPs: " << std::to_string(fpgaProfile->resourcesGetDSPs()) << "\n");
-		VERBOSE_PRINT(errs() << "\t\tFFs: " << std::to_string(fpgaProfile->resourcesGetFFs()) << "\n");
-		VERBOSE_PRINT(errs() << "\t\tLUTs: " << std::to_string(fpgaProfile->resourcesGetLUTs()) << "\n");
-	}
-	VERBOSE_PRINT(errs() << "\t\tfAdd units: " << std::to_string(profile->fAddGetAmount()) << "\n");
-	VERBOSE_PRINT(errs() << "\t\tfSub units: " << std::to_string(profile->fSubGetAmount()) << "\n");
-	VERBOSE_PRINT(errs() << "\t\tfMul units: " << std::to_string(profile->fMulGetAmount()) << "\n");
-	VERBOSE_PRINT(errs() << "\t\tfDiv units: " << std::to_string(profile->fDivGetAmount()) << "\n");
-	for(auto &it : arrayInfoCfgMap)
-		VERBOSE_PRINT(errs() << "\t\tNumber of partitions for array \"" << it.first << "\": " << std::to_string(profile->arrayGetNumOfPartitions(it.first)) << "\n");
-#endif
 	VERBOSE_PRINT(errs() << "\t\tfASAP scheduling finished\n");
 
 	return std::make_tuple(maxCycles, maxScheduledTime);
@@ -1233,7 +1087,7 @@ void BaseDatapath::alapScheduling(std::tuple<uint64_t, uint64_t> asapResult) {
 	std::set<unsigned> visitedNodes;
 #endif
 
-	// XXX: nodeID is incremented by 1 here, so that we can use unsigned (otherwise exit condition would be i < 0)
+	// nodeID is incremented by 1 here, so that we can use unsigned (otherwise exit condition would be i < 0)
 	for(unsigned nodeID = numOfTotalNodes - 1; nodeID + 1; nodeID--) {
 		Vertex currNode = nameToVertex[nodeID];
 
@@ -1271,7 +1125,6 @@ void BaseDatapath::alapScheduling(std::tuple<uint64_t, uint64_t> asapResult) {
 	const ConfigurationManager::arrayInfoCfgMapTy &arrayInfoCfgMap = CM.getArrayInfoCfgMap();
 	profile->calculateRequiredResources(microops, arrayInfoCfgMap, baseAddress, minTimesNodesMap);
 
-	// XXX: Precisa desse clear?
 	std::map<uint64_t, std::vector<unsigned>>().swap(minTimesNodesMap);
 
 	P.clear();
@@ -1295,19 +1148,6 @@ void BaseDatapath::alapScheduling(std::tuple<uint64_t, uint64_t> asapResult) {
 		}
 	}
 
-#if 0
-	if(XilinxHardwareProfile *fpgaProfile = dynamic_cast<XilinxHardwareProfile *>(profile)) {
-		VERBOSE_PRINT(errs() << "\t\tDSPs: " << std::to_string(fpgaProfile->resourcesGetDSPs()) << "\n");
-		VERBOSE_PRINT(errs() << "\t\tFFs: " << std::to_string(fpgaProfile->resourcesGetFFs()) << "\n");
-		VERBOSE_PRINT(errs() << "\t\tLUTs: " << std::to_string(fpgaProfile->resourcesGetLUTs()) << "\n");
-	}
-	VERBOSE_PRINT(errs() << "\t\tfAdd units: " << std::to_string(profile->fAddGetAmount()) << "\n");
-	VERBOSE_PRINT(errs() << "\t\tfSub units: " << std::to_string(profile->fSubGetAmount()) << "\n");
-	VERBOSE_PRINT(errs() << "\t\tfMul units: " << std::to_string(profile->fMulGetAmount()) << "\n");
-	VERBOSE_PRINT(errs() << "\t\tfDiv units: " << std::to_string(profile->fDivGetAmount()) << "\n");
-	for(auto &it : arrayInfoCfgMap)
-		VERBOSE_PRINT(errs() << "\t\tNumber of partitions for array \"" << it.first << "\": " << std::to_string(profile->arrayGetNumOfPartitions(it.first)) << "\n");
-#endif
 	VERBOSE_PRINT(errs() << "\t\tALAP scheduling finished\n");
 }
 
@@ -1335,12 +1175,7 @@ std::pair<uint64_t, double> BaseDatapath::rcScheduling() {
 
 	assert(asapScheduledTime.size() && alapScheduledTime.size() && cPathNodes.size() && "ASAP, ALAP and/or critical path list not generated");
 
-	// XXX: completePartition() initialised a vector of registers (a class named Registers). This class is composed of a counter of loads
-	// and stores. However, such information is never used, so there is no point on generating such structure.
-	//completePartition();
-	// XXX: initScratchpadPartitions also created some data structure that apparently is not used.
-	// I've implemented only part of it, where it messes with the baseAddress. However the logic is quite strange
-	// and I still question myself if it'll be useful at any point at all
+	// initScratchpadPartitions() generated more stuff that we do not use in Lina. Thus it was reduced to process only what we need
 	VERBOSE_PRINT(errs() << "\t\tUpdating base address database\n");
 	initScratchpadPartitions();
 	VERBOSE_PRINT(errs() << "\t\tOptimising DDDG\n");
@@ -1479,10 +1314,8 @@ std::tuple<std::string, uint64_t> BaseDatapath::calculateResIIMem() {
 			uint64_t numReadPorts = profile->arrayGetPartitionReadPorts(partitionName);
 
 			std::map<std::string, std::vector<uint64_t>>::iterator found2 = arrayPartitionToSchedReadDiffs.find(partitionName);
-			if(found2 != arrayPartitionToSchedReadDiffs.end()) {
-				//uint64_t minDiff = *(std::min_element(arrayPartitionToSchedReadDiffs[partitionName].begin(), arrayPartitionToSchedReadDiffs[partitionName].end()));
+			if(found2 != arrayPartitionToSchedReadDiffs.end())
 				readII = std::ceil(numReads / (double) numReadPorts);
-			}
 		}
 
 		// Analyse for write
@@ -1518,9 +1351,6 @@ uint64_t BaseDatapath::calculateRecII(uint64_t currAsapII) {
 		int64_t sub = (int64_t) (asapII - currAsapII);
 
 		assert((sub >= 0) && "Negative value found when calculating recII");
-
-		// XXX: Only floating point operations have this behaviour? If not, should we
-		// modify here if we ever consider other operations for rcScheduling?
 
 		// When loop pipelining is enabled, the registers between floating point units
 		// are removed. To improve estimation accuracy, we must subtract from recII
@@ -1574,72 +1404,7 @@ uint64_t BaseDatapath::calculateRecII(uint64_t currAsapII) {
 	}
 }
 
-#if 0
-void BaseDatapath::calculateMaxRWPerBank() {
-	const std::map<std::string, std::tuple<uint64_t, uint64_t, uint64_t>> &arrayNameToConfig = profile->arrayGetConfig();
-	std::map<std::string, uint64_t> arrayPartitionToNumOfOps;
-
-	for(auto &it : arrayNameToConfig) {
-		std::string arrayName = it.first;
-
-		arrayNameToAvgLoadPerBank.insert(std::make_pair(arrayName, 0));
-		arrayNameToAvgStorePerBank.insert(std::make_pair(arrayName, 0));
-	}
-
-	for(auto &it : arrayPartitionToNumOfReads) {
-		arrayPartitionToNumOfOps.insert(it);
-
-#ifdef LEGACY_SEPARATOR
-		std::string arrayName = partitionName.substr(0, partitionName.find("-"));
-#else
-		std::string arrayName = partitionName.substr(0, partitionName.find(GLOBAL_SEPARATOR));
-#endif
-
-		std::map<std::string, float> found = arrayPartitionToAvgLoadPerBank.find(arrayName);
-		assert(found != arrayPartitionToAvgLoadPerBank.end() && "Array not found in arrayPartitionToAvgLoadPerBank");
-
-		found->second += it.second;
-	}
-
-	for(auto &it : arrayPartitionToNumOfWrites) {
-		std::map<std::string, uint64_t> found = arrayPartitionToNumOfOps.find(it);
-		if(found != arrayPartitionToNumOfOps.end()) 
-			found->second += it.second;
-		else
-			arrayPartitionToNumOfOps.insert(it);
-
-#ifdef LEGACY_SEPARATOR
-		std::string arrayName = partitionName.substr(0, partitionName.find("-"));
-#else
-		std::string arrayName = partitionName.substr(0, partitionName.find(GLOBAL_SEPARATOR));
-#endif
-
-		std::map<std::string, float> found = arrayPartitionToAvgStorePerBank.find(arrayName);
-		assert(found != arrayPartitionToAvgStorePerBank.end() && "Array not found in arrayPartitionToAvgStorePerBank");
-
-		found->second += it.second;
-	}
-
-	for(auto &it : arrayPartitionToAvgLoadPerBank) {
-		uint64_t numOfPartitions = std::get<0>(arrayNameToConfig[it.first]);
-		if(numOfPartitions)
-			it.second /= (float) numOfPartitions;
-		else
-			it.second = 0;
-	}
-
-	for(auto &it : arrayPartitionToAvgStorePerBank) {
-		uint64_t numOfPartitions = std::get<0>(arrayNameToConfig[it.first]);
-		if(numOfPartitions)
-			it.second /= (float) numOfPartitions;
-		else
-			it.second = 0;
-	}
-}
-#endif
-
 uint64_t BaseDatapath::getLoopTotalLatency(uint64_t maxII) {
-	//calculateMaxRWPerBank();
 	uint64_t noPipelineLatency = 0, pipelinedLatency = 0;
 
 	loopName2levelUnrollVecMapTy::iterator found = loopName2levelUnrollVecMap.find(loopName);
@@ -1665,9 +1430,6 @@ uint64_t BaseDatapath::getLoopTotalLatency(uint64_t maxII) {
 		else
 			noPipelineLatency = noPipelineLatency * (currentLoopBound / unrollFactor);
 
-		//if(!enablePipelining)
-		//	calculateArrayName2maxReadWrite(currentLoopBound / unrollFactor);
-
 		if(i) {
 			unsigned upperLoopUnrollFactor = targetUnroll.at(i - 1);
 
@@ -1678,11 +1440,6 @@ uint64_t BaseDatapath::getLoopTotalLatency(uint64_t maxII) {
 			// at the same time as the enter condition of the following loop). Since right now consecutive inner loops are only
 			// possible with unroll, we compensate this cycle difference with the loop unroll factor
 			noPipelineLatency -= (upperLoopUnrollFactor - 1);
-
-			//if(enablePipelining)
-			//	calculateArrayName2maxReadWrite(upperLoopUnrollFactor);
-
-			// XXX: There was an if here testing extra_cost, but extra_cost was always zero at this point, so I just ignored
 		}
 	}
 
@@ -1709,10 +1466,7 @@ uint64_t BaseDatapath::getLoopTotalLatency(uint64_t maxII) {
 		}
 
 		pipelinedLatency = (maxII * (currentIterations - 1) + rcIL + 2) * totalIterations;
-		//calculateArrayName2maxReadWrite(currentIterations * totalIterations);
 	}
-
-	//writeLogOfArrayName2maxReadWrite();
 
 	return enablePipelining? pipelinedLatency : noPipelineLatency;
 }
@@ -1831,27 +1585,6 @@ void BaseDatapath::dumpSummary(
 				break;
 		}
 	}
-
-#if 0
-	if(XilinxHardwareProfile *fpgaProfile = dynamic_cast<XilinxHardwareProfile *>(profile)) {
-		*summaryFile << "DSPs: " << std::to_string(fpgaProfile->resourcesGetDSPs()) << "\n";
-		*summaryFile << "FFs: " << std::to_string(fpgaProfile->resourcesGetFFs()) << "\n";
-		*summaryFile << "LUTs: " << std::to_string(fpgaProfile->resourcesGetLUTs()) << "\n";
-		*summaryFile << "BRAM18k: " << std::to_string(fpgaProfile->resourcesGetBRAM18k()) << "\n";
-	}
-	*summaryFile << "fAdd units: " << std::to_string(profile->fAddGetAmount()) << "\n";
-	*summaryFile << "fSub units: " << std::to_string(profile->fSubGetAmount()) << "\n";
-	*summaryFile << "fMul units: " << std::to_string(profile->fMulGetAmount()) << "\n";
-	*summaryFile << "fDiv units: " << std::to_string(profile->fDivGetAmount()) << "\n";
-	for(auto &it : profile->arrayGetNumOfPartitions())
-		*summaryFile << "Number of partitions for array \"" << it.first << "\": " << std::to_string(it.second) << "\n";
-	for(auto &it : profile->arrayGetEfficiency())
-		*summaryFile << "Memory efficiency for array \"" << it.first << "\": " << std::to_string(it.second) << "\n";
-	if(XilinxHardwareProfile *fpgaProfile = dynamic_cast<XilinxHardwareProfile *>(profile)) {
-		for(auto &it : fpgaProfile->arrayGetUsedBRAM18k())
-			*summaryFile << "Used BRAM18k for array \"" << it.first << "\": " << std::to_string(it.second) << "\n";
-	}
-#endif
 }	
 
 void BaseDatapath::dumpGraph(bool isOptimised) {
@@ -1883,9 +1616,6 @@ void BaseDatapath::dumpGraph(bool isOptimised) {
 	write_graphviz(out, graph, colorWriter, edgeColorWriter);
 
 	out.close();
-
-	//GraphProgram::Name program = GraphProgram::DOT;
-	//DisplayGraph(graphFileName, true, program);
 }
 
 BaseDatapath::RCScheduler::RCScheduler(
@@ -1997,7 +1727,6 @@ std::pair<uint64_t, double> BaseDatapath::RCScheduler::schedule() {
 
 		isNullCycle = true;
 
-		//std::cout << "~~ start " << std::to_string(cycleTick) << "\n";
 		// Assign ready state to starting nodes (if any)
 		if(startingNodes.size())
 			assignReadyStartingNodes();
@@ -2067,9 +1796,6 @@ std::pair<uint64_t, double> BaseDatapath::RCScheduler::schedule() {
 			}
 		}
 
-		//std::cout << "~~ end " << std::to_string(cycleTick) << "\n";
-		//std::cout.flush();
-
 		// Release pipelined functional units for next clock tick
 		profile.pipelinedRelease();
 
@@ -2101,15 +1827,9 @@ std::pair<uint64_t, double> BaseDatapath::RCScheduler::schedule() {
 		dumpFile.close();
 	}
 
-	// Deduce null cycles
-	// XXX: Deactivating for now. It was removing cycles where indexadds happened, which is not right
-	// XXX: I think that nullCycles was used for deducing silentstore cycles. Maybe I should adapt the logic accordingly
-	// (i.e. only deduce the cycles with silent stores)
+	// Deduce null cycles (deactivated)
 	//cycleTick -= nullCycles;
 
-	// XXX: I could not clearly get why (i - 1) and (i + 1) but not (i) and (i + 1)
-	//return (args.fExtraScalar)? cycleTick + 1 : cycleTick - 1;
-	// XXX: Changing to see if it improves accuracy
 	return std::make_pair((args.fExtraScalar)? cycleTick + 1 : cycleTick, achievedPeriod);
 }
 
@@ -2124,7 +1844,6 @@ void BaseDatapath::RCScheduler::assignReadyStartingNodes() {
 		// If the cycle tick equals to the node's ALAP time, this node has to be solved now!
 		// (the alapShift compensates for critical path reduction if nodes were merged before their intended cycle due to timing budget)
 		if(alapTime - cycleTick <= alapShift) {
-			//std::cout << "~~ assigned ready: " << std::to_string(currNodeID) << "\n";
 			pushReady(currNodeID, alapTime);
 			startingNodes.pop_front();
 		}
@@ -2137,7 +1856,6 @@ void BaseDatapath::RCScheduler::assignReadyStartingNodes() {
 }
 
 void BaseDatapath::RCScheduler::select() {
-	//std::cout << "~~ finish latency0\n";
 	// Schedule/finish all instructions that we are not considering (i.e. latency 0)
 	unsigned failedAttempts = 0;
 	while(failedAttempts < othersReady.size()) {
@@ -2151,7 +1869,6 @@ void BaseDatapath::RCScheduler::select() {
 			}
 
 			readyChanged = true;
-			//std::cout << "~~ done (others): " << std::to_string(currNodeID) << "\n";
 			othersReady.pop_front();
 			rc[currNodeID] = cycleTick;
 			setScheduledAndAssignReadyChildren(currNodeID);
@@ -2164,23 +1881,14 @@ void BaseDatapath::RCScheduler::select() {
 	}
 
 	// Attempt to allocate resources to the most urgent nodes
-	//std::cout << "~~ select fadd\n";
 	trySelect(fAddReady, fAddSelected, &HardwareProfile::fAddTryAllocate);
-	//std::cout << "~~ select fsub\n";
 	trySelect(fSubReady, fSubSelected, &HardwareProfile::fSubTryAllocate);
-	//std::cout << "~~ select fmul\n";
 	trySelect(fMulReady, fMulSelected, &HardwareProfile::fMulTryAllocate);
-	//std::cout << "~~ select fdiv\n";
 	trySelect(fDivReady, fDivSelected, &HardwareProfile::fDivTryAllocate);
-	//std::cout << "~~ select fcmp\n";
 	trySelect(fCmpReady, fCmpSelected, &HardwareProfile::fCmpTryAllocate);
-	//std::cout << "~~ select load\n";
 	trySelect(loadReady, loadSelected, &HardwareProfile::loadTryAllocate);
-	//std::cout << "~~ select store\n";
 	trySelect(storeReady, storeSelected, &HardwareProfile::storeTryAllocate);
-	//std::cout << "~~ select intOp\n";
 	trySelect(intOpReady, intOpSelected, &HardwareProfile::intOpTryAllocate);
-	//std::cout << "~~ select call\n";
 	trySelect(callReady, callSelected, &HardwareProfile::callTryAllocate);
 }
 
@@ -2286,7 +1994,6 @@ void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &sel
 					if(alap[nodeID] == asap[nodeID])
 						criticalPathAllocated = true;
 
-					//std::cout << "~~ selected: " << std::to_string(nodeID) << "\n";
 					selected.push_back(nodeID);
 					ready.pop_front();
 					readyChanged = true;
@@ -2337,7 +2044,6 @@ void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &sel
 					if(alap[nodeID] == asap[nodeID])
 						criticalPathAllocated = true;
 
-					//std::cout << "~~ selected (intOp): " << std::to_string(nodeID) << "\n";
 					selected.push_back(nodeID);
 					ready.pop_front();
 					readyChanged = true;
@@ -2391,7 +2097,6 @@ void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &sel
 					if(alap[nodeID] == asap[nodeID])
 						criticalPathAllocated = true;
 
-					//std::cout << "~~ selected (memory: " << arrayPartitionName << "): " << std::to_string(nodeID) << "\n";
 					selected.push_back(nodeID);
 					ready.pop_front();
 					readyChanged = true;
@@ -2413,11 +2118,6 @@ void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &sel
 void BaseDatapath::RCScheduler::enqueueExecute(unsigned opcode, selectedListTy &selected, executingMapTy &executing, void (HardwareProfile::*release)()) {
 	while(selected.size()) {
 		unsigned selectedNodeID = selected.front();
-		// XXX: getSchedulingLatency only exists because of load, which has a SCHEDULING_LATENCY of 1 cycle.
-		// But I don't feel that this is right anymore. Can't I just say that load is pipelined and let the
-		// rest of the scheduling to do the magic?
-		// XXX: I'm deactivating this line right now.
-		//unsigned latency = profile.getSchedulingLatency(opcode);
 		unsigned latency = profile.getLatency(opcode);
 
 		// Latency 0 or 1: this node was solved already. Set as scheduled and assign its children as ready
@@ -2435,10 +2135,6 @@ void BaseDatapath::RCScheduler::enqueueExecute(unsigned opcode, selectedListTy &
 		}
 
 		selected.pop_front();
-
-		// If this operation is pipelined, we can release the unit
-		//if(profile.isPipelined(opcode))
-		//	(profile.*release)();
 	}
 }
 
@@ -2446,11 +2142,6 @@ void BaseDatapath::RCScheduler::enqueueExecute(selectedListTy &selected, executi
 	while(selected.size()) {
 		unsigned selectedNodeID = selected.front();
 		unsigned opcode = microops.at(selectedNodeID);
-		// XXX: getSchedulingLatency only exists because of load, which has a SCHEDULING_LATENCY of 1 cycle.
-		// But I don't feel that this is right anymore. Can't I just say that load is pipelined and let the
-		// rest of the scheduling to do the magic?
-		// XXX: I'm deactivating this line right now.
-		//unsigned latency = profile.getSchedulingLatency(opcode);
 		unsigned latency = profile.getLatency(opcode);
 
 		// Latency 0 or 1: this node was solved already. Set as scheduled and assign its children as ready
@@ -2468,21 +2159,12 @@ void BaseDatapath::RCScheduler::enqueueExecute(selectedListTy &selected, executi
 		}
 			
 		selected.pop_front();
-
-		// If this operation is pipelined, we can release the unit
-		//if(profile.isPipelined(opcode))
-		//	(profile.*releaseInt)(opcode);
 	}
 }
 
 void BaseDatapath::RCScheduler::enqueueExecute(unsigned opcode, selectedListTy &selected, executingMapTy &executing, void (HardwareProfile::*releaseMem)(std::string)) {
 	while(selected.size()) {
 		unsigned selectedNodeID = selected.front();
-		// XXX: getSchedulingLatency only exists because of load, which has a SCHEDULING_LATENCY of 1 cycle.
-		// But I don't feel that this is right anymore. Can't I just say that load is pipelined and let the
-		// rest of the scheduling to do the magic?
-		// XXX: I'm deactivating this line right now.
-		//unsigned latency = profile.getSchedulingLatency(opcode);
 		unsigned latency = profile.getLatency(opcode);
 		std::string arrayName = baseAddress.at(selectedNodeID).first;
 
@@ -2501,10 +2183,6 @@ void BaseDatapath::RCScheduler::enqueueExecute(unsigned opcode, selectedListTy &
 		}
 
 		selected.pop_front();
-
-		// If this operation is pipelined, we can release the unit
-		//if(profile.isPipelined(opcode))
-		//	(profile.*releaseMem)(arrayName);
 	}
 }
 
@@ -2658,8 +2336,6 @@ BaseDatapath::TCScheduler::TCScheduler(
 }
 
 void BaseDatapath::TCScheduler::clear() {
-	//criticalPath = -1;
-	//criticalPathValue = 0;
 	paths.clear();
 }
 
@@ -2739,75 +2415,6 @@ bool BaseDatapath::TCScheduler::tryAllocate(unsigned nodeID, bool checkTiming) {
 	}
 
 	return true;
-
-#if 0
-	std::vector<std::pair<double, std::vector<unsigned>> *> pathsToModify;
-	std::vector<std::pair<double, std::vector<unsigned>>> newPaths;
-	double inCycleLatency = profile.getInCycleLatency(microops.at(nodeID));
-
-	// If there is not path yet defined, simply add the node and return
-	if(!(paths.size())) {
-		std::vector<unsigned> newPath;
-		newPath.push_back(nodeID);
-		paths.push_back(std::make_pair(profile.getInCycleLatency(microops.at(nodeID)), newPath));
-
-		return true;
-	}
-
-	// Check if this node is part of any ongoing path
-	for(auto &it : paths) {
-		// Check if this node is connected to any part of the current ongoing path
-		for(auto &it2 : it.second) {
-			// Connection found
-			if(boost::edge(nameToVertex.at(it2), nameToVertex.at(nodeID), graph).second) {
-				// If this is the last node of the path, simply try to append the new node
-				if(it.second.back() == it2) {
-					// If the insertion of current node violates timing, fail
-					if((it.first + inCycleLatency) > effectivePeriod) {
-						return false;
-					}
-					// Else, mark the path to be modified
-					else {
-						pathsToModify.push_back(&it);
-					}
-				}
-				// Otherwise, save the common nodes and create a new path
-				else {
-					std::pair<double, std::vector<unsigned>> newPath;
-					newPath.first = 0;
-
-					for(auto it3 = it.second.begin(); *it3 != it2; it3++) {
-						newPath.first += profile.getInCycleLatency(microops.at(*it3));
-						newPath.second.push_back(*it3);
-					}
-					newPaths.push_back(newPath);
-				}
-			}
-		}
-	}
-
-	// Check the new paths and see if any violates timing
-	for(auto &it : newPaths) {
-		if((it.first + inCycleLatency) > effectivePeriod)
-			return false;
-	}
-
-	// If code reached here, no path violated timing. Create those paths
-	for(auto &it : newPaths) {
-		it.first += inCycleLatency;
-		it.second.push_back(nodeID);
-		paths.push_back(it);
-	}
-
-	// Update the existing paths
-	for(auto &it : pathsToModify) {
-		it->first += inCycleLatency;
-		it->second.push_back(nodeID);
-	}
-
-	// If the code reached here, no timings were violated, super!
-	return true;
-#endif
 }
 
 double BaseDatapath::TCScheduler::getCriticalPath() {
@@ -2832,9 +2439,6 @@ BaseDatapath::ColorWriter::ColorWriter(
 
 template<class VE> void BaseDatapath::ColorWriter::operator()(std::ostream &out, const VE &v) const {
 	unsigned nodeID = vertexNameMap[v];
-
-	//if(!boost::degree(v, graph))
-	//	return;
 
 	assert(nodeID < bbNames.size() && "Node ID out of bounds (bbNames)");
 	assert(nodeID < funcNames.size() && "Node ID out of bounds (funcNames)");

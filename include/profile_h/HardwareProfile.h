@@ -234,8 +234,6 @@ class XilinxZCU102HardwareProfile : public XilinxHardwareProfile {
 		MAX_FF = 548160,
 		MAX_LUT = 274080,
 		// XXX: This device has BRAM36k units, that can be configured to be used as 2 BRAM18k units.
-		// XXX: I'm not sure if this affects the current implementation of Lin-analyzer,
-		// XXX: but it's good to know about this fact
 		MAX_BRAM18K = 1824
 	};
 

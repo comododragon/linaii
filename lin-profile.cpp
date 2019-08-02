@@ -194,6 +194,7 @@ void parseInputArguments(int argc, char **argv) {
 	args.fExtraScalar = false;
 	args.fRWRWMem = false;
 	// XXX: Does not seem to make sense for me right now to leave this deactivated
+	// since according to Vivado reports, the load latency is in fact 2
 	args.fILL = true;
 
 	int c;

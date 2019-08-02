@@ -876,12 +876,7 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 		VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Target loop bound: " << targetLoopBound << "\n");
 		VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Pipelining: " << (enablePipelining? "enabled" : "disabled") << "\n");
 
-#ifdef USE_FUTURE
-		unsigned futureUnrollFactor = (targetLoopBound < targetUnrollFactor && targetLoopBound)? targetLoopBound : targetUnrollFactor;
-		FutureCache future(futureUnrollFactor);
-#else
 		unsigned unrollFactor = (targetLoopBound < targetUnrollFactor && targetLoopBound)? targetLoopBound : targetUnrollFactor;
-#endif
 
 		if(args.fNPLA && firstNonPerfectLoopLevel != -1) {
 			VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Non-perfect loop analysis triggered: building multipaths\n");

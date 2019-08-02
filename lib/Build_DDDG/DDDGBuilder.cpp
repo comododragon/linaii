@@ -2,16 +2,6 @@
 
 #include "profile_h/BaseDatapath.h"
 
-#ifdef USE_FUTURE
-FutureCache::FutureCache(unsigned unrollFactor) : unrollFactor(unrollFactor), computed(false) { }
-
-void FutureCache::saveInterval(intervalTy interval) {
-	assert(!computed && "Attempt to save interval on a computed future cache");
-	this->interval = interval;
-	computed = true;
-}
-#endif
-
 ParsedTraceContainer::ParsedTraceContainer(std::string kernelName) {
 	funcFileName = args.outWorkDir + kernelName + "_dynamicfuncid.gz";
 	instIDFileName = args.outWorkDir + kernelName + "_instid.gz";
@@ -236,7 +226,6 @@ void ParsedTraceContainer::appendToGetElementPtrList(int key, std::string elem, 
 	assert(!locked && "This container is locked, no modification permitted");
 	assert(!keepAliveRead && "This container is open for read, no modification permitted");
 
-	// XXX: Substitute the elem (which can be arrayidxXX) for the array name (e.g. A, B, etc)
 	// In the original code, this is performed when the getElementPtrList is requested, not
 	// when the element is inserted. However, getElementPtrList is only used at initBaseAddress(),
 	// where the array name is used instead of the arrayidxXX. Therefore, I think there is no
@@ -520,11 +509,7 @@ const std::vector<std::string> &ParsedTraceContainer::getCurrBBList() {
 	return currBasicBlockList;
 }
 
-#ifdef USE_FUTURE
-DDDGBuilder::DDDGBuilder(BaseDatapath *datapath, ParsedTraceContainer &PC, FutureCache *future) : datapath(datapath), PC(PC), future(future) {
-#else
 DDDGBuilder::DDDGBuilder(BaseDatapath *datapath, ParsedTraceContainer &PC) : datapath(datapath), PC(PC) {
-#endif
 	numOfInstructions = -1;
 	lastParameter = true;
 	prevBB = "-1";
@@ -535,7 +520,6 @@ DDDGBuilder::DDDGBuilder(BaseDatapath *datapath, ParsedTraceContainer &PC) : dat
 intervalTy DDDGBuilder::getTraceLineFromToBeforeNestedLoop(gzFile &traceFile) {
 	std::string loopName = datapath->getTargetLoopName();
 	unsigned loopLevel = datapath->getTargetLoopLevel();
-	//uint64_t unrollFactor = datapath->getTargetLoopUnrollFactor();
 	std::string functionName = std::get<0>(parseLoopName(loopName));
 	lpNameLevelStrPairTy lpNameLevelPair = std::make_pair(loopName, std::to_string(loopLevel));
 
@@ -544,22 +528,11 @@ intervalTy DDDGBuilder::getTraceLineFromToBeforeNestedLoop(gzFile &traceFile) {
 	assert(found != lpNameLevelPair2headBBnameMap.end() && "Could not find header BB of loop inside lpNameLevelPair2headBBnameMap");
 	std::string headerBBName = found->second;
 
-	// Get name of exiting BB for this loop
-	//lpNameLevelPair2headBBnameMapTy::iterator found2 = lpNameLevelPair2exitingBBnameMap.find(lpNameLevelPair);
-	//assert(found2 != lpNameLevelPair2exitingBBnameMap.end() && "Could not find exiting BB of loop inside lpNameLevelPair2exitingBBnameMap");
-	//std::string exitingBBName = found2->second;
-
 	// Get ID of last instruction inside header BB
 	std::pair<std::string, std::string> headerBBFuncNamePair = std::make_pair(headerBBName, functionName);
 	headerBBFuncNamePair2lastInstMapTy::iterator found3 = headerBBFuncNamePair2lastInstMap.find(headerBBFuncNamePair);
 	assert(found3 != headerBBFuncNamePair2lastInstMap.end() && "Could not find last inst of header BB of loop inside headerBBFuncNamePair2lastInstMap");
 	std::string lastInstHeaderBB = found3->second;
-
-	// Get ID of last instruction inside exiting BB
-	//std::pair<std::string, std::string> exitingBBFuncNamePair = std::make_pair(exitingBBName, functionName);
-	//headerBBFuncNamePair2lastInstMapTy::iterator found4 = exitingBBFuncNamePair2lastInstMap.find(exitingBBFuncNamePair);
-	//assert(found4 != exitingBBFuncNamePair2lastInstMap.end() && "Could not find last inst of exiting BB of loop inside headerBBFuncNamePair2lastInstMap");
-	//std::string lastInstExitingBB = found4->second;
 
 	// Get number of instruction inside header BB
 	std::pair<std::string, std::string> funcHeaderBBNamePair = std::make_pair(functionName, headerBBName);
@@ -707,27 +680,14 @@ intervalTy DDDGBuilder::getTraceLineFromToBeforeNestedLoop(gzFile &traceFile) {
 intervalTy DDDGBuilder::getTraceLineFromToAfterNestedLoop(gzFile &traceFile) {
 	std::string loopName = datapath->getTargetLoopName();
 	unsigned loopLevel = datapath->getTargetLoopLevel();
-	// XXX: 0 or UINT_MAX?
 	unsigned prevLoopLevel = 0, currLoopLevel = 0;
-	//uint64_t unrollFactor = datapath->getTargetLoopUnrollFactor();
 	std::string functionName = std::get<0>(parseLoopName(loopName));
 	lpNameLevelStrPairTy lpNameLevelPair = std::make_pair(loopName, std::to_string(loopLevel));
-
-	// Get name of header BB for this loop
-	//lpNameLevelPair2headBBnameMapTy::iterator found = lpNameLevelPair2headBBnameMap.find(lpNameLevelPair);
-	//assert(found != lpNameLevelPair2headBBnameMap.end() && "Could not find header BB of loop inside lpNameLevelPair2headBBnameMap");
-	//std::string headerBBName = found->second;
 
 	// Get name of exiting BB for this loop
 	lpNameLevelPair2headBBnameMapTy::iterator found2 = lpNameLevelPair2exitingBBnameMap.find(lpNameLevelPair);
 	assert(found2 != lpNameLevelPair2exitingBBnameMap.end() && "Could not find exiting BB of loop inside lpNameLevelPair2exitingBBnameMap");
 	std::string exitingBBName = found2->second;
-
-	// Get ID of last instruction inside header BB
-	//std::pair<std::string, std::string> headerBBFuncNamePair = std::make_pair(headerBBName, functionName);
-	//headerBBFuncNamePair2lastInstMapTy::iterator found3 = headerBBFuncNamePair2lastInstMap.find(headerBBFuncNamePair);
-	//assert(found3 != headerBBFuncNamePair2lastInstMap.end() && "Could not find last inst of header BB of loop inside headerBBFuncNamePair2lastInstMap");
-	//std::string lastInstHeaderBB = found3->second;
 
 	// Get ID of last instruction inside exiting BB
 	std::pair<std::string, std::string> exitingBBFuncNamePair = std::make_pair(exitingBBName, functionName);
@@ -735,39 +695,13 @@ intervalTy DDDGBuilder::getTraceLineFromToAfterNestedLoop(gzFile &traceFile) {
 	assert(found4 != exitingBBFuncNamePair2lastInstMap.end() && "Could not find last inst of exiting BB of loop inside headerBBFuncNamePair2lastInstMap");
 	std::string lastInstExitingBB = found4->second;
 
-	// Get number of instruction inside header BB
-	//std::pair<std::string, std::string> funcHeaderBBNamePair = std::make_pair(functionName, headerBBName);
-	//funcBBNmPair2numInstInBBMapTy::iterator found5 = funcBBNmPair2numInstInBBMap.find(funcHeaderBBNamePair);
-	//assert(found5 != funcBBNmPair2numInstInBBMap.end() && "Could not find number of instructions in header BB inside funcBBNmPair2numInstInBBMap");
-	//unsigned numInstInHeaderBB = found5->second;
-
-	// Create database of headerBBName-lastInst -> loopName-level
-	//headerBBlastInst2loopNameLevelPairMapTy headerBBlastInst2loopNameLevelPairMap;
-	//for(auto &it : lpNameLevelPair2headBBnameMap) {
-	//	std::string loopName = it.first.first;
-	//	unsigned loopLevel = std::stoul(it.first.second);
-	//	std::string funcName = std::get<0>(parseLoopName(loopName));
-	//	std::string headerBBName = it.second;
-	//	std::pair<std::string, std::string> headerBBFuncNamePair = std::make_pair(headerBBName, funcName);
-	//	std::string headerBBLastInst = headerBBFuncNamePair2lastInstMap[headerBBFuncNamePair];
-	//	std::pair<std::string, unsigned> loopNameLevelPair = std::make_pair(loopName, loopLevel);
-	//	headerBBlastInst2loopNameLevelPairMap.insert(std::make_pair(headerBBLastInst, loopNameLevelPair));
-	//}
-
-	//std::string wholeLoopName = appendDepthToLoopName(loopName, loopLevel);
-	//uint64_t loopBound = wholeloopName2loopBoundMap.at(wholeLoopName);
-	//bool skipRuntimeLoopBound = (loopBound > 0);
-
 #ifdef PROGRESSIVE_TRACE_CURSOR
 	uint64_t instCount = progressiveTraceInstCount;
 #else
 	uint64_t instCount = 0;
 #endif
 	uint64_t byteFrom, to = 0;
-	// This queue saves exactly the last (numInstInHeaderBB - 1) byte offsets for the beggining of each line
-	//LimitedQueue lineByteOffset(numInstInHeaderBB - 1);
 	bool firstTraverse = true;
-	//uint64_t lastInstExitingCounter = 0;
 	char buffer[BUFF_STR_SZ];
 
 	// Iterate through dynamic trace
@@ -840,9 +774,7 @@ intervalTy DDDGBuilder::getTraceLineFromToAfterNestedLoop(gzFile &traceFile) {
 intervalTy DDDGBuilder::getTraceLineFromToBetweenAfterAndBefore(gzFile &traceFile) {
 	std::string loopName = datapath->getTargetLoopName();
 	unsigned loopLevel = datapath->getTargetLoopLevel();
-	// XXX: 0 or UINT_MAX?
 	unsigned prevLoopLevel = 0, currLoopLevel = 0;
-	//uint64_t unrollFactor = datapath->getTargetLoopUnrollFactor();
 	std::string functionName = std::get<0>(parseLoopName(loopName));
 	lpNameLevelStrPairTy lpNameLevelPair = std::make_pair(loopName, std::to_string(loopLevel));
 
@@ -900,13 +832,6 @@ intervalTy DDDGBuilder::getTraceLineFromToBetweenAfterAndBefore(gzFile &traceFil
 					byteFrom = gztell(traceFile) - line.size();
 					instCount--;
 					firstTraverse = false;
-
-#ifdef PROGRESSIVE_TRACE_CURSOR
-					//if(args.progressive) {
-					//	progressiveTraceCursor = byteFrom;
-					//	progressiveTraceInstCount = instCount;
-					//}
-#endif
 				}
 			}
 
@@ -931,25 +856,7 @@ void DDDGBuilder::buildInitialDDDG() {
 
 	VERBOSE_PRINT(errs() << "\t\tStarted build of initial DDDG\n");
 
-	//lineFromToTy fromToPair = getTraceLineFromTo(traceFile);
-	//parseTraceFile(traceFile, fromToPair);
-#ifdef USE_FUTURE
-	intervalTy interval;
-	// If interval was computed on a previous DynamicDatapath construction, use that
-	if(future && future->isComputed())
-		interval = future->getInterval();
-	else
-		interval = getTraceLineFromTo(traceFile);
-
-	VERBOSE_PRINT(errs() << "\t\tUsing cached interval of trace to analyse\n");
-#else
 	intervalTy interval = getTraceLineFromTo(traceFile);
-#if 0
-	std::cout << "!!!!!!!!! NORMAL " << datapath->getTargetLoopName() << " " << std::to_string(datapath->getTargetLoopLevel()) << " byteFrom: " << std::to_string(std::get<0>(interval)) << " to: " << std::to_string(std::get<1>(interval)) << " instCount: " << std::to_string(std::get<2>(interval)) << "\n";
-#endif
-	// XXX DEBUUUUUUUUUUUUGGGGGGGGGGGGGGGGGGGGGGGGGG
-	//return;
-#endif
 
 	VERBOSE_PRINT(errs() << "\t\tSkipping " << std::to_string(std::get<0>(interval)) << " bytes from trace\n");
 	VERBOSE_PRINT(errs() << "\t\tEnd of interval: " << std::to_string(std::get<1>(interval)) << "\n");
@@ -963,8 +870,6 @@ void DDDGBuilder::buildInitialDDDG() {
 	VERBOSE_PRINT(errs() << "\t\tNumber of register dependencies: " << std::to_string(getNumOfRegisterDependencies()) << "\n");
 	VERBOSE_PRINT(errs() << "\t\tNumber of memory dependencies: " << std::to_string(getNumOfMemoryDependencies()) << "\n");
 	VERBOSE_PRINT(errs() << "\t\tDDDG build finished\n");
-
-	// TODO: write graph property csv?
 }
 
 void DDDGBuilder::buildInitialDDDG(intervalTy interval) {
@@ -988,8 +893,6 @@ void DDDGBuilder::buildInitialDDDG(intervalTy interval) {
 	VERBOSE_PRINT(errs() << "\t\tNumber of register dependencies: " << std::to_string(getNumOfRegisterDependencies()) << "\n");
 	VERBOSE_PRINT(errs() << "\t\tNumber of memory dependencies: " << std::to_string(getNumOfMemoryDependencies()) << "\n");
 	VERBOSE_PRINT(errs() << "\t\tDDDG build finished\n");
-
-	// TODO: write graph property csv?
 }
 
 unsigned DDDGBuilder::getNumOfRegisterDependencies() {
@@ -1050,36 +953,14 @@ intervalTy DDDGBuilder::getTraceLineFromTo(gzFile &traceFile) {
 
 	std::string wholeLoopName = appendDepthToLoopName(loopName, loopLevel);
 	uint64_t loopBound = wholeloopName2loopBoundMap.at(wholeLoopName);
-#ifdef USE_FUTURE
-	bool actualComputed = false;
-	// XXX: I AM ASSUMING THAT THIS WILL ONLY BE POSSIBLY FALSE ON FIRST DYNAMICDATAPATH CONSTRUCTION EVER
-	// XXX: This method iterates from the beginning of file. If loopBound == 0, there will be no break in the
-	// XXX: line reading loop, i.e. ALL LOOP BOUNDS WILL BE COMPUTED, therefore if skipRuntimeLoopBound == false,
-	// XXX: it won't be in the future again.
-	// XXX: Since future cache skips this getLineFromTo() when generated, wholeloopName2loopBoundMap is not updated!
-	// XXX: But if wholeloopName2loopBoundMap is updated only once, this won't be a problem
-#endif
 	bool skipRuntimeLoopBound = (loopBound > 0);
-
-#ifdef USE_FUTURE
-	// Handle future generation logic
-	bool computeFuture = future;
-	bool futureComputed = !computeFuture;
-	uint64_t futureUnrollFactor = computeFuture? future->getUnrollFactor() : 0;
-	if(computeFuture)
-		assert(!(future->isComputed()) && "Future cache computation was asked but its values are already computed");
-#endif
 
 #ifdef PROGRESSIVE_TRACE_CURSOR
 	uint64_t instCount = progressiveTraceInstCount;
 #else
 	uint64_t instCount = 0;
 #endif
-#ifdef USE_FUTURE
-	uint64_t byteFrom, to = 0, futureTo = 0;
-#else
 	uint64_t byteFrom, to = 0;
-#endif
 	// This queue saves exactly the last (numInstInHeaderBB - 1) byte offsets for the beggining of each line
 	LimitedQueue lineByteOffset(numInstInHeaderBB - 1);
 	bool firstTraverseHeader = true;
@@ -1114,13 +995,6 @@ intervalTy DDDGBuilder::getTraceLineFromTo(gzFile &traceFile) {
 			std::string instName(buffer2);
 
 			// Mark the first line of the first iteration of this loop
-#if 0
-			if(firstTraverseHeader && !instName.compare(lastInstHeaderBB)) {
-				from = count - numInstInHeaderBB + 1;
-				firstTraverseHeader = false;
-			}
-#endif
-#if 1
 			if(firstTraverseHeader) {
 				instCount++;
 
@@ -1143,29 +1017,11 @@ intervalTy DDDGBuilder::getTraceLineFromTo(gzFile &traceFile) {
 					lineByteOffset.push(gztell(traceFile) - line.size());
 				}
 			}
-#endif
 
 			// Mark the last line of the last iteration of this loop
 			if(!instName.compare(lastInstExitingBB)) {
 				lastInstExitingCounter++;
 
-#ifdef USE_FUTURE
-				// Compute actual "to" value
-				if(!actualComputed && unrollFactor == lastInstExitingCounter) {
-					to = count;
-					actualComputed = true;
-				}
-
-				// Compute future "to" value (only if asked)
-				if(computeFuture && !futureComputed && (futureUnrollFactor == lastInstExitingCounter)) {
-					futureTo = count;
-					futureComputed = true;
-				}
-
-				// If we computed all "to" values and no runtime loop bound must be calculated, we can stop now
-				if(actualComputed && futureComputed && skipRuntimeLoopBound)
-					break;
-#else
 				if(unrollFactor == lastInstExitingCounter) {
 					to = count;
 
@@ -1173,7 +1029,6 @@ intervalTy DDDGBuilder::getTraceLineFromTo(gzFile &traceFile) {
 					if(skipRuntimeLoopBound)
 						break;
 				}
-#endif
 			}
 
 			// Calculating loop bound at runtime: Increment loop bound counter 
@@ -1218,23 +1073,8 @@ intervalTy DDDGBuilder::getTraceLineFromTo(gzFile &traceFile) {
 				loopBounds[i] = loopBounds[i] / loopBounds[i - 1];
 				wholeloopName2loopBoundMap[wholeLoopName] = loopBounds[i];
 			}
-
-			/*
-			for(unsigned i = 0; i < levelSize; i++) {
-				std::string wholeLoopName = appendDepthToLoopName(loopName, i + 1);
-				wholeloopName2loopBoundMapTy::iterator found9 = wholeloopName2loopBoundMap.find(wholeLoopName);
-
-				std::cout << ">>>>>>>>>>>>> " << found9->first << ": " << found9->second << "\n";
-			}
-			*/
 		}
 	}
-
-#ifdef USE_FUTURE
-	// If future was asked to be computed, save interval
-	if(computeFuture && futureComputed)
-		future->saveInterval(std::make_tuple(byteFrom, futureTo, instCount));
-#endif
 
 	return std::make_tuple(byteFrom, to, instCount);
 }
@@ -1242,34 +1082,13 @@ intervalTy DDDGBuilder::getTraceLineFromTo(gzFile &traceFile) {
 void DDDGBuilder::parseTraceFile(gzFile &traceFile, intervalTy interval) {
 	PC.openAndClearAllFiles();
 
-#if 0
-// XXX: New simpler logic
-	uint64_t from = fromToPair.first, to = fromToPair.second;
-	uint64_t instCount = 0;
-#endif
-#if 0
-// XXX: Old logic that seems buggish
-	uint64_t from = fromToPair.first, to = fromToPair.second;
-	uint64_t instCount = 0;
-	bool parseInst = false;
-#endif
-#if 1
-// XXX: New logic based on old logic that speeds up file reading
 	uint64_t from = std::get<0>(interval), to = std::get<1>(interval);
 	uint64_t instCount = std::get<2>(interval);
 	bool parseInst = false;
-#endif
 	char buffer[BUFF_STR_SZ];
 
 	// Iterate through dynamic trace, but only process the specified interval
-#if 0
-// XXX: New simpler logic and old logic
-	gzrewind(traceFile);
-#endif
-#if 1
-// XXX: New logic based on old logic that speeds up file reading
 	gzseek(traceFile, from, SEEK_SET);
-#endif
 	while(!gzeof(traceFile)) {
 		if(Z_NULL == gzgets(traceFile, buffer, sizeof(buffer)))
 			continue;
@@ -1283,53 +1102,6 @@ void DDDGBuilder::parseTraceFile(gzFile &traceFile, intervalTy interval) {
 		std::string tag = line.substr(0, tagPos);
 		rest = line.substr(tagPos + 1);
 
-#if 0
-// XXX: New simpler logic
-		if(!tag.compare("0"))
-			instCount++;
-
-		if(instCount > from && instCount <= to) {
-			if(!tag.compare("0"))
-				parseInstructionLine();
-			else if(!tag.compare("r"))
-				parseResult();
-			else if(!tag.compare("f"))
-				parseForward();
-			else
-				parseParameter(std::atoi(tag.c_str()));
-		}
-		// No need to keep looking after interval, just stop
-		else if(instCount > to) {
-			break;
-		}
-#endif
-#if 0
-// XXX: Old logic that seems buggish
-		if(!tag.compare("0")) {
-			if(instCount >= from && instCount <= to) {
-				parseInstructionLine();
-				parseInst = true;
-			}
-			else {
-				parseInst = false;
-			}
-			instCount++;
-		}
-
-		if(tag.compare("0") && parseInst) {
-			if(!tag.compare("r"))
-				parseResult();
-			else if(!tag.compare("f"))
-				parseForward();
-			else
-				parseParameter(std::atoi(tag.c_str()));
-		}
-		else if(instCount > to) {
-			break;
-		}
-#endif
-#if 1
-// XXX: New logic based on old logic that speeds up file reading
 		if(!tag.compare("0")) {
 			if(instCount <= to) {
 				parseInstructionLine();
@@ -1352,7 +1124,6 @@ void DDDGBuilder::parseTraceFile(gzFile &traceFile, intervalTy interval) {
 		else if(instCount > to) {
 			break;
 		}
-#endif
 	}
 
 	PC.closeAllFiles();
@@ -1404,15 +1175,6 @@ void DDDGBuilder::parseInstructionLine() {
 #endif
 				activeMethod.push(std::make_pair(currStaticFunction, found->second));
 			}
-
-			/*
-			if(LLVM_IR_Call == prevMicroop) {
-				assert(calleeFunction == currStaticFunction && "Current static function differs from called instruction");
-
-				// TODO: push to methodCallGraph, but apparently this variable is never used
-				// Implement logic if necessary
-			}
-			*/
 		}
 		// Function name in stack equals to current name, either nothing changed or this is a recursive call
 		else {
@@ -1563,8 +1325,6 @@ void DDDGBuilder::parseParameter(int param) {
 
 	// First line after log0 is the last parameter (parameters are traced backwards!)
 	if(lastParameter) {
-		//numOfParameters = param;
-
 		// This is a call, save the called function
 		if(LLVM_IR_Call == currMicroop)
 			calleeFunction = label;
@@ -1651,7 +1411,6 @@ void DDDGBuilder::parseParameter(int param) {
 				}
 			}
 
-			//int64_t baseAddr = parameterValuePerInst.back();
 			std::string baseLabel = parameterLabelPerInst.back();
 			PC.appendToGetElementPtrList(numOfInstructions, baseLabel, addr);
 		}
@@ -1685,7 +1444,6 @@ void DDDGBuilder::parseParameter(int param) {
 bool DDDGBuilder::lookaheadIsSameLoopLevel(gzFile &traceFile, unsigned loopLevel) {
 	size_t rollbackBytes = 0;
 	char buffer[BUFF_STR_SZ];
-	// XXX: false or true?
 	bool result = false;
 
 	while(!gzeof(traceFile)) {

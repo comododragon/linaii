@@ -112,15 +112,6 @@ void Multipath::_Multipath() {
 					betweenLatency -= 1;
 			}
 
-			// XXX: Check if this is the correct way to compensate the unrolling effects!
-			// XXX: Check if this is the correct way to compensate the unrolling effects!
-			// XXX: Check if this is the correct way to compensate the unrolling effects!
-			// These in-between DDDGs can be solved at the same time as the enter/exit loop procedures, so we remove 1 cycle to mimic this behaviour
-			//latency = latency? latency - 1 : 0;
-			//afterLatency = (afterLatency > 1)? afterLatency - 2 : (afterLatency? afterLatency - 1 : 0);
-			// This latency is compensated twice, as it is virtually a beforeLatency + afterLatency
-			//betweenLatency = (betweenLatency > 1)? betweenLatency - 2 : (betweenLatency? betweenLatency - 1 : 0);
-
 			numCycles = (latency + afterLatency + (betweenLatency * (currUnrollFactor - 1)) + (numCycles * currUnrollFactor)) * (loopBound / currUnrollFactor)
 				+ BaseDatapath::EXTRA_ENTER_EXIT_LOOP_LATENCY;
 

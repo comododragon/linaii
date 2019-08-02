@@ -28,7 +28,6 @@ HardwareProfile::HardwareProfile() {
 }
 
 HardwareProfile *HardwareProfile::createInstance() {
-	// XXX: Right now only Xilinx boards are supported, therefore this is the only constructor available for now
 	switch(args.target) {
 		case ArgPack::TARGET_XILINX_VC707:
 			assert(args.fNoTCS && "Time-constrained scheduling is currently not supported with the selected platform. Please activate the \"--fno-tcs\" flag");
@@ -151,13 +150,10 @@ void HardwareProfile::fillPack(Pack &P) {
 		P.addDescriptor("Memory efficiency for array \"" + it.first + "\"", Pack::MERGE_EQUAL, Pack::TYPE_FLOAT);
 		P.addElement<float>("Memory efficiency for array \"" + it.first + "\"", it.second);
 	}
-
-
-
 }
 
 unsigned HardwareProfile::arrayGetNumOfPartitions(std::string arrayName) {
-	// XXX: If the arrayName doesn't exist, this access will add it automatically. Is this desired behaviour?
+	// XXX: If the arrayName doesn't exist, this access will add it automatically
 	return arrayNameToNumOfPartitions[arrayName];
 }
 
@@ -279,7 +275,7 @@ bool HardwareProfile::fDivTryAllocate(bool commit) {
 }
 
 bool HardwareProfile::fCmpTryAllocate(bool commit) {
-	// XXX: For now, fCmp is not constrained
+	// For now, fCmp is not constrained
 	return true;
 }
 
@@ -288,17 +284,8 @@ bool HardwareProfile::loadTryAllocate(std::string arrayPartitionName, bool commi
 
 	std::map<std::string, unsigned>::iterator found = arrayPartitionToReadPorts.find(arrayPartitionName);
 	std::map<std::string, unsigned>::iterator found2 = arrayPartitionToReadPortsInUse.find(arrayPartitionName);
-	//std::cout << ">>>>>> " << arrayPartitionName << std::endl;
 	assert(found != arrayPartitionToReadPorts.end() && "Array has no storage allocated for it");
 	assert(found2 != arrayPartitionToReadPortsInUse.end() && "Array has no storage allocated for it");
-
-	//std::cout << "~~ ~~ loadTryAllocate start\n";
-	//for(auto &it : arrayPartitionToReadPorts)
-	//	std::cout << "~~ ~~ " << it.first << " | " << std::to_string(it.second) << "\n";
-	//std::cout << "~~ ~~~\n";
-	//for(auto &it : arrayPartitionToReadPortsInUse)
-	//	std::cout << "~~ ~~ " << it.first << " | " << std::to_string(it.second) << "\n";
-	//std::cout << "~~ ~~ loadTryAllocate end\n";
 
 	// All ports are being used, not able to allocate right now
 	if(found2->second >= found->second)
@@ -316,17 +303,8 @@ bool HardwareProfile::storeTryAllocate(std::string arrayPartitionName, bool comm
 
 	std::map<std::string, unsigned>::iterator found = arrayPartitionToWritePorts.find(arrayPartitionName);
 	std::map<std::string, unsigned>::iterator found2 = arrayPartitionToWritePortsInUse.find(arrayPartitionName);
-	//std::cout << ">>>>>> " << arrayPartitionName << std::endl;
 	assert(found != arrayPartitionToWritePorts.end() && "Array has no storage allocated for it");
 	assert(found2 != arrayPartitionToWritePortsInUse.end() && "Array has no storage allocated for it");
-
-	//std::cout << "~~ ~~ storeTryAllocate start\n";
-	//for(auto &it : arrayPartitionToWritePorts)
-	//	std::cout << "~~ ~~ " << it.first << " | " << std::to_string(it.second) << "\n";
-	//std::cout << "~~ ~~~\n";
-	//for(auto &it : arrayPartitionToWritePortsInUse)
-	//	std::cout << "~~ ~~ " << it.first << " | " << std::to_string(it.second) << "\n";
-	//std::cout << "~~ ~~ storeTryAllocate end\n";
 
 	// All ports are being used
 	if(found2->second >= found->second) {
@@ -342,10 +320,8 @@ bool HardwareProfile::storeTryAllocate(std::string arrayPartitionName, bool comm
 #else
 			size_t tagPos = arrayPartitionName.find(GLOBAL_SEPARATOR);
 #endif
-			if(commit) {
-				// TODO: euacho que isso funciona sem o if
+			if(commit)
 				(arrayNameToWritePortsPerPartition[arrayPartitionName.substr(0, tagPos)])++;
-			}
 
 			return true;
 		}
@@ -362,12 +338,12 @@ bool HardwareProfile::storeTryAllocate(std::string arrayPartitionName, bool comm
 }
 
 bool HardwareProfile::intOpTryAllocate(unsigned opcode, bool commit) {
-	// XXX: For now, int ops are not constrained
+	// For now, int ops are not constrained
 	return true;
 }
 
 bool HardwareProfile::callTryAllocate(bool commit) {
-	// XXX: For now, calls are not constrained
+	// For now, calls are not constrained
 	return true;
 }
 
@@ -418,13 +394,6 @@ void HardwareProfile::fCmpRelease() {
 }
 
 void HardwareProfile::loadRelease(std::string arrayPartitionName) {
-	//std::cout << "~~ ~~ loadRelease start\n";
-	//for(auto &it : arrayPartitionToReadPorts)
-	//	std::cout << "~~ ~~ " << it.first << " | " << std::to_string(it.second) << "\n";
-	//std::cout << "~~ ~~~\n";
-	//for(auto &it : arrayPartitionToReadPortsInUse)
-	//	std::cout << "~~ ~~ " << it.first << " | " << std::to_string(it.second) << "\n";
-	//std::cout << "~~ ~~ loadRelease end\n";
 	std::map<std::string, unsigned>::iterator found = arrayPartitionToReadPortsInUse.find(arrayPartitionName);
 	assert(found != arrayPartitionToReadPortsInUse.end() && "No array/partition found with the provided name");
 	assert(found->second && "Attempt to release read port when none is allocated for this array/partition");
@@ -432,13 +401,6 @@ void HardwareProfile::loadRelease(std::string arrayPartitionName) {
 }
 
 void HardwareProfile::storeRelease(std::string arrayPartitionName) {
-	//std::cout << "~~ ~~ storeRelease start\n";
-	//for(auto &it : arrayPartitionToWritePorts)
-	//	std::cout << "~~ ~~ " << it.first << " | " << std::to_string(it.second) << "\n";
-	//std::cout << "~~ ~~~\n";
-	//for(auto &it : arrayPartitionToWritePortsInUse)
-	//	std::cout << "~~ ~~ " << it.first << " | " << std::to_string(it.second) << "\n";
-	//std::cout << "~~ ~~ storeRelease end\n";
 	std::map<std::string, unsigned>::iterator found = arrayPartitionToWritePortsInUse.find(arrayPartitionName);
 	assert(found != arrayPartitionToWritePortsInUse.end() && "No array/partition found with the provided name");
 	assert(found->second && "Attempt to release write port when none is allocated for this array/partition");
@@ -499,15 +461,10 @@ unsigned XilinxHardwareProfile::getLatency(unsigned opcode) {
 		case LLVM_IR_SilentStore:
 			return 0;
 		case LLVM_IR_Load:
-			// Observation from Vivado HLS: 
-			//   1. When enabling partitioning without pipelining, a load operation 
-			//      from BRAM needs 2 access latency
-			//   2. When no partitioning, a load operation from  BRAM needs 1 access 
-			//      latency
-			// FIXME: In current implementation, we apply 2 load latency to all arrays 
-			//        for simplicity. But to further improving accuracy, it is better
-			//        to ONLY associate 2 load latency with partitioned arrays and use
-			//        1 load latency for normal arrays.
+			// This fILL comes from Lin-Analyzer. According to them, if partitioning is
+			// enabled without pipelining, load uses 2 cycles. When no partitioning,
+			// load uses 1. I am not quite sure if this is right. Currently fILL is
+			// hard-enabled, so this is being quite ignored.
 			return (args.fILL)? LATENCY_LOAD : LATENCY_LOAD - 1;
 		case LLVM_IR_Mul:
 			// 64 bits -- 18 cycles
@@ -552,15 +509,6 @@ unsigned XilinxHardwareProfile::getLatency(unsigned opcode) {
 	}
 }
 
-unsigned XilinxHardwareProfile::getSchedulingLatency(unsigned opcode) {
-	// Some nodes can have different latencies for execution and scheduling
-	// Load, for example, takes 2 cycles to finish but it can be enqueued at every cycle
-	if(LLVM_IR_Load == opcode)
-		return SCHEDULING_LATENCY_LOAD;
-	else
-		return getLatency(opcode);
-}
-
 double XilinxHardwareProfile::getInCycleLatency(unsigned opcode) {
 	assert(args.fNoTCS && "Time-constrained scheduling is currently not supported with the selected platform. Please activate the \"--fno-tcs\" flag");
 	return 0;
@@ -575,7 +523,7 @@ bool XilinxHardwareProfile::isPipelined(unsigned opcode) {
 		case LLVM_IR_Load:
 		case LLVM_IR_Store:
 			return true;
-		// TODO: fCmp, integer ops and call are here but because we are not constraining those resources!
+		// XXX: fCmp, integer ops and call are here but because we are not constraining those resources!
 		// Perhaps if we constrain them, we shold double-check if they're pipelined or not
 		default: 
 			return false;
@@ -590,7 +538,8 @@ void XilinxHardwareProfile::calculateRequiredResources(
 ) {
 	clear();
 
-	// XXX: In current implementation, only floating point operations are considered
+	// In current implementation, only floating point operations are considered
+
 	unsigned fAddSubTotalCount = 0;
 	unsigned fMulTotalCount = 0;
 	unsigned fDivTotalCount = 0;
@@ -653,7 +602,6 @@ void XilinxHardwareProfile::calculateRequiredResources(
 			}
 
 			if(isLoadOp(opcode)) {
-				// TODO: According to original code this fails if scratchpadPartition() is called before this function
 				std::string arrayName = baseAddress[it2].first;
 				arrayNameToReadPorts[arrayName]++;
 				if(arrayNameToReadPorts[arrayName] > XilinxHardwareProfile::PER_PARTITION_PORTS_R * arrayGetNumOfPartitions(arrayName))
@@ -661,7 +609,6 @@ void XilinxHardwareProfile::calculateRequiredResources(
 			}
 
 			if(isStoreOp(opcode)) {
-				// TODO: According to original code this fails if scratchpadPartition() is called before this function
 				std::string arrayName = baseAddress[it2].first;
 				arrayNameToWritePorts[arrayName]++;
 				if(arrayNameToWritePorts[arrayName] > XilinxHardwareProfile::PER_PARTITION_PORTS_W * arrayGetNumOfPartitions(arrayName))
@@ -714,7 +661,7 @@ void XilinxHardwareProfile::setMemoryCurrentUsage(
 	const ConfigurationManager::partitionCfgMapTy &completePartitionCfgMap
 ) {
 	const size_t size18kInBits = 18 * 1024;
-	// XXX: If a partition has less than this threshold, it is implemented as distributed RAM instead of BRAM
+	// If a partition has less than this threshold, it is implemented as distributed RAM instead of BRAM
 	const size_t bramThresholdInBits = 512;
 
 	// Create array configuratiom map
@@ -758,7 +705,7 @@ void XilinxHardwareProfile::setMemoryCurrentUsage(
 		}
 		// Complete partition
 		else {
-			// TODO: Complete partition splits array into registers, thus no BRAM is used
+			// XXX: Complete partition splits array into registers, thus no BRAM is used
 			// However, LUTs and FF are used but are not being accounted here.
 			arrayNameToUsedBRAM18k.insert(std::make_pair(arrayName, 0));
 			arrayNameToEfficiency.insert(std::make_pair(arrayName, 0));
@@ -779,8 +726,7 @@ void XilinxHardwareProfile::setMemoryCurrentUsage(
 		for(auto &it : arrayNameToConfig) {
 			std::string arrayName = it.first;
 			uint64_t numOfPartitions = std::get<0>(it.second);
-			// TODO: THIS SEEMS A BUG!!! THE ORIGINAL CODE IS USING WORDSIZE AS THE TOTAL SIZE.
-			// keeping just for equality purposes, but this is very likely wrong!
+			// TODO: THIS SEEMS A BUG!!! THE ORIGINAL CODE IS USING WORDSIZE AS THE TOTAL SIZE. Keeping just for equality purposes, but this is very likely wrong!
 			uint64_t totalSizeInBytes = std::get<2>(it.second);
 			// TODO: The two following lines is what I consider the correct code
 			//uint64_t totalSizeInBytes = std::get<1>(it.second);
@@ -800,7 +746,6 @@ void XilinxHardwareProfile::setMemoryCurrentUsage(
 			}
 			// Complete partition
 			else {
-				// TODO: Compared to the same code above, no "-register" string is added. Is this intentional or a bug???
 #ifdef LEGACY_SEPARATOR
 				arrayNameToUsedBRAM18k.insert(std::make_pair(arrayName + "-register", 0));
 				arrayNameToEfficiency.insert(std::make_pair(arrayName + "-register", 0));
@@ -816,12 +761,10 @@ void XilinxHardwareProfile::setMemoryCurrentUsage(
 			arrayPartitionToWritePortsInUse.insert(std::make_pair(arrayName, 0));
 		}
 
-		// TODO: This is a silent warning on the original code, but I'll put here as an error
 		assert(usedBRAM18k <= maxBRAM18k && "Current BRAM18k exceeds the available amount of selected board even with partitioning disabled");
 	}
 	// BRAM18k setting with partitioning fits in current device
 	else {
-		// XXX: I don't know if these clears are needed, but...
 		arrayPartitionToReadPorts.clear();
 		arrayPartitionToWritePorts.clear();
 
@@ -1117,7 +1060,7 @@ double XilinxZCU102HardwareProfile::getInCycleLatency(unsigned opcode) {
 		case LLVM_IR_SilentStore:
 			return 0;
 		case LLVM_IR_Load:
-			// XXX: fILL deve ter efeito aqui?
+			// XXX: Must fILL also affect here?
 			return effectiveLatencies[LATENCY_LOAD].second;
 		case LLVM_IR_Mul:
 			return effectiveLatencies[LATENCY_MUL32].second;

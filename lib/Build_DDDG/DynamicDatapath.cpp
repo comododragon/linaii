@@ -1,20 +1,10 @@
 #include "profile_h/DynamicDatapath.h"
 
-#ifdef USE_FUTURE
-DynamicDatapath::DynamicDatapath(
-	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
-	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor, FutureCache *future
-) : BaseDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, future, false, 0) {
-	VERBOSE_PRINT(errs() << "[][][][dynamicDatapath] Analysing DDDG for loop \"" << loopName << "\"\n");
-#else
 DynamicDatapath::DynamicDatapath(
 	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
 	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor
 ) : BaseDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, false, 0) {
 	VERBOSE_PRINT(errs() << "[][][][dynamicDatapath] Analysing DDDG for loop \"" << loopName << "\"\n");
-#endif
-	// XXX DEBUUUUUUUUUUUUGGGGGGGGGGGGGGGGGGGGGGGGGG
-	//return;
 
 	initBaseAddress();
 
@@ -28,25 +18,11 @@ DynamicDatapath::DynamicDatapath(
 #endif
 }
 
-#ifdef USE_FUTURE
-DynamicDatapath::DynamicDatapath(
-	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
-	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
-	FutureCache *future,
-	bool enablePipelining, uint64_t asapII
-) : BaseDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, future, enablePipelining, asapII) {
-	if(future && future->isComputed())
-		VERBOSE_PRINT(errs() << "[][][][dynamicDatapath] Using computed cache from previous dynamic datapath constructions\n");
-
-#else
 DynamicDatapath::DynamicDatapath(
 	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
 	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
 	bool enablePipelining, uint64_t asapII
 ) : BaseDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, enablePipelining, asapII) {
-#endif
-	// XXX DEBUUUUUUUUUUUUGGGGGGGGGGGGGGGGGGGGGGGGGG
-	//return;
 	VERBOSE_PRINT(errs() << "[][][][dynamicDatapath] Analysing DDDG for loop \"" << loopName << "\"\n");
 
 	initBaseAddress();
@@ -63,7 +39,7 @@ DynamicDatapath::DynamicDatapath(
 #endif
 }
 
-// XXX: enablePipeliningand asapII are not set here. See the new BaseDapath constructor comments for the reason
+// Constructor used for non-perfect loop nests datapaths
 DynamicDatapath::DynamicDatapath(
 	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
 	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor, unsigned datapathType
@@ -86,17 +62,6 @@ DynamicDatapath::DynamicDatapath(
 		interval = builder->getTraceLineFromToAfterNestedLoop(traceFile);
 	else
 		assert(false && "Invalid type of datapath passed to this type of dynamic datapath constructor");
-
-#if 0
-	if(NON_PERFECT_BEFORE == datapathType)
-		std::cout << "!!!!!!!!! BEFORE " << loopName << " " << std::to_string(loopLevel) << " byteFrom: " << std::to_string(std::get<0>(interval)) << " to: " << std::to_string(std::get<1>(interval)) << " instCount: " << std::to_string(std::get<2>(interval)) << "\n";
-	else if(NON_PERFECT_BETWEEN == datapathType)
-		std::cout << "!!!!!!!!! BETWEEN " << loopName << " " << std::to_string(loopLevel) << " byteFrom: " << std::to_string(std::get<0>(interval)) << " to: " << std::to_string(std::get<1>(interval)) << " instCount: " << std::to_string(std::get<2>(interval)) << "\n";
-	else if(NON_PERFECT_AFTER == datapathType)
-		std::cout << "!!!!!!!!! AFTER " << loopName << " " << std::to_string(loopLevel) << " byteFrom: " << std::to_string(std::get<0>(interval)) << " to: " << std::to_string(std::get<1>(interval)) << " instCount: " << std::to_string(std::get<2>(interval)) << "\n";
-#endif
-	// XXX DEBUUUUUUUUUUUUGGGGGGGGGGGGGGGGGGGGGGGGGG
-	//return;
 
 	builder->buildInitialDDDG(interval);
 	delete builder;

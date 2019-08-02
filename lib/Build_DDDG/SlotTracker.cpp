@@ -6,43 +6,7 @@ SlotTracker *createSlotTracker(const Module *M) {
 	return new SlotTracker(M);
 }
 
-#if 0
-static SlotTracker *createSlotTracker(const Value *V) {
-	if (const Argument *FA = dyn_cast<Argument>(V))
-		return new SlotTracker(FA->getParent());
-
-	if (const Instruction *I = dyn_cast<Instruction>(V))
-	if (I->getParent())
-		return new SlotTracker(I->getParent()->getParent());
-
-	if (const BasicBlock *BB = dyn_cast<BasicBlock>(V))
-		return new SlotTracker(BB->getParent());
-
-	if (const GlobalVariable *GV = dyn_cast<GlobalVariable>(V))
-		return new SlotTracker(GV->getParent());
-
-	if (const GlobalAlias *GA = dyn_cast<GlobalAlias>(V))
-		return new SlotTracker(GA->getParent());
-
-	if (const Function *Func = dyn_cast<Function>(V))
-		return new SlotTracker(Func);
-
-	if (const MDNode *MD = dyn_cast<MDNode>(V)) {
-		if (!MD->isFunctionLocal())
-			return new SlotTracker(MD->getFunction());
-
-		return new SlotTracker((Function *)0);
-	}
-
-	return 0;
-}
-#endif
-
-#if 0
-#define ST_DEBUG(X) dbgs() << X
-#else
 #define ST_DEBUG(X)
-#endif
 
 // Module level constructor. Causes the contents of the Module (sans functions)
 // to be added to the slot table.

@@ -425,6 +425,19 @@ XilinxHardwareProfile::XilinxHardwareProfile() {
 	usedFF = 0;
 	usedLUT = 0;
 	usedBRAM18k = 0;
+
+	fAddDSP = DSP_FADD;
+	fAddFF = FF_FADD;
+	fAddLUT = LUT_FADD;
+	fSubDSP = DSP_FSUB;
+	fSubFF = FF_FSUB;
+	fSubLUT = LUT_FSUB;
+	fMulDSP = DSP_FMUL;
+	fMulFF = FF_FMUL;
+	fMulLUT = LUT_FMUL;
+	fDivDSP = DSP_FDIV;
+	fDivFF = FF_FDIV;
+	fDivLUT = LUT_FDIV;
 }
 
 void XilinxHardwareProfile::clear() {
@@ -621,7 +634,7 @@ void XilinxHardwareProfile::calculateRequiredResources(
 void XilinxHardwareProfile::setThresholdWithCurrentUsage() {
 	assert(isConstrained && "This hardware profile is not resource-constrained");
 
-	unsigned totalDSP = fAddCount * DSP_FADD + fSubCount * DSP_FSUB + fMulCount * DSP_FMUL + fDivCount * DSP_FDIV;
+	unsigned totalDSP = fAddCount * fAddDSP + fSubCount * fSubDSP + fMulCount * fMulDSP + fDivCount * fDivDSP;
 
 	if(totalDSP > maxDSP) {
 		float scale = (float) totalDSP / (float) maxDSP;
@@ -631,20 +644,20 @@ void XilinxHardwareProfile::setThresholdWithCurrentUsage() {
 		fDivThreshold = (unsigned) std::ceil((float) fDivCount / scale);
 
 		std::vector<unsigned> scaledValues;
-		scaledValues.push_back(fAddThreshold * DSP_FADD);
-		scaledValues.push_back(fSubThreshold * DSP_FSUB);
-		scaledValues.push_back(fMulThreshold * DSP_FMUL);
-		scaledValues.push_back(fDivThreshold * DSP_FDIV);
+		scaledValues.push_back(fAddThreshold * fAddDSP);
+		scaledValues.push_back(fSubThreshold * fSubDSP);
+		scaledValues.push_back(fMulThreshold * fMulDSP);
+		scaledValues.push_back(fDivThreshold * fDivDSP);
 
 		unsigned maxValue = *std::max_element(scaledValues.begin(), scaledValues.end());
 
-		if(maxValue == fAddThreshold * DSP_FADD)
+		if(maxValue == fAddThreshold * fAddDSP)
 			limitedBy.insert(LIMITED_BY_FADD);
-		if(maxValue == fSubThreshold * DSP_FSUB)
+		if(maxValue == fSubThreshold * fSubDSP)
 			limitedBy.insert(LIMITED_BY_FSUB);
-		if(maxValue == fMulThreshold * DSP_FMUL)
+		if(maxValue == fMulThreshold * fMulDSP)
 			limitedBy.insert(LIMITED_BY_FMUL);
-		if(maxValue == fDivThreshold * DSP_FDIV)
+		if(maxValue == fDivThreshold * fDivDSP)
 			limitedBy.insert(LIMITED_BY_FDIV);
 	}
 	else {
@@ -855,14 +868,14 @@ unsigned XilinxHardwareProfile::arrayGetMaximumWritePortsPerPartition() {
 bool XilinxHardwareProfile::fAddAddUnit(bool commit) {
 	// Hardware is constrained, we must first check if it is possible to add a new unit
 	if(isConstrained) {
-		if((usedDSP + DSP_FADD) > maxDSP || (usedFF + FF_FADD) > maxFF || (usedLUT + LUT_FADD) > maxLUT)
+		if((usedDSP + fAddDSP) > maxDSP || (usedFF + fAddFF) > maxFF || (usedLUT + fAddLUT) > maxLUT)
 			return false;
 	}
 
 	if(commit) {
-		usedDSP += DSP_FADD;
-		usedFF += FF_FADD;
-		usedLUT += LUT_FADD;
+		usedDSP += fAddDSP;
+		usedFF += fAddFF;
+		usedLUT += fAddLUT;
 		fAddCount++;
 	}
 
@@ -872,14 +885,14 @@ bool XilinxHardwareProfile::fAddAddUnit(bool commit) {
 bool XilinxHardwareProfile::fSubAddUnit(bool commit) {
 	// Hardware is constrained, we must first check if it is possible to add a new unit
 	if(isConstrained) {
-		if((usedDSP + DSP_FSUB) > maxDSP || (usedFF + FF_FSUB) > maxFF || (usedLUT + LUT_FSUB) > maxLUT)
+		if((usedDSP + fSubDSP) > maxDSP || (usedFF + fSubFF) > maxFF || (usedLUT + fSubLUT) > maxLUT)
 			return false;
 	}
 
 	if(commit) {
-		usedDSP += DSP_FSUB;
-		usedFF += FF_FSUB;
-		usedLUT += LUT_FSUB;
+		usedDSP += fSubDSP;
+		usedFF += fSubFF;
+		usedLUT += fSubLUT;
 		fSubCount++;
 	}
 
@@ -889,14 +902,14 @@ bool XilinxHardwareProfile::fSubAddUnit(bool commit) {
 bool XilinxHardwareProfile::fMulAddUnit(bool commit) {
 	// Hardware is constrained, we must first check if it is possible to add a new unit
 	if(isConstrained) {
-		if((usedDSP + DSP_FMUL) > maxDSP || (usedFF + FF_FMUL) > maxFF || (usedLUT + LUT_FMUL) > maxLUT)
+		if((usedDSP + fMulDSP) > maxDSP || (usedFF + fMulFF) > maxFF || (usedLUT + fMulLUT) > maxLUT)
 			return false;
 	}
 
 	if(commit) {
-		usedDSP += DSP_FMUL;
-		usedFF += FF_FMUL;
-		usedLUT += LUT_FMUL;
+		usedDSP += fMulDSP;
+		usedFF += fMulFF;
+		usedLUT += fMulLUT;
 		fMulCount++;
 	}
 
@@ -906,14 +919,14 @@ bool XilinxHardwareProfile::fMulAddUnit(bool commit) {
 bool XilinxHardwareProfile::fDivAddUnit(bool commit) {
 	// Hardware is constrained, we must first check if it is possible to add a new unit
 	if(isConstrained) {
-		if((usedDSP + DSP_FDIV) > maxDSP || (usedFF + FF_FDIV) > maxFF || (usedLUT + LUT_FDIV) > maxLUT)
+		if((usedDSP + fDivDSP) > maxDSP || (usedFF + fDivFF) > maxFF || (usedLUT + fDivLUT) > maxLUT)
 			return false;
 	}
 
 	if(commit) {
-		usedDSP += DSP_FDIV;
-		usedFF += FF_FDIV;
-		usedLUT += LUT_FDIV;
+		usedDSP += fDivDSP;
+		usedFF += fDivFF;
+		usedLUT += fDivLUT;
 		fDivCount++;
 	}
 
@@ -968,6 +981,59 @@ XilinxZCU102HardwareProfile::XilinxZCU102HardwareProfile() {
 
 		/* Save selected latency for this instruction */
 		effectiveLatencies.insert(std::make_pair(it.first, std::make_pair(currLatency, currInCycleLatency)));
+
+		/* Check if this instruction is resource constrained. If positive, also save the resource count for this FU configuration */
+		std::unordered_map<unsigned, std::map<unsigned, unsigned>>::const_iterator foundDSPs = timeConstrainedDSPs.find(it.first);
+		std::unordered_map<unsigned, std::map<unsigned, unsigned>>::const_iterator foundFFs = timeConstrainedFFs.find(it.first);
+		std::unordered_map<unsigned, std::map<unsigned, unsigned>>::const_iterator foundLUTs = timeConstrainedLUTs.find(it.first);
+		if(LATENCY_FADD32 == it.first) {
+			assert(
+				timeConstrainedDSPs.end() != foundDSPs &&
+				timeConstrainedFFs.end() != foundFFs &&
+				timeConstrainedLUTs.end() != foundLUTs &&
+				"fadd is resource-constrained but hardware profile library has no information about its resources"
+			);
+
+			fAddDSP = foundDSPs->second.at(currLatency);
+			fAddFF = foundFFs->second.at(currLatency);
+			fAddLUT = foundLUTs->second.at(currLatency);
+		}
+		else if(LATENCY_FSUB32 == it.first) {
+			assert(
+				timeConstrainedDSPs.end() != foundDSPs &&
+				timeConstrainedFFs.end() != foundFFs &&
+				timeConstrainedLUTs.end() != foundLUTs &&
+				"fsub is resource-constrained but hardware profile library has no information about its resources"
+			);
+
+			fSubDSP = foundDSPs->second.at(currLatency);
+			fSubFF = foundFFs->second.at(currLatency);
+			fSubLUT = foundLUTs->second.at(currLatency);
+		}
+		else if(LATENCY_FMUL32 == it.first) {
+			assert(
+				timeConstrainedDSPs.end() != foundDSPs &&
+				timeConstrainedFFs.end() != foundFFs &&
+				timeConstrainedLUTs.end() != foundLUTs &&
+				"fmul is resource-constrained but hardware profile library has no information about its resources"
+			);
+
+			fMulDSP = foundDSPs->second.at(currLatency);
+			fMulFF = foundFFs->second.at(currLatency);
+			fMulLUT = foundLUTs->second.at(currLatency);
+		}
+		else if(LATENCY_FDIV32 == it.first) {
+			assert(
+				timeConstrainedDSPs.end() != foundDSPs &&
+				timeConstrainedFFs.end() != foundFFs &&
+				timeConstrainedLUTs.end() != foundLUTs &&
+				"fdiv is resource-constrained but hardware profile library has no information about its resources"
+			);
+
+			fDivDSP = foundDSPs->second.at(currLatency);
+			fDivFF = foundFFs->second.at(currLatency);
+			fDivLUT = foundLUTs->second.at(currLatency);
+		}
 	}
 }
 

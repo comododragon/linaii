@@ -13,13 +13,16 @@
 
 #include "profile_h/lin-profile.h"
 
-#define DEBUG_TYPE "lin-analyzer"
+#define DEBUG_TYPE "lina"
 
 using namespace llvm;
 
 const std::string helpMessage =
-	"Lin-analyzer: A High Level Analysis Tool for FPGA Accelerators\n"
-	"Usage: lin-analyzer [OPTION]... BYTECODEFILE KERNELNAME\n"
+	"Lina: (yet another) High Level Analysis Tool for FPGA Accelerators\n"
+	"    an expansion of the Lin-Analyzer High Level Analysis Tool for FPGA Accelerators\n"
+	"    visit: https://github.com/zhguanw/lin-analyzer\n"
+	"\n"
+	"Usage: lina [OPTION]... BYTECODEFILE KERNELNAME\n"
 	"Where:\n"
 	"    BYTECODEFILE is the optimised .bc file generated with the LLVM toolchain\n"
 	"    KERNELNAME is the kernel name (i.e. function name) to be analysed\n"
@@ -80,8 +83,8 @@ const std::string helpMessage =
 	"                   --fno-ft           : disable FPU threshold optimisation\n"
 	"                   --f-es             : enable extra-scalar\n"
 	"                   --f-rwrwm          : enable RWRW memory\n"
-	"Report bugs to abperina<abperina@usp.br>\n"
-	"or guanwen<guanwen@comp.nus.edu.sg>\n";
+	"\n"
+	"For bug reporting, please file a github issue at https://github.com/comododragon/lina\n";
 
 ArgPack args;
 #ifdef PROGRESSIVE_TRACE_CURSOR
@@ -92,11 +95,15 @@ uint64_t progressiveTraceInstCount = 0;
 int main(int argc, char **argv) {
 	parseInputArguments(argc, argv);
 
-	errs() << "********************************************************\n";
-	errs() << "********************************************************\n\n";
-	errs() << "     Lin-analyzer: An FPGA High-Level Analysis Tool\n\n";
-	errs() << "********************************************************\n";
-	errs() << "********************************************************\n";
+	errs() << "░░░░░░░░░░░░░░░░░░░░░░░░░░░░▒▒\n";
+	errs() << "░░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▒▒\n";
+	errs() << "░░▓░░▓▓▓▓░░▓▓░░▓▓░░▓▓▓░░░░▓▓▒▒\n";
+	errs() << "░░▓░░▓▓▓▓░░▓▓░░░▓░░▓▓░░▓▓░░▓▒▒\n";
+	errs() << "░░▓░░▓▓▓▓░░▓▓░░░░░░▓▓░░░░░░▓▒▒\n";
+	errs() << "░░▓░░▓▓▓▓░░▓▓░░▓░░░▓▓░░▓▓░░▓▒▒\n";
+	errs() << "░░▓░░░░▓▓░░▓▓░░▓▓░░▓▓░░▓▓░░▓▒▒\n";
+	errs() << "░░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▒▒\n";
+	errs() << "▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒\n";
 
 	LLVMContext &Context = getGlobalContext();
 	SMDiagnostic Err;
@@ -416,7 +423,7 @@ void parseInputArguments(int argc, char **argv) {
 		exit(-1);
 	}
 	if(args.frequency > 500.0) {
-		errs() << "Lin-analyzer does not support estimation with target frequency above 500 Mhz\n";
+		errs() << "Lina does not support estimation with target frequency above 500 Mhz\n";
 		exit(-1);
 	}
 

@@ -3,6 +3,6 @@ subdirectories = lib tools
 
 [component_0]
 type = Tool
-name = lin-analyzer
+name = lina
 parent = Tools
 required_libraries = Support LLVMLinProfiler BuildDDDGlib Auxlib

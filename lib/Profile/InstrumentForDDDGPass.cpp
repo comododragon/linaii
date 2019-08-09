@@ -932,7 +932,7 @@ void InstrumentForDDDG::openSummaryFile(std::string kernelName) {
 	assert(summaryFile.is_open() && "Could not open summary output file");
 
 	summaryFile << "================================================\n";
-	summaryFile << "Lin-analyzer summary\n";
+	summaryFile << "Lina summary\n";
 	summaryFile << "================================================\n";
 	summaryFile << "Function name: " << kernelName << "\n";
 }

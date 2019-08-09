@@ -80,11 +80,11 @@ set(LLVM_LINK_COMPONENTS
   )
 	
 #add a dummy file in lin-profile lib
-add_llvm_tool(lin-analyzer
+add_llvm_tool(lina
 	lin-profile.cpp
 	)
 	
-target_link_libraries(lin-analyzer
+target_link_libraries(lina
 	LLVMLinProfiler
 	Auxlib
 	BuildDDDGlib
@@ -95,7 +95,7 @@ add_subdirectory(include)
 add_subdirectory(lib)
 # add_subdirectory(tools)
 
-OPTION(ENABLE_TESTSUITE "setup the testsuite environment for lin-analyzer" OFF)
+OPTION(ENABLE_TESTSUITE "setup the testsuite environment for lina" OFF)
 IF (ENABLE_TESTSUITE)
 	add_subdirectory(testsuite)
 ENDIF (ENABLE_TESTSUITE) 

@@ -645,7 +645,7 @@ void BaseDatapath::optimiseDDDG() {
 		bool activate = args.fSLROpt;
 
 		if(!activate) {
-			// If both --fno-slr and --f-slr are omitted, lin-analyzer will activate it if the inntermost loop is fully unrolled
+			// If both --fno-slr and --f-slr are omitted, lina will activate it if the inntermost loop is fully unrolled
 			loopName2levelUnrollVecMapTy::iterator found = loopName2levelUnrollVecMap.find(loopName);
 			assert(found != loopName2levelUnrollVecMap.end() && "Loop not found in loopName2levelUnrollVecMap");
 			std::vector<unsigned> unrollFactors = found->second;
@@ -1701,7 +1701,7 @@ BaseDatapath::RCScheduler::RCScheduler(
 		dumpFile.open(args.outWorkDir + appendDepthToLoopName(loopName, loopLevel) + datapathTypeStr + ".sched.rpt");
 
 		dumpFile << "================================================\n";
-		dumpFile << "Lin-analyzer scheduling report file\n";
+		dumpFile << "Lina scheduling report file\n";
 		dumpFile << "Loop name: " << loopName << "\n";
 		if(args.fNoTCS)
 			dumpFile << "Time-constrained scheduling disabled\n";

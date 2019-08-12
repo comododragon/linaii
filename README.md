@@ -16,7 +16,7 @@ Lina is distributed under the GPL-3.0 licence, so as Lin-Analyzer.
 
 According to Lin-Analyzer repository: *"Dynamic data graph generation (DDDG) and few of optimization functions in Lin-Analyzer are modified from Aladdin project and Lin-Analyzer is also followed Aladdin's license. For more information, please visit Aladdin's website: https://github.com/ysshao/ALADDIN"*.
 
-The ```include/common.h``` header is distributed under the GPL-3.0 licence. See the following repo for details: https://github.com/comododragon/commonh
+The ```common.h``` header is distributed under the GPL-3.0 licence. See the following repo for details: https://github.com/comododragon/commonh
 
 The kernels in folder ```misc/kernels``` are adapted from PolyBench/C, which follows the GPL-2.0 licence. Please see: https://sourceforge.net/projects/polybench/
 
@@ -31,12 +31,16 @@ Compilation of Lina was tested in the following systems:
 Before proceeding to compilation, you must ensure that the following packages are installed:
 
 * GNU Compiler Collection. For Ubuntu, run:
+
 ```$ sudo apt-get install build-essential```
 * ZLIB development libraries. For Ubuntu, run:
+
 ```$ sudo apt-get install zlib1g-dev```
 * GIT. For Ubuntu, run:
+
 ```$ sudo apt-get install git```
 * CMAKE. For Ubuntu, run:
+
 ```$ sudo apt-get install cmake```
 
 *You can also compile LLVM using other toolchains, such as ```clang```. Please see https://releases.llvm.org/3.5.0/docs/GettingStarted.html*

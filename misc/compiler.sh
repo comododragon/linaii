@@ -13,7 +13,7 @@ echo -e "\u001b[43;1mStarting LINA compiler...\u001b[0m."
 
 echo -e "\u001b[43;1mThis will compile Lina on your machine and will take some time\u001b[0m"
 echo -e "\u001b[41;1mAny previous compile attempt in this folder will be removed!\u001b[0m"
-echo -e "\u001b[41;1mPlease confirm that you have ZLIB and CLANG installed!\u001b[0m"
+echo -e "\u001b[41;1mPlease confirm that you have GCC/GLIBC/etc, GIT, ZLIB and CMAKE installed!\u001b[0m"
 echo -ne "\u001b[43;1mPress ENTER to proceed or CTRL+C to abort... \u001b[0m"
 read
 

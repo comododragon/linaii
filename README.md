@@ -1,162 +1,117 @@
-# Lin-Analyzer
+# Lina
 
-***This is a refactored slightly-optimised version of Lin-Analyzer. Currently it works pretty much the same way with just some differences in the command line. It is under construction for the addition of new functionalities. The rest of this README.md is the original. For information about the new command line, execute lin-analyzer -h***
+(yet another) High Level Analysis Tool for FPGA Accelerators
 
-A high-level performance analysis tool for FPGA-based accelerator.
+## Introduction
 
-## Installation
-### Linux Installation
+Lina is a pre-HLS performance estimator for C/C++ codes targetting Xilinx FPGAs with Vivado HLS or its variants. Given a C/C++ code, it generates the Dynamic Data Dependence Graph (DDDG) and schedules its nodes to estimate the performance (cycle count) of the code for the Vivado HLS toolchain. Several optimisation directives (e.g. loop unroll, pipelining) can be provided and Lina estimates the performance according to those constraints. Lina enables fast design space exploration by providing results in significantly less time than FPGA synthesis or even the HLS compilation process.
 
-Assume you have the following directory structure (windows setup is similar):
+Lina is an expansion of the Lin-Analyzer project (see https://github.com/zhguanw/lin-analyzer). It uses the same traced execution and (pretty much the same) DDDG scheduling. However, Lina adds Timing-Constrained Scheduling (TCS) and Non-Perfect Loop Analysis (NPLA). The TCS provides a more precise estimation considering a user-provided operational frequency for the design, while NPLA generalises the estimation to non-perfect loop nests. Moreover, Lina has some improved logic to estimate certain border cases where Lin-Analyzer did not properly estimate.
+
+For more information regarding Lina, please refer to our paper (see Section ***Publications***).
+
+## Licence
+
+Lina is distributed under the GPL-3.0 licence, so as Lin-Analyzer.
+
+According to Lin-Analyzer repository: *"Dynamic data graph generation (DDDG) and few of optimization functions in Lin-Analyzer are modified from Aladdin project and Lin-Analyzer is also followed Aladdin's license. For more information, please visit Aladdin's website: https://github.com/ysshao/ALADDIN"*.
+
+The ```include/common.h``` header is distributed under the GPL-3.0 licence. See the following repo for details: https://github.com/comododragon/commonh
+
+The kernels in folder ```misc/kernels``` are adapted from PolyBench/C, which follows the GPL-2.0 licence. Please see: https://sourceforge.net/projects/polybench/
+
+## Setup
+
+Lina makes use of the LLVM Compiler Framework 3.5.0. In order to use Lina, it must be compiled together with ```llvm``` and ```clang```.
+
+Compilation of Lina was tested in the following systems:
+* Arch Linux with Linux kernel 5.2.0-arch2-1-ARCH;
+* Ubuntu 18.04 LTS, clean install.
+
+Before proceeding to compilation, you must ensure that the following packages are installed:
+
+* GNU Compiler Collection. For Ubuntu, run:
+```$ sudo apt-get install build-essential```
+* ZLIB development libraries. For Ubuntu, run:
+```$ sudo apt-get install zlib1g-dev```
+* GIT. For Ubuntu, run:
+```$ sudo apt-get install git```
+* CMAKE. For Ubuntu, run:
+```$ sudo apt-get install cmake```
+
+*You can also compile LLVM using other toolchains, such as ```clang```. Please see https://releases.llvm.org/3.5.0/docs/GettingStarted.html*
+
+At last, the relation between ```cmake``` and ```zlib``` is quite tricky, mainly in Ubuntu. We are assuming here that installing the ```zlib``` package will put the shared library ```zlib.so``` at ```/usr/lib```. Ubuntu puts ```zlib``` on a different location and this breaks compilation. ***Please make sure that you have a valid library (or a link to) at the /usr/lib/libz.so location.*** You can do that by listing the file:
 ```
-$HOME
-   ~/llvm
-   ~/llvm/tools/clang
-   ~/llvm/tools/lin-analyzer
-   ~/build
-   ~/boost_1_57_0
-```
-
-* LLVM and clang 3.5: 
-
-```
-wget http://llvm.org/releases/3.5.0/llvm-3.5.0.src.tar.xz
-wget http://llvm.org/releases/3.5.0/cfe-3.5.0.src.tar.xz
-tar -xvf llvm-3.5.0.src.tar.xz
-mv llvm-3.5.0.src llvm
-tar -xvf cfe-3.5.0.src.tar.xz
-mv cfe-3.5.0.src clang
-cp -r clang llvm/tools
-```
-
-* Lin-Analyzer:
-
-```
-cd ~/llvm/tools
-git clone git@github.com:zhguanw/lin-analyzer.git
-open ~/llvm/tools/CMakeLists.txt and add "add_llvm_tool_subdirectory(lin-analyzer)" to it
-open ~/llvm/CMakeLists.txt and add "set(LLVM_REQUIRES_RTTI 1)" to enable RTTI feature
-```
-
-* Boost graph library: 
-
-```
-cd ~
-wget http://softlayer-sng.dl.sourceforge.net/project/boost/boost/1.57.0/boost_1_57_0.tar.gz
-tar -xvf boost_1_57_0.tar.gz
-```
-
-* zlib library, version 1.2.8
-
-```
-sudo apt-get install zlib1g-dev
+$ ls /usr/lib/libz.so
 ```
 
-* cmake
-
+If it shows ```no such file or directory``` or it lists a broken link, please (re-)create the soft link pointing to the correct library. In Ubuntu 18.04 for example, it is located at ```/lib/x86_64-linux-gnu/libz.so.1```. In this case the soft-link should be created as:
 ```
-sudo apt-get install cmake
-```
-(I use version 2.8.12.2, higher version should be fine)
-
-* Install Lin-Analyzer
-```
-cd ~
-mkdir build
-cd ~/build
-cmake ~/llvm -DBOOST_INCLUDE_DIR=/your-path-to/boost_1_57_0 -DZLIB_INCLUDE_DIRS=/usr/include -DZLIB_LIBRARY=/usr/lib/x86_64-linux-gnu/libz.so
+$ cd /usr/lib
+$ ln-s /lib/x86_64-linux-gnu/libz.so.1 libz.so
 ```
 
-### Windows Installation
-I use cygwin, so the first three steps above are the same.
+Alternatively, you can change the compiler script (or the ```cmake``` command if compiling manually) to point to the correct ```zlib``` position. Ou can do that by modifying the value passed to the ```-DZLIB_LIBRARY=``` flag of the ```cmake``` command. In this case you don't need to perform any soft-linking.
 
-* Install Visual Studio 2013 (32-bit or 64-bit)
-* zlib 1.2.8:
+## Compilation
+
+You can either compile Lina manually by following the instructions presented in Section ***Manual Compilation*** below or by using the automated compiling script.
+
+### Automatic Compilation
+
+We have provided an automated BASH compilation script at ```misc/compiler.sh```. It simply follows the instructions from ***Manual Compilation*** and applies patches automatically if necessary.
+
+To use automatic compilation:
+
+1. Make sure you read and understood the Section ***Setup*** (in other words, make sure that you have ```gcc```, ```zlib```, ```git``` and ```cmake```);
+2. Download the automated compilation script at ```misc/compiler.sh```(https://raw.githubusercontent.com/comododragon/lina/master/misc/compiler.sh);
+3. Create a folder where you wish to compile everything (for example purposes, we will refer this path as ```/path/to/lina```) and place the compiler script inside;
+4. Give execution permission to ```compiler.sh```:
 ```
-(a). Download zlib from http://zlib.net/zlib-1.2.8.tar.gz and uncompress it
-(b). vim your_path_to\zlib-1.2.8\contrib\masmx86\bld_ml32.bat
-     ml.exe /coff /Zi /c /Flmatch686.lst match686.asm
-     ml.exe /coff /Zi /c /Flinffas32.lst inffas32.asm
-(c). Set Visual Studio to the system environment:
-     PATH = %PATH:your_path_to\Microsoft Visual Studio 13.0\VC\bin
-(d). Open zlibvc.sln using vs2013 located at your_path_to\zlib-1.2.8\contrib\vstudio\vc11
-(e). Open properties of zlibstat project and remove "ZLIB_WINAPI;" from  "Configuration Properties -> C/C++ -> Preprocessor -> Preprocessor Definitions"
-(f). If you generate 64-bit lin-analyzer, then you also need to generate 64-bit zlib library. To do this, you need to Open "Configuration Manager" and change "Win32" to "x64" under "Platform"
-(g). Build the static library. 
-(h). After successfully building the zlib static library, you need to specify its absolute path for ZLIB_INCLUDE_DIRS and ZLIB_LIBRARY variables in cmake.
+$ chmod +x compiler.sh
 ```
-
-* Install cmake 2.8.12.2
+5. Execute the script:
 ```
-Use cmake to compile llvm and setup Visual Studio project files
-Will update detailed instructions soon...
+$ ./compiler.sh
 ```
+6. Follow the instructions on-screen;
+	* The script will download LLVM, CLANG, BOOST and Lina, prepare the folders and execute ```cmake```;
+	* It will ask before compiling if you want to apply some patches. Please read Section ***Troubleshooting*** for better understanding. In doubt, just press ENTER and the patches will be ignored. If compilation fails, you will have another chance to apply the patches;
+	* ***Every time the script is executed, the whole operation is re-executed (i.e. no incremental compilation with the script!);***
+	* Right after ```cmake``` and before starting the whole compilation process, the script will give you the option to abort the script and leave the project as is. At this point you will have the project ready to be compiled, where you can insert your modifications or fix some system-related problems regarding dependencies. Then, simply follow Section ***Manual Compilation*** from step ***TODOOOOOOOOOOOOOOOOOO***;
+	* If everything goes right, you should have the ```lina``` binary at ```/path/to/lina/build/bin/lina```.
 
-## Getting started
-* Lin-Analyzer options
-```
-Usage:	lin-analyzer [file.bc] -Ipath=[path] -config=[filename] [kernel-name] -Opath=[path] -TargetLoops=[index] [options]
-Options:
-	-h, --help               Help information.
-	-profiling-time          Profile kernels without FPGA estimation.
-	-mem-trace               Obtain memory trace for access pattern analysis without FPGA estimation. This
-	                         option should be used with -profiling-time together.
-	-no-trace                Disable dynamic trace generation.
-	-TargetLoops             Specify target loops focused. Eg., -TargetLoops=2,3: only analyse loop 2 and 3.
-	-cfg-detailed            Show CFG with detailed instructions.
-	-cfg-only                Show CFG only with basic blocks.
-	-dddg-bf-opt             Show DDDG before optimization. May slow down program if input size is large
-	-dddg-af-opt             Show DDDG after optimization. May slow down program if input size is large
-	-verbose                 Verbose mode, print more information.
-	-dis-store-buffer        Disable store-buffer optimization.
-	-shared-load-removal     Enable shared-load-removal optimization.
-	-dis-shared-load-removal Disable shared-load-removal opt., even for completely unrolling config.
-	-dis-rp-store-removal    Disable repeated-store-removal optimization.
-	-THR-float               Enable tree height reduction optimization for floating point operations.
-	-THR-integer             Enable tree height reduction optimization for integer operations.
-	-memory-disambig         Enable memory disambiguation optimization.
-	-dis-fp-threshold        Disable floating point unit threshold and area budget is unlimited.
-	-en-extra-scalar         Sometimes, result might be shifted, this option is used to improve prediction.
-	-en-rw-rw-memory         Use memory with two ports and each supports read and write operation. Default is
-	                         read-only and read-write.
-	-vc707                   Target for Xilinx Virtex7 VC707. Default is Xilinx Zedboard or ZC702
-```
+### Manual Compilation
 
-2. Design Space Exploration
-```
-export BOOST_ROOT=~/boost_1_57_0
-export LD_LIBRARY_PATH=~/build/bin/lib
-export LLVM_BIN_HOME=~/build/bin
-export LLVM_SRC=~/llvm
-export TESTBENCH_HOME=~/llvm/tools/lin-analyzer/testsuite/Ecobench
-cd ~/llvm/tools/lin-analyzer/testsuite/Ecobench/scripts
-python run_dse.py
-```
+TODO
 
-3. Windows
-```
-Similar to Linux command, but use Visual Studio;
-Will update it soon...
-```
+## Example of Use
 
-## License
+TODO
 
-Lin-Analyzer is licensed under the GPL-3.0 license.
+## Files Description
 
-Dynamic data graph generation (DDDG) and few of optimization functions in Lin-Analyzer are modified from Aladdin project and Lin-Analyzer is also followed Aladdin's license. For more information, please visit Aladdin's website: https://github.com/ysshao/ALADDIN
+TODO
 
-## Citation
+## Supported Platforms
 
-If you use Lin-Analyzer in your research, please cite
+TODO
 
-Lin-Analyzer: A High-level Performance Analysis Tool for FPGA-based Accelerators,
-Guanwen Zhong, Alok Prakash,Yun Liang, Tulika Mitra, Smail Niar,
-53rd ACM/IEEE Design Automation Conference, June 2016
+### Adding a New Platform
 
-==========================
+TODO
 
-Guanwen (Henry) Zhong,
+## Troubleshooting
 
-guanwen@comp.nus.edu.sg
+TODO
 
-National University of Singapore, 2016
+## TODOs
+
+TODO (lol)
+
+## Acknowledgements
+
+The project author would like to thank São Paulo Research Foundation (FAPESP), who funds the research where this project is inserted (Grant 2016/18937-7).
+
+The opinions, hypotheses, conclusions or recommendations contained in this material are the sole responsibility of the author(s) and do not necessarily reflect FAPESP opinion.

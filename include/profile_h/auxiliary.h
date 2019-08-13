@@ -122,7 +122,7 @@ public:
 		size_t wordSize;
 		uint64_t pFactor;
 	} partitionCfgTy;
-	typedef std::unordered_map<std::string, partitionCfgTy *> partitionCfgMapTy;
+	typedef std::unordered_map<std::string, partitionCfgTy> partitionCfgMapTy;
 	typedef struct {
 		uint64_t totalSize;
 		size_t wordSize;

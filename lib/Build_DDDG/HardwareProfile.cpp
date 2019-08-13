@@ -333,7 +333,7 @@ void HardwareProfile::fDivRelease() {
 }
 
 void HardwareProfile::fCmpRelease() {
-	assert(false && "fCmp is not constrained");
+	//assert(false && "fCmp is not constrained");
 }
 
 void HardwareProfile::loadRelease(std::string arrayPartitionName) {
@@ -365,11 +365,11 @@ void HardwareProfile::storeRelease(std::string arrayPartitionName) {
 }
 
 void HardwareProfile::intOpRelease(unsigned opcode) {
-	assert(false && "Integer ops are not constrained");
+	//assert(false && "Integer ops are not constrained");
 }
 
 void HardwareProfile::callRelease() {
-	assert(false && "Calls are not constrained");
+	//assert(false && "Calls are not constrained");
 }
 void XilinxHardwareProfile::clear() {
 	HardwareProfile::clear();
@@ -628,9 +628,9 @@ void XilinxHardwareProfile::setMemoryCurrentUsage(
 		ConfigurationManager::partitionCfgMapTy::const_iterator found2 = partitionCfgMap.find(arrayName);
 
 		if(found != completePartitionCfgMap.end())
-			arrayNameToConfig.insert(std::make_pair(arrayName, std::make_tuple(0, found->second->size, wordSizeInByte))); 
+			arrayNameToConfig.insert(std::make_pair(arrayName, std::make_tuple(0, found->second.size, wordSizeInByte))); 
 		else if(found2 != partitionCfgMap.end())
-			arrayNameToConfig.insert(std::make_pair(arrayName, std::make_tuple(found2->second->pFactor, found2->second->size, found2->second->wordSize)));
+			arrayNameToConfig.insert(std::make_pair(arrayName, std::make_tuple(found2->second.pFactor, found2->second.size, found2->second.wordSize)));
 		else
 			arrayNameToConfig.insert(std::make_pair(arrayName, std::make_tuple(1, sizeInByte, wordSizeInByte)));
 	}

@@ -204,6 +204,7 @@ private:
 	HardwareProfile *profile;
 
 	void findMinimumRankPair(std::pair<unsigned, unsigned> &pair, std::map<unsigned, unsigned> rankMap);
+	static bool prioritiseSmallerResIIMem(const std::pair<std::string, double> &first, const std::pair<std::string, double> &second) { return first.second < second.second; }
 
 public:
 #ifdef USE_FUTURE
@@ -246,7 +247,7 @@ protected:
 	};
 	// Additional costs for latency calculation
 	enum {
-		EXTRA_ENTER_EXIT_LOOP_LATENCY = 2
+		EXTRA_ENTER_EXIT_LOOP_LATENCY = 3
 	};
 
 	bool enablePipelining;

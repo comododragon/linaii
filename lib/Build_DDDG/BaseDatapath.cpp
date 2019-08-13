@@ -572,9 +572,9 @@ void BaseDatapath::initScratchpadPartitions() {
 
 		ConfigurationManager::partitionCfgMapTy::const_iterator found = partitionMap.find(label);
 		if(found != partitionMap.end()) {
-			unsigned type = found->second->type;
-			uint64_t size = found->second->size;
-			uint64_t pFactor = found->second->pFactor;
+			unsigned type = found->second.type;
+			uint64_t size = found->second.size;
+			uint64_t pFactor = found->second.pFactor;
 
 			if(1 == pFactor)
 				continue;
@@ -1331,7 +1331,7 @@ std::tuple<std::string, uint64_t> BaseDatapath::calculateResIIMem() {
 		it.second = (readII > writeII)? readII : writeII;
 	}
 
-	std::map<std::string, uint64_t>::iterator maxIt = std::max_element(arrayPartitionToResII.begin(), arrayPartitionToResII.end());
+	std::map<std::string, uint64_t>::iterator maxIt = std::max_element(arrayPartitionToResII.begin(), arrayPartitionToResII.end(), prioritiseSmallerResIIMem);
 
 	if(maxIt->second > 1)
 		return std::make_tuple(maxIt->first, maxIt->second);
@@ -1486,10 +1486,6 @@ uint64_t BaseDatapath::getLoopTotalLatency(uint64_t rcIL, uint64_t maxII) {
 
 		if(loopLevel - 1 == i)
 			noPipelineLatency = rcIL * (currentLoopBound / unrollFactor) + EXTRA_ENTER_EXIT_LOOP_LATENCY;
-		// TODO: I think if we want to support nested loops with instructions in between, changes would be needed here
-		else if(1 == i) {
-			noPipelineLatency = noPipelineLatency * (currentLoopBound / unrollFactor) + EXTRA_ENTER_EXIT_LOOP_LATENCY;
-		}
 		else {
 			noPipelineLatency = noPipelineLatency * (currentLoopBound / unrollFactor);
 		}
@@ -1746,9 +1742,7 @@ uint64_t BaseDatapath::RCScheduler::schedule() {
 	}
 
 	// XXX: I could not clearly get why (i - 1) and (i + 1) but not (i) and (i + 1)
-	//return (args.fExtraScalar)? cycleTick + 1 : cycleTick - 1;
-	// XXX: Changing to see if it improves accuracy
-	return (args.fExtraScalar)? cycleTick + 1 : cycleTick;
+	return (args.fExtraScalar)? cycleTick + 1 : cycleTick - 1;
 }
 
 void BaseDatapath::RCScheduler::assignReadyStartingNodes() {

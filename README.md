@@ -72,13 +72,13 @@ To use automatic compilation:
 2. Download the automated compilation script at ```misc/compiler.sh```(https://raw.githubusercontent.com/comododragon/lina/master/misc/compiler.sh);
 3. Create a folder where you wish to compile everything (for example purposes, we will refer this path as ```/path/to/lina```) and place the compiler script inside;
 4. Give execution permission to ```compiler.sh```:
-```
-$ chmod +x compiler.sh
-```
+	```
+	$ chmod +x compiler.sh
+	```
 5. Execute the script:
-```
-$ ./compiler.sh
-```
+	```
+	$ ./compiler.sh
+	```
 6. Follow the instructions on-screen;
 	* The script will download LLVM, CLANG, BOOST and Lina, prepare the folders and execute ```cmake```;
 	* It will ask before compiling if you want to apply some patches. Please read Section ***Troubleshooting*** for better understanding. In doubt, just press ENTER and the patches will be ignored. If compilation fails, you will have another chance to apply the patches;
@@ -92,56 +92,56 @@ The script simply executes the following steps automatically:
 
 1. Make sure you read and understood the Section ***Setup*** (in other words, make sure that you have ```gcc```, ```zlib```, ```git``` and ```cmake```);
 2. Create your compilation folder and ```cd``` to it:
-```
-$ mkdir /path/to/lina
-$ cd /path/to/lina
-```
+	```
+	$ mkdir /path/to/lina
+	$ cd /path/to/lina
+	```
 3. Download LLVM 3.5.0 and extract to folder ```llvm```:
-```
-$ wget "http://releases.llvm.org/3.5.0/llvm-3.5.0.src.tar.xz"
-$ tar xvf llvm-3.5.0.src.tar.xz
-$ mv llvm-3.5.0.src llvm
-```
+	```
+	$ wget "http://releases.llvm.org/3.5.0/llvm-3.5.0.src.tar.xz"
+	$ tar xvf llvm-3.5.0.src.tar.xz
+	$ mv llvm-3.5.0.src llvm
+	```
 4. Download CLANG 3.5.0 and extract to folder ```llvm/tools/clang```:
-```
-$ wget "http://releases.llvm.org/3.5.0/cfe-3.5.0.src.tar.xz"
-$ tar xvf cfe-3.5.0.src.tar.xz
-$ mv cfe-3.5.0.src llvm/tools/clang
-```
+	```
+	$ wget "http://releases.llvm.org/3.5.0/cfe-3.5.0.src.tar.xz"
+	$ tar xvf cfe-3.5.0.src.tar.xz
+	$ mv cfe-3.5.0.src llvm/tools/clang
+	```
 5. Clone Lina to folder ```llvm/tools/lina```:
-```
-$ git clone https://github.com/comododragon/lina.git
-$ mv lina llvm/tools/lina
-```
+	```
+	$ git clone https://github.com/comododragon/lina.git
+	$ mv lina llvm/tools/lina
+	```
 6. Add the line ```add_llvm_tool_subdirectory(lina)``` right before ```add_llvm_tool_subdirectory(opt)``` at file ```llvm/tools/CMakeLists.txt```. It should look something like:
-```
-...
-else(WITH_POLLY)
-  list(APPEND LLVM_IMPLICIT_PROJECT_IGNORE "${LLVM_MAIN_SRC_DIR}/tools/polly")
-endif(WITH_POLLY)
+	```
+	...
+	else(WITH_POLLY)
+	  list(APPEND LLVM_IMPLICIT_PROJECT_IGNORE "${LLVM_MAIN_SRC_DIR}/tools/polly")
+	endif(WITH_POLLY)
 
-add_llvm_tool_subdirectory(lina)
-add_llvm_tool_subdirectory(opt)
-add_llvm_tool_subdirectory(llvm-as)
-...
-```
+	add_llvm_tool_subdirectory(lina)
+	add_llvm_tool_subdirectory(opt)
+	add_llvm_tool_subdirectory(llvm-as)
+	...
+	```
 7. Add the line ```set(LLVM_REQUIRES_RTTI 1)``` at the end of file ```llvm/CMakeLists.txt```;
 8. Download BOOST and extract to folder ```boost```:
-```
-$ wget "http://sourceforge.net/projects/boost/files/boost/1.57.0/boost_1_57_0.tar.gz"
-$ tar xvf boost_1_57_0.tar.gz
-$ mv boost_1_57_0 boost
-```
+	```
+	$ wget "http://sourceforge.net/projects/boost/files/boost/1.57.0/boost_1_57_0.tar.gz"
+	$ tar xvf boost_1_57_0.tar.gz
+	$ mv boost_1_57_0 boost
+	```
 9. Create build folder and run ```cmake```:
-```
-$ mkdir build
-$ cd build
-$ cmake ../llvm -DBOOST_INCLUDE_DIR=../boost -DZLIB_INCLUDE_DIRS=/usr/include -DZLIB_LIBRARY=/usr/lib/libz.so -DLLVM_ENABLE_RTTI:BOOL=ON
-```
+	```
+	$ mkdir build
+	$ cd build
+	$ cmake ../llvm -DBOOST_INCLUDE_DIR=../boost -DZLIB_INCLUDE_DIRS=/usr/include -DZLIB_LIBRARY=/usr/lib/libz.so -DLLVM_ENABLE_RTTI:BOOL=ON
+	```
 10. Now you can finally make:
-```
-$ make
-```
+	```
+	$ make
+	```
 11. If everything goes well, you will have the Lina binary at ```path/to/lina/build/bin```. If not, please see Section ***Troubleshooting***.
 
 ## Usage
@@ -206,117 +206,117 @@ int main(void) {
 ```
 
 1. First, make sure you are using LLVM 3.5.0 binaries, as other versions may have incompatible intermediate representations. You can find the 3.5.0 binaries together with the compilation of Lina:
-```
-$ export PATH=/path/to/lina/build/bin:$PATH
-```
+	```
+	$ export PATH=/path/to/lina/build/bin:$PATH
+	```
 2. Create a folder for your Lina project, create a file ```test.cpp``` and insert the contents of the code above;
 3. No we have to create a configuration file for this project, which will inform Lina the size of each array and also optimisation directives. Let's create a file ```config.cfg``` and enable partial loop unrolling with factor 4 on both loops (please see Section ***Configuration File*** for more information about this file):
-```
-array,A,4096,4
-array,x,128,4
-array,y,128,4
-unrolling,mvp,0,1,4,4
-unrolling,mvp,0,2,5,4
-```
+	```
+	array,A,4096,4
+	array,x,128,4
+	array,y,128,4
+	unrolling,mvp,0,1,4,4
+	unrolling,mvp,0,2,5,4
+	```
 4. We must compile ```test.cpp``` to the LLVM intermediate representation and also apply some optimisations before using Lina:
-```
-$ clang -O1 -emit-llvm -c test.cpp -o test.bc
-$ opt -mem2reg -instnamer -lcssa -indvars test.bc -o test_opt.bc
-```
+	```
+	$ clang -O1 -emit-llvm -c test.cpp -o test.bc
+	$ opt -mem2reg -instnamer -lcssa -indvars test.bc -o test_opt.bc
+	```
 5. Then, we can run Lina. You must pass the ```test_opt.bc``` file and the kernel name ```mvp``` as the two last positional arguments of Lina:
-```
-lina --config-file=config.cfg --target=ZCU102 --loops=0 test_opt.bc mvp
-```
+	```
+	lina --config-file=config.cfg --target=ZCU102 --loops=0 test_opt.bc mvp
+	```
 6. Lina should give you a report of the cycle counts, similar to:
-```
-░░░░░░░░░░░░░░░░░░░░░░░░░░░░▒▒
-░░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▒▒
-░░▓░░▓▓▓▓░░▓▓░░▓▓░░▓▓▓░░░░▓▓▒▒
-░░▓░░▓▓▓▓░░▓▓░░░▓░░▓▓░░▓▓░░▓▒▒
-░░▓░░▓▓▓▓░░▓▓░░░░░░▓▓░░░░░░▓▒▒
-░░▓░░▓▓▓▓░░▓▓░░▓░░░▓▓░░▓▓░░▓▒▒
-░░▓░░░░▓▓░░▓▓░░▓▓░░▓▓░░▓▓░░▓▒▒
-░░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▒▒
-▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒
-========================================================
-Building mangled-demangled function name map
-========================================================
-Counting number of top-level loops in "_Z3mvpPfS_S_"
-========================================================
-Assigning IDs to BBs, acquiring array names
-========================================================
-Assigning IDs to load and store instructions
-========================================================
-Extracting loops information
-========================================================
-Starting code instrumentation for DDDG generation
-********************************************************
-********************************************************
-************** See ya in a minute or so! ***************
-********************************************************
-********************************************************
-********************* Hello back! **********************
-********************************************************
-********************************************************
-[][][_Z3mvpPfS_S__loop-0_2] Estimated cycles: 5672
-```
+	```
+	░░░░░░░░░░░░░░░░░░░░░░░░░░░░▒▒
+	░░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▒▒
+	░░▓░░▓▓▓▓░░▓▓░░▓▓░░▓▓▓░░░░▓▓▒▒
+	░░▓░░▓▓▓▓░░▓▓░░░▓░░▓▓░░▓▓░░▓▒▒
+	░░▓░░▓▓▓▓░░▓▓░░░░░░▓▓░░░░░░▓▒▒
+	░░▓░░▓▓▓▓░░▓▓░░▓░░░▓▓░░▓▓░░▓▒▒
+	░░▓░░░░▓▓░░▓▓░░▓▓░░▓▓░░▓▓░░▓▒▒
+	░░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▒▒
+	▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒
+	========================================================
+	Building mangled-demangled function name map
+	========================================================
+	Counting number of top-level loops in "_Z3mvpPfS_S_"
+	========================================================
+	Assigning IDs to BBs, acquiring array names
+	========================================================
+	Assigning IDs to load and store instructions
+	========================================================
+	Extracting loops information
+	========================================================
+	Starting code instrumentation for DDDG generation
+	********************************************************
+	********************************************************
+	************** See ya in a minute or so! ***************
+	********************************************************
+	********************************************************
+	********************* Hello back! **********************
+	********************************************************
+	********************************************************
+	[][][_Z3mvpPfS_S__loop-0_2] Estimated cycles: 5672
+	```
 
 We can compare the results against the reports from Vivado. In this case, we used Vivado HLS 2018.2 for the ZCU102 Xilinx UltraScale+ Board.
 
 1. We have to modify ```test.cpp``` to insert the unrolling pragmas for Vivado:
-```
-#define SIZE 32
+	```
+	#define SIZE 32
 
-void mvp(float A[SIZE * SIZE], float x[SIZE], float y[SIZE]) {
-	for(int i = 0; i < SIZE; i++) {
-#pragma HLS unroll factor=4
-		for(int j = 0; j < SIZE; j++) {
-#pragma HLS unroll factor=4
-			x[i] += A[i * SIZE + j] * y[j];
+	void mvp(float A[SIZE * SIZE], float x[SIZE], float y[SIZE]) {
+		for(int i = 0; i < SIZE; i++) {
+	#pragma HLS unroll factor=4
+			for(int j = 0; j < SIZE; j++) {
+	#pragma HLS unroll factor=4
+				x[i] += A[i * SIZE + j] * y[j];
+			}
 		}
 	}
-}
 
-int main(void) {
-	float A[SIZE * SIZE], x[SIZE], y[SIZE];
+	int main(void) {
+		float A[SIZE * SIZE], x[SIZE], y[SIZE];
 
-	for(int j = 0; j < SIZE; j++) {
-		y[j] = j;
+		for(int j = 0; j < SIZE; j++) {
+			y[j] = j;
 
-		for(int i = 0; i < SIZE; i++)
-			A[i * SIZE + j] = i + j;
+			for(int i = 0; i < SIZE; i++)
+				A[i * SIZE + j] = i + j;
+		}
+
+		mvp(A, x, y);
+
+		return 0;
 	}
-
-	mvp(A, x, y);
-
-	return 0;
-}
-```
+	```
 2. Then, we can create a script ```script.tcl``` for Vivado HLS with the same configurations as Lina:
-```
-open_project mvp
-set_top mvp
-add_files test.cpp
-open_solution "solution1"
-set_part {xczu9eg-ffvb1156-2-e}
-create_clock -period 10 -name default
-set_clock_uncertainty 27.0%
-csynth_design
-exit
-```
+	```
+	open_project mvp
+	set_top mvp
+	add_files test.cpp
+	open_solution "solution1"
+	set_part {xczu9eg-ffvb1156-2-e}
+	create_clock -period 10 -name default
+	set_clock_uncertainty 27.0%
+	csynth_design
+	exit
+	```
 3. Run Vivado and wait for the HLS process to finish:
-```
-$ vivado_hls -f script.tcl
-```
+	```
+	$ vivado_hls -f script.tcl
+	```
 4. You can find at ```mvp/solution1/syn/report/mvp_csynth.rpt``` the cycle count for the loop:
-```
-+-------------+------+------+----------+-----------+-----------+------+----------+
-|             |   Latency   | Iteration|  Initiation Interval  | Trip |          |
-|  Loop Name  |  min |  max |  Latency |  achieved |   target  | Count| Pipelined|
-+-------------+------+------+----------+-----------+-----------+------+----------+
-|- Loop 1     |  5672|  5672|       709|          -|          -|     8|    no    |
-+-------------+------+------+----------+-----------+-----------+------+----------+
-```
+	```
+	+-------------+------+------+----------+-----------+-----------+------+----------+
+	|             |   Latency   | Iteration|  Initiation Interval  | Trip |          |
+	|  Loop Name  |  min |  max |  Latency |  achieved |   target  | Count| Pipelined|
+	+-------------+------+------+----------+-----------+-----------+------+----------+
+	|- Loop 1     |  5672|  5672|       709|          -|          -|     8|    no    |
+	+-------------+------+------+----------+-----------+-----------+------+----------+
+	```
 
 ### Configuration File
 
@@ -356,14 +356,14 @@ The idea of Lina is to provide fast estimations for design space exploration. Li
 
 1. Follow the steps above to generate the ```*.bc``` file for input to Lina;
 2. Perform traced execution:
-```
-$ lina --mode=trace test_opt.bc mvp
-```
+	```
+	$ lina --mode=trace test_opt.bc mvp
+	```
 3. Create a ```config.cfg``` with the optimisation configurations that you wish to test:
 4. Perform estimation:
-```
-$ lina --mode=estimation --config-file=config.cfg --target=ZCU102 --loops=0 test_opt.bc mvp
-```
+	```
+	$ lina --mode=estimation --config-file=config.cfg --target=ZCU102 --loops=0 test_opt.bc mvp
+	```
 5. Repeat from step ***3***.
 
 ## Perform a Small Exploration
@@ -495,17 +495,17 @@ error: ‘{anonymous}::ChainedIncludesSource* llvm::IntrusiveRefCntPtr<{anonymou
 This is caused by newer versions of GCC being more sensitive to certain C++ syntaxes. To solve this problem:
 
 1. At file ```llvm/include/llvm/ADT/IntrusiveRefCntPtr.h```, find the following line:
-```
-    template <class X>
-    IntrusiveRefCntPtr(IntrusiveRefCntPtr<X>&& S) : Obj(S.get()) {
-      S.Obj = 0;
-    }
-```
+	```
+	    template <class X>
+	    IntrusiveRefCntPtr(IntrusiveRefCntPtr<X>&& S) : Obj(S.get()) {
+	      S.Obj = 0;
+	    }
+	```
 2. Right before, add the following lines:
-```
-	template <class X>
-	friend class IntrusiveRefCntPtr;
-```
+	```
+		template <class X>
+		friend class IntrusiveRefCntPtr;
+	```
 3. Resume compilation.
 
 Source: http://lists.llvm.org/pipermail/llvm-bugs/2014-July/034874.html

@@ -1,0 +1,34 @@
+#!/bin/bash
+
+./vai.py 0 0 0 0
+./vai.py 0 0 0 1
+./vai.py 0 0 0 2
+./vai.py 0 0 0 3
+./vai.py 0 0 1 0
+#./vai.py 0 0 1 1
+./vai.py 0 0 1 2
+#./vai.py 0 0 1 3
+./vai.py 0 1 0 0
+./vai.py 0 1 0 1
+./vai.py 0 1 0 2
+./vai.py 0 1 0 3
+./vai.py 0 1 1 0
+#./vai.py 0 1 1 1
+./vai.py 0 1 1 2
+#./vai.py 0 1 1 3
+./vai.py 1 0 0 0
+./vai.py 1 0 0 1
+./vai.py 1 0 0 2
+./vai.py 1 0 0 3
+./vai.py 1 0 1 0
+#./vai.py 1 0 1 1
+./vai.py 1 0 1 2
+#./vai.py 1 0 1 3
+./vai.py 1 1 0 0
+./vai.py 1 1 0 1
+./vai.py 1 1 0 2
+./vai.py 1 1 0 3
+./vai.py 1 1 1 0
+#./vai.py 1 1 1 1
+./vai.py 1 1 1 2
+#./vai.py 1 1 1 3

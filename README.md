@@ -339,7 +339,7 @@ Now line by line:
 	* Equivalent to ```uint32_t A[1024];```
 	* All arrays of the kernel must be declared here;
 * ```unrolling,mvp,0,1,4,4```
-	* Set unroll. The arguments are the kernel name, the top-level loop ID (starts from 0), the loop level (1 is the top-level). the loop header line number and the unroll factor;
+	* Set unroll. The arguments are the kernel name, the top-level loop ID (starts from 0), the loop level (1 is the top-level), the loop header line number and the unroll factor;
 	* Equivalent to ```#pragma HLS unroll factor=4```
 * ```pipeline,mvp,0,2```
 	* Set pipeline. The arguments are the kernel name, the top-level loop ID and the loop level;
@@ -366,17 +366,81 @@ $ lina --mode=estimation --config-file=config.cfg --target=ZCU102 --loops=0 test
 ```
 5. Repeat from step ***3***.
 
-## Files Description
-
-TODO
-
 ## Supported Platforms
 
-TODO
+Currently three platforms are supported:
+* ```ZC702:``` Xilinx Zynq-7000 SoC (DEFAULT);
+* ```ZCU102:``` Xilinx Zynq UltraScale+ ZCU102 kit;
+* ```VC707:``` Xilinx Virtex-7 FPGA;
+
+You can select one by specifying the ```-t``` or ```--target``` option.
+
+*ZC702 and VC707 use the legacy hardware profile library from Lin-Analyzer, therefore timing-constrained scheduling is not supported for these platforms and must be disabled with ```--f-notcs```.*
 
 ### Adding a New Platform
 
-TODO
+Several points of the code must be adjusted if you want to insert a new platform. For example, additional logic has to be created for selecting the new platform and so on. However, the most important part of adding a new platform is defining the hardware profile library. This library is composed of three data structures:
+* Total resource count for the platform;
+* Timing-constrained latencies;
+* Timing-constrained resources.
+
+## Files Description
+
+* ***include/profile_h***;
+	* ***ArgPack.h:*** ptruct with the options passed by command line to Lina;
+	* ***AssignBasicBlockIDPass.h:*** pass to assign ID to basic blocks;
+	* ***AssignLoadStoreIDPass.h:*** pass to assign ID to load/stores;
+	* ***auxiliary.h:*** auxiliary functions and variables;
+	* ***BaseDatapath.h:*** base class for DDDG estimation;
+	* ***colors.h:*** colour definitions used to generate the DDDGs as DOT files;
+	* ***DDDGBuilder.h:*** DDDG builder;
+	* ***DynamicDatapath.h:*** extended class from BaseDatapath, simply coordinates some BaseDatapath calls;
+	* ***ExtractLoopInfoPass.h:*** pass to extract loop information;
+	* ***FunctionNameMapperPass.h:*** pass to map mangled/demangled function names;
+	* ***HardwareProfile.h:*** hardware profile library, characterising resources and latencies;
+	* ***InstrumentForDDDGPass.h:*** pass to instrument and execute the input code;
+	* ***lin-profile.h:*** main function;
+	* ***LoopNumberPass.h:*** pass to number loops;
+	* ***Multipath.h:*** class to handle a set of datapaths (non-perfect loop analysis)
+	* ***opcodes.h:*** LLVM opcodes;
+	* ***Passes.h:*** declaration of all passes;
+	* ***SlotTracker.h:*** slot tracker used by InstrumentForDDDGPass;
+	* ***TraceFunctions.h:*** trace functions used by InstrumentForDDDGPass;
+* ***lib***;
+	* ***Aux:*** auxiliary library;
+		* ***auxiliary.cpp:*** auxiliary functions and variables;
+	* ***Build_DDDG:*** (part of) trace and estimation library;
+		* ***BaseDatapath.cpp:*** base class for DDDG estimation;
+		* ***DDDGBuilder.cpp:*** DDDG builder;
+		* ***DynamicDatapath.cpp:*** extended class from BaseDatapath, simply coordinates some BaseDatapath calls;
+		* ***HardwareProfile.cpp:*** hardware profile library, characterising resources and latencies;
+		* ***Multipath.cpp:*** class to handle a set of datapaths (non-perfect loop analysis)
+		* ***opcodes.cpp:*** LLVM opcodes;
+		* ***SlotTracker.cpp:*** slot tracker used by InstrumentForDDDGPass;
+		* ***TraceFunctions.cpp:*** trace functions used by InstrumentForDDDGPass;
+	* ***Profile:*** LLVM passes that compose Lina;
+		* ***AssignBasicBlockIDPass.cpp:*** pass to assign ID to basic blocks;
+		* ***AssignLoadStoreIDPass.cpp:*** pass to assign ID to load/stores;
+		* ***ExtractLoopInfoPass.cpp:*** pass to extract loop information;
+		* ***FunctionNameMapperPass.cpp:*** pass to map mangled/demangled function names;
+		* ***InstrumentForDDDGPass.cpp:*** pass to instrument and execute the input code;
+		* ***lin-profile.cpp:*** main function;
+* ***misc***;
+	* ***smalldse:*** small exploration with 9 PolyBench-based kernels;
+		* ***baseFiles:*** common files that are shared among design points;
+			* ***makefiles:*** Makefiles used by Lina or Vivado;
+			* ***parsers:*** parser scripts used by the main python script;
+			* ***project:*** C projects prepared for Lina;
+			* ***traces:*** folder where all traces should be placed (please see Section ***Perform a Small Exploration***);
+			* ***vivadoprojs:*** C projects prepared for Vivado;
+		* ***csvs:*** folder where the results for each design point is saved as CSV;
+		* ***processedResults:*** automatic spreadsheets that provide results according to the CSV files;
+		* ***workspace:*** exploration workspace;
+		* ***vai.py:*** main python script for one design point with Lina
+		* ***vivai.py:*** main python script for one design point with Vivado
+		* ***runall.sh:*** call ```vai.py``` several times to perform small exploration with Lina;
+		* ***runallvivado.sh:*** call ```vivai.py``` several times to perform small exploration with Vivado;
+	* ***compiler.sh:*** automatic Lina compiler script (please see Section ***Automatic Compilation***).
 
 ## Troubleshooting
 

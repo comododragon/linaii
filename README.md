@@ -173,7 +173,7 @@ Calling ```lina -h``` will show you the help, which is pretty self-explanatory. 
 * ```-v``` or ```--verbose```: show more details about the estimation process and the results;
 * ```-f FREQ``` or ```--frequency=FREQ```: specify the target clock, in MHz;
 * ```-u UNCTY``` or ```--uncertainty=UNCTY```: specify the clock uncertainty, in percentage;
-* ```-l LOOPS``` or ```--loops=LOOPS```: specify which top-level loops should be analised, starting from 0;
+* ```-l LOOPS``` or ```--loops=LOOPS```: specify which top-level loops should be analysed, starting from 0;
 * ```--f-npla```: activate non-perfect loop analysis (disabled by default);
 * ```--f-notcs```: deactivate timing-constrained scheduling (enabled by default).
 
@@ -304,11 +304,11 @@ set_clock_uncertainty 27.0%
 csynth_design
 exit
 ```
-3. Then we run Vivado and wait for the HLS process to finish:
+3. Run Vivado and wait for the HLS process to finish:
 ```
 $ vivado_hls -f script.tcl
 ```
-4. Then you can find at ```mvp/solution1/syn/report/mvp_csynth.rpt``` the cycle count for the loop:
+4. You can find at ```mvp/solution1/syn/report/mvp_csynth.rpt``` the cycle count for the loop:
 ```
 +-------------+------+------+----------+-----------+-----------+------+----------+
 |             |   Latency   | Iteration|  Initiation Interval  | Trip |          |

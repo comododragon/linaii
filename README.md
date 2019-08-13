@@ -382,25 +382,25 @@ To run this exploration, you must perform some setup first:
 		* Please note that this branch still identifies itself as ```lin-analyzer``` for LLVM. Therefore you must change from ```lina``` to ```lin-analyzer``` in steps 5 (```mv lina llvmtools/lin-analyzer```) and 6 (```add_llvm_tool_subdirectory(lin-analyzer)```) from Section ***Manual Compilation***;
 	* ***Automatic compile:*** please use the compiling script located at ```misc/compile.2_updlat.sh```;
 3. Generate the traces;
-	* Inside folder ```misc/smalldse/baseFiles/traces```, there should be 9 folders, one for each kernel (```atax```, ```bicg``` and so on) and inside each folder should be the dynamic trace for each kernel (a file named ```dynamic_trace.gz```);
+	* The folder ```misc/smalldse/baseFiles/traces``` must contain 9 folders, one for each kernel (```atax```, ```bicg``` and so on) and inside each folder should be the dynamic trace for each kernel (a file named ```dynamic_trace.gz```);
 	* You can manually generate the traces by running ```lina```  or ```lin-analyzer``` in mode ```trace```, OR;
 	* You can download the traces already generated from [here](https://drive.google.com/file/d/1FGNUzlMfG1_pRp1Fb5CeYX5C3vyCbGfl/view?usp=sharing) (almost 1GB!) and put all the folders inside ```misc/smalldse/baseFiles/traces```;
-4. Set the correct path for the lina and lin-analyzer binaries at file ```misc/smalldse/vai.py```:
-```
-paths = {
-	"2_updlat": "/path/to/old/lina/build/bin",
-	"7_npla": "/path/to/new/lina/build/bin"
-}
-```
+4. Set the correct path for the lina and lin-analyzer binaries at file ```misc/smalldse/vai.py``` according to your installation:
+	```
+	paths = {
+		"2_updlat": "/path/to/old/lina/build/bin",
+		"7_npla": "/path/to/new/lina/build/bin"
+	}
+	```
 5. Explore all design points using lin-analyzer/lina:
-```
-$ ./runall.sh
-```
+	```
+	$ ./runall.sh
+	```
 	* You can also run a single point by running ```vai.py```;
 6. To explore all design points using Vivado, first make sure that the Vivado binaries are reachable (e.g. ```source ~/xilinx/SDx/2018.2/settings64.sh```) and run:
-```
-$ ./runallvivado.sh
-```
+	```
+	$ ./runallvivado.sh
+	```
 	* You can also run a single point by running ```vivai.py```;
 7. After executing both explorations, you can see the precision results at ```misc/smalldse/processedResults/full.ods```.
 

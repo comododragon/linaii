@@ -138,11 +138,10 @@ $ mkdir build
 $ cd build
 $ cmake ../llvm -DBOOST_INCLUDE_DIR=../boost -DZLIB_INCLUDE_DIRS=/usr/include -DZLIB_LIBRARY=/usr/lib/libz.so -DLLVM_ENABLE_RTTI:BOOL=ON
 ```
-10. Now you can finally make:
+10. Now you can finally make (even though you can use parallel compilation, there are some issues. Please see Section ***Troubleshooting***):
 ```
 $ make
 ```
-	* Even though you can use parallel compilation, there are some issues. Please see Section ***Troubleshooting***;
 11. If everything goes well, you will have the Lina binary at ```path/to/lina/build/bin```. If not, please see Section ***Troubleshooting***.
 
 ## Usage

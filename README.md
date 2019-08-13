@@ -138,7 +138,7 @@ $ mkdir build
 $ cd build
 $ cmake ../llvm -DBOOST_INCLUDE_DIR=../boost -DZLIB_INCLUDE_DIRS=/usr/include -DZLIB_LIBRARY=/usr/lib/libz.so -DLLVM_ENABLE_RTTI:BOOL=ON
 ```
-10. Now you can finally make (even though you can use parallel compilation, there are some issues. Please see Section ***Troubleshooting***):
+10. Now you can finally make:
 ```
 $ make
 ```
@@ -376,9 +376,9 @@ To run this exploration, you must perform some setup first:
 	* This version is a refactored version of Lin-Analyzer, before TCS and NPLA were implemented. It should work the same way as Lin-Analyzer however with some minor performance improvements;
 	* ***Manual compile:***
 		* Follow the same instructions as in ***Setup*** and ***Compilation*** but clone this branch instead:
-```
-$ git clone -b 2_updlat https://github.com/comododragon/lina.git
-```
+		```
+		$ git clone -b 2_updlat https://github.com/comododragon/lina.git
+		```
 		* Please note that this branch still identifies itself as ```lin-analyzer``` for LLVM. Therefore you must change from ```lina``` to ```lin-analyzer``` in steps 5 (```mv lina llvmtools/lin-analyzer```) and 6 (```add_llvm_tool_subdirectory(lin-analyzer)```) from Section ***Manual Compilation***;
 	* ***Automatic compile:*** please use the compiling script located at ```misc/compile.2_updlat.sh```;
 3. Generate the traces;

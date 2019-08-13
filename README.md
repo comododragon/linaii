@@ -125,24 +125,25 @@ add_llvm_tool_subdirectory(opt)
 add_llvm_tool_subdirectory(llvm-as)
 ...
 ```
-6. Add the line ```set(LLVM_REQUIRES_RTTI 1)``` at the end of file ```llvm/CMakeLists.txt```;
-7. Download BOOST and extract to folder ```boost```:
+7. Add the line ```set(LLVM_REQUIRES_RTTI 1)``` at the end of file ```llvm/CMakeLists.txt```;
+8. Download BOOST and extract to folder ```boost```:
 ```
 $ wget "http://sourceforge.net/projects/boost/files/boost/1.57.0/boost_1_57_0.tar.gz"
 $ tar xvf boost_1_57_0.tar.gz
 $ mv boost_1_57_0 boost
 ```
-8. Create build folder and run ```cmake```:
+9. Create build folder and run ```cmake```:
 ```
 $ mkdir build
 $ cd build
 $ cmake ../llvm -DBOOST_INCLUDE_DIR=../boost -DZLIB_INCLUDE_DIRS=/usr/include -DZLIB_LIBRARY=/usr/lib/libz.so -DLLVM_ENABLE_RTTI:BOOL=ON
 ```
-9. Now you can finally make:
+10. Now you can finally make:
 ```
 $ make
 ```
-10. If everything goes well, you will have the Lina binary at ```path/to/lina/build/bin```. If not, please see Section ***Troubleshooting***.
+	* Even though you can use parallel compilation, there are some issues. Please see Section ***Troubleshooting***;
+11. If everything goes well, you will have the Lina binary at ```path/to/lina/build/bin```. If not, please see Section ***Troubleshooting***.
 
 ## Usage
 
@@ -366,6 +367,44 @@ $ lina --mode=estimation --config-file=config.cfg --target=ZCU102 --loops=0 test
 ```
 5. Repeat from step ***3***.
 
+## Perform a Small Exploration
+
+At folder ```misc/smalldse``` from this repository, you can find files to perform the small exploration as in the paper.
+
+To run this exploration, you must perform some setup first:
+1. Compile Lina following the instructions from Sections ***Setup*** and ***Compilation***;
+2. Also compile an adapted version from Lina for comparison purposes in a different folder:
+	* This version is a refactored version of Lin-Analyzer, before TCS and NPLA were implemented. It should work the same way as Lin-Analyzer however with some minor performance improvements;
+	* ***Manual compile:***
+		* Follow the same instructions as in ***Setup*** and ***Compilation*** but clone this branch instead:
+```
+$ git clone -b 2_updlat https://github.com/comododragon/lina.git
+```
+		* Please note that this branch still identifies itself as ```lin-analyzer``` for LLVM. Therefore you must change from ```lina``` to ```lin-analyzer``` in steps 5 (```mv lina llvmtools/lin-analyzer```) and 6 (```add_llvm_tool_subdirectory(lin-analyzer)```) from Section ***Manual Compilation***;
+	* ***Automatic compile:*** please use the compiling script located at ```misc/compile.2_updlat.sh```;
+3. Generate the traces;
+	* Inside folder ```misc/smalldse/baseFiles/traces```, there should be 9 folders, one for each kernel (```atax```, ```bicg``` and so on) and inside each folder should be the dynamic trace for each kernel (a file named ```dynamic_trace.gz```);
+	* You can manually generate the traces by running ```lina```  or ```lin-analyzer``` in mode ```trace```, OR;
+	* You can download the traces already generated from [here](https://drive.google.com/file/d/1FGNUzlMfG1_pRp1Fb5CeYX5C3vyCbGfl/view?usp=sharing) (almost 1GB!) and put all the folders inside ```misc/smalldse/baseFiles/traces```;
+4. Set the correct path for the lina and lin-analyzer binaries at file ```misc/smalldse/vai.py```:
+```
+paths = {
+	"2_updlat": "/path/to/old/lina/build/bin",
+	"7_npla": "/path/to/new/lina/build/bin"
+}
+```
+5. Explore all design points using lin-analyzer/lina:
+```
+$ ./runall.sh
+```
+	* You can also run a single point by running ```vai.py```;
+6. To explore all design points using Vivado, first make sure that the Vivado binaries are reachable (e.g. ```source ~/xilinx/SDx/2018.2/settings64.sh```) and run:
+```
+$ ./runallvivado.sh
+```
+	* You can also run a single point by running ```vivai.py```;
+7. After executing both explorations, you can see the precision results at ```misc/smalldse/processedResults/full.ods```.
+
 ## Supported Platforms
 
 Currently three platforms are supported:
@@ -387,7 +426,7 @@ Several points of the code must be adjusted if you want to insert a new platform
 ## Files Description
 
 * ***include/profile_h***;
-	* ***ArgPack.h:*** ptruct with the options passed by command line to Lina;
+	* ***ArgPack.h:*** struct with the options passed by command line to Lina;
 	* ***AssignBasicBlockIDPass.h:*** pass to assign ID to basic blocks;
 	* ***AssignLoadStoreIDPass.h:*** pass to assign ID to load/stores;
 	* ***auxiliary.h:*** auxiliary functions and variables;
@@ -440,15 +479,56 @@ Several points of the code must be adjusted if you want to insert a new platform
 		* ***vivai.py:*** main python script for one design point with Vivado
 		* ***runall.sh:*** call ```vai.py``` several times to perform small exploration with Lina;
 		* ***runallvivado.sh:*** call ```vivai.py``` several times to perform small exploration with Vivado;
-	* ***compiler.sh:*** automatic Lina compiler script (please see Section ***Automatic Compilation***).
+	* ***compiler.sh:*** automatic Lina compiler script (please see Section ***Automatic Compilation***);
+	* ***compiler.2_updlat.sh:*** automatic compiler script for the ```2_updlat``` version of Lina (older version from branch ```2_updlat```, see Section ***Perform a Small Exploration***).
 
 ## Troubleshooting
 
+Some problems may arise during compilation, since LLVM 3.5.0 was designed to be compiled by older versions of GCC or C/C++ standards.
+
+### <TODO NAME>
+
+If you get the following error:
+```
 TODO
+```
+
+This is caused by newer versions of GCC being more sensitive to certain C++ syntaxes. To solve this problem:
+
+1. At file ```llvm/include/llvm/ADT/IntrusiveRefCntPtr.h```, find the following line:
+```
+    template <class X>
+    IntrusiveRefCntPtr(IntrusiveRefCntPtr<X>&& S) : Obj(S.get()) {
+      S.Obj = 0;
+    }
+```
+2. Right before, add the following lines:
+```
+	template <class X>
+	friend class IntrusiveRefCntPtr;
+```
+3. Resume compilation.
+
+Source: http://lists.llvm.org/pipermail/llvm-bugs/2014-July/034874.html
+
+### Problems with Parallel Compilation
+
+After setting up all files and folder, you can compile using parallel compilation like:
+```
+make -j3
+```
+
+However, compilation might fail at some point due to broken dependencies with TableGen. One workaround for this is to compile for the first time without parallel compilation:
+```
+make
+```
+
+Then, the following compilations will work normally with ```-j2```, ```-j3```, etc. There should be no problems if you only manipulate the source files inside Lina.
 
 ## TODOs
 
-TODO (lol)
+* Improve the inner loop body scheduling system to better reflect certain optimisations from Vivado that are not covered by Lina, mainly when pipelining is enabled;
+* Add support to global memories (e.g. DDR);
 
 ## Acknowledgements
 

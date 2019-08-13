@@ -18,7 +18,7 @@ According to Lin-Analyzer repository: *"Dynamic data graph generation (DDDG) and
 
 The ```common.h``` header is distributed under the GPL-3.0 licence. See the following repo for details: https://github.com/comododragon/commonh
 
-The kernels in folder ```misc/kernels``` are adapted from PolyBench/C, which follows the GPL-2.0 licence. Please see: https://sourceforge.net/projects/polybench/
+The kernels in folder ```misc/smalldse``` are adapted from PolyBench/C, which follows the GPL-2.0 licence. Please see: https://sourceforge.net/projects/polybench/
 
 ## Setup
 
@@ -486,11 +486,11 @@ Several points of the code must be adjusted if you want to insert a new platform
 
 Some problems may arise during compilation, since LLVM 3.5.0 was designed to be compiled by older versions of GCC or C/C++ standards.
 
-### <TODO NAME>
+### "is private within this context"
 
 If you get the following error:
 ```
-TODO
+error: ‘{anonymous}::ChainedIncludesSource* llvm::IntrusiveRefCntPtr<{anonymous}::ChainedIncludesSource>::Obj’ is private within this context
 ```
 
 This is caused by newer versions of GCC being more sensitive to certain C++ syntaxes. To solve this problem:
@@ -518,7 +518,12 @@ After setting up all files and folder, you can compile using parallel compilatio
 make -j3
 ```
 
-However, compilation might fail at some point due to broken dependencies with TableGen. One workaround for this is to compile for the first time without parallel compilation:
+However, compilation might fail at some point due to broken dependencies with TableGen:
+```
+fatal error: llvm/IR/Intrinsics.gen: No such file or directory
+```
+
+One workaround for this is to compile for the first time without parallel compilation:
 ```
 make
 ```

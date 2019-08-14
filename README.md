@@ -83,12 +83,12 @@ To use automatic compilation:
 	* The script will download LLVM, CLANG, BOOST and Lina, prepare the folders and execute ```cmake```;
 	* It will ask before compiling if you want to apply some patches. Please read Section ***Troubleshooting*** for better understanding. In doubt, just press ENTER and the patches will be ignored. If compilation fails, you will have another chance to apply the patches;
 	* ***Every time the script is executed, the whole operation is re-executed (i.e. no incremental compilation with the script!);***
-	* Right after ```cmake``` and before starting the whole compilation process, the script will give you the option to abort the script and leave the project as is. At this point you will have the project ready to be compiled, where you can insert your modifications or fix some system-related problems regarding dependencies. Then, simply follow Section ***Manual Compilation*** from step ***9***;
+	* Right after ```cmake``` and before starting the whole compilation process, the script will give you the option to abort the script and leave the project as is. At this point you will have the project ready to be compiled, where you can insert your modifications or fix some system-related problems regarding dependencies. Then, simply follow Section ***Manual Compilation*** from step ***10***;
 	* If everything goes right, you should have the ```lina``` binary at ```/path/to/lina/build/bin/lina```.
 
 ### Manual Compilation
 
-The script simply executes the following steps automatically:
+The automatic compilation script simply executes the following steps:
 
 1. Make sure you read and understood the Section ***Setup*** (in other words, make sure that you have ```gcc```, ```zlib```, ```git``` and ```cmake```);
 2. Create your compilation folder and ```cd``` to it:
@@ -339,10 +339,10 @@ Now line by line:
 	* Equivalent to ```uint32_t A[1024];```
 	* All arrays of the kernel must be declared here;
 * ```unrolling,mvp,0,1,4,4```
-	* Set unroll. The arguments are the kernel name, the top-level loop ID (starts from 0), the loop level (1 is the top-level), the loop header line number and the unroll factor;
+	* Set unroll. The arguments are the kernel name, the top-level loop ID (starts from 0), the loop depth (1 is the top-level), the loop header line number and the unroll factor;
 	* Equivalent to ```#pragma HLS unroll factor=4```
 * ```pipeline,mvp,0,2```
-	* Set pipeline. The arguments are the kernel name, the top-level loop ID and the loop level;
+	* Set pipeline. The arguments are the kernel name, the top-level loop ID and the loop depth;
 	* Equivalent to ```#pragma HLS pipeline```
 * ```partition,block,A,4096,4,8```
 	* Set array partitioning. The arguments are the partitioning type, the array name, total size in bytes, word size in bytes and partition factor;
@@ -368,7 +368,7 @@ The idea of Lina is to provide fast estimations for design space exploration. Li
 
 ## Perform a Small Exploration
 
-At folder ```misc/smalldse``` from this repository, you can find files to perform the small exploration as in the paper.
+At folder ```misc/smalldse``` from this repository, you can find files to perform a small exploration similar as in the paper.
 
 To run this exploration, you must perform some setup first:
 1. Compile Lina following the instructions from Sections ***Setup*** and ***Compilation***;
@@ -380,10 +380,13 @@ To run this exploration, you must perform some setup first:
 		```
 		$ git clone -b 2_updlat https://github.com/comododragon/lina.git
 		```
-		* Please note that this branch still identifies itself as ```lin-analyzer``` for LLVM. Therefore you must change from ```lina``` to ```lin-analyzer``` in steps 5 (```mv lina llvmtools/lin-analyzer```) and 6 (```add_llvm_tool_subdirectory(lin-analyzer)```) from Section ***Manual Compilation***;
+		* Please note that this branch points to a preliminar version of Lina where it still used the original Lin-Analyzer branding. Compilation files are configured for this name, thus you must change from ```lina``` to ```lin-analyzer``` in steps 5 (```mv lina llvmtools/lin-analyzer```) and 6 (```add_llvm_tool_subdirectory(lin-analyzer)```) from Section ***Manual Compilation***;
 	* ***Automatic compile:*** please use the compiling script located at ```misc/compile.2_updlat.sh```;
 	* We will refer to the path for this version as ```/path/to/old/lina/build/bin```;
-3. You will also need Python 3. Please install it using your OS repository;
+3. You will also need Python 3. Please install it using your OS repository. For example in Ubuntu:
+	```
+	$ sudo apt-get install python3
+	```
 4. Generate the traces;
 	* The folder ```misc/smalldse/baseFiles/traces``` must contain 9 folders, one for each kernel (```atax```, ```bicg``` and so on) and inside each folder should be the dynamic trace for each kernel (a file named ```dynamic_trace.gz```);
 	* You can manually generate the traces by running ```lina```  or ```lin-analyzer``` in mode ```trace```, OR;

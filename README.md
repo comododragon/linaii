@@ -372,7 +372,7 @@ At folder ```misc/smalldse``` from this repository, you can find files to perfor
 
 To run this exploration, you must perform some setup first:
 1. Compile Lina following the instructions from Sections ***Setup*** and ***Compilation***;
-	* We will refer to the path for this version as ```/path/to/new/lina/build/bin```
+	* We will refer to the path for this version as ```/path/to/new/lina/build/bin```;
 2. Also compile an adapted version from Lina for comparison purposes in a different folder:
 	* This version is a refactored version of Lin-Analyzer, before TCS and NPLA were implemented. It should work the same way as Lin-Analyzer however with some minor performance improvements;
 	* ***Manual compile:***
@@ -382,7 +382,7 @@ To run this exploration, you must perform some setup first:
 		```
 		* Please note that this branch still identifies itself as ```lin-analyzer``` for LLVM. Therefore you must change from ```lina``` to ```lin-analyzer``` in steps 5 (```mv lina llvmtools/lin-analyzer```) and 6 (```add_llvm_tool_subdirectory(lin-analyzer)```) from Section ***Manual Compilation***;
 	* ***Automatic compile:*** please use the compiling script located at ```misc/compile.2_updlat.sh```;
-	* We will refer to the path for this version as ```/path/to/old/lina/build/bin```
+	* We will refer to the path for this version as ```/path/to/old/lina/build/bin```;
 3. You will also need Python 3. Please install it using your OS repository;
 4. Generate the traces;
 	* The folder ```misc/smalldse/baseFiles/traces``` must contain 9 folders, one for each kernel (```atax```, ```bicg``` and so on) and inside each folder should be the dynamic trace for each kernel (a file named ```dynamic_trace.gz```);

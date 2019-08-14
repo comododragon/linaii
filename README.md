@@ -412,7 +412,7 @@ To run this exploration, you must perform some setup first:
 
 The clock uncertainty, array partitioning, loop pipelining and unrolling directives are passed to the design point explorers as arguments for the ```vai.py``` and ```vivai.py``` python scripts. Please run the scripts without any arguments for more information.
 
-If you want to try another partition factors, changes are needed in the design point explorer scripts.
+If you want to try other values for the directives, changes are needed in the design point explorer scripts. For example if you want to try other partition factors:
 * For ```vai.py```:
 	* The partition factors are defined at the ```configScheme``` variable. For example for kernel ```atax```, it will be at ```configScheme["atax"]["partitioning"]["1"]```:
 	```

@@ -53,21 +53,8 @@ versions = [
 
 
 paths = {
-	"2_updlat": "/home/perina/Desktop/DD/Stage2/tools/linanalyzer_1/build/bin",
-	"7_npla": "/home/perina/Desktop/DD/Stage2/tools/linanalyzer/build/bin"
-}
-
-
-mangledNames = {
-	"atax": "_Z4ataxPfS_S_",
-	"bicg": "_Z4bicgPfS_S_S_S_",
-	"convolution2d": "_Z13convolution2dPfS_",
-	"convolution3d": "_Z13convolution3dPfS_",
-	"gemm": "_Z4gemmPfS_S_",
-	"gesummv": "_Z7gesummvPfS_S_S_S_",
-	"mvt": "_Z3mvtPfS_S_",
-	"syr2k": "_Z5syr2kPfS_S_",
-	"syrk": "_Z4syrkPfS_"
+	"2_updlat": "/home/perina/Desktop/praAcabar/2_updlat/build/bin",
+	"7_npla": "/home/perina/Desktop/praAcabar/7_npla/build/bin"
 }
 
 
@@ -339,7 +326,6 @@ def printUsage():
 def makeMakefile(version, kernel, uncertainty, pipelining):
 	makefileTokens = {}
 
-	makefileTokens["<FUNC>"] = mangledNames[kernel]
 	makefileTokens["<KERN>"] = kernel
 	makefileTokens["<ARGS>"] = "" if not bypassTrace else "--mode estimation "
 
@@ -386,11 +372,11 @@ def makeConfig(version, kernel, array, pipelining, unrolling):
 
 		# Write pipelining info
 		for p in configScheme[kernel]["pipelining"][pipelining]:
-			cfg.write("pipeline,{},{},{}\n".format(kernel if "0_original" != version else mangledNames[kernel], p[0], p[1]))
+			cfg.write("pipeline,{},{},{}\n".format(kernel, p[0], p[1]))
 
 		# Write unrolling info
 		for u in configScheme[kernel]["unrolling"][unrolling]:
-			cfg.write("unrolling,{},{},{},{},{}\n".format(kernel if "0_original" != version else mangledNames[kernel], u[0], u[1], u[2], u[3]))
+			cfg.write("unrolling,{},{},{},{},{}\n".format(kernel, u[0], u[1], u[2], u[3]))
 
 
 if "__main__" == __name__:
@@ -446,7 +432,7 @@ if "__main__" == __name__:
 
 			# Update PATH
 			newEnv = os.environ.copy()
-			newEnv["PATH"] = "{}:{}".format(paths["0_original"], newEnv["PATH"])
+			newEnv["PATH"] = "{}:{}".format(paths["2_updlat"], newEnv["PATH"])
 
 			# Make bytecode
 			subprocess.run(["make", "prof/linked_opt.bc"], cwd=os.path.join(workspaceRoot, k), env=newEnv)

@@ -110,7 +110,6 @@ arrayConfigs = {
 
 
 parts = [
-	"xc7z020clg484-1",
 	"xczu9eg-ffvb1156-2-e"
 ]
 

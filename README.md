@@ -461,7 +461,7 @@ If you want to try other values for the directives, changes are needed in the de
 Currently three platforms are supported:
 * ```ZC702:``` Xilinx Zynq-7000 SoC (DEFAULT);
 * ```ZCU102:``` Xilinx Zynq UltraScale+ ZCU102 kit;
-* ```VC707:``` Xilinx Virtex-7 FPGA;
+* ```VC707:``` Xilinx Virtex-7 FPGA.
 
 You can select one by specifying the ```-t``` or ```--target``` option.
 
@@ -471,8 +471,11 @@ You can select one by specifying the ```-t``` or ```--target``` option.
 
 Several points of the code must be adjusted if you want to insert a new platform. For example, additional logic has to be created for selecting the new platform and so on. However, the most important part of adding a new platform is defining the hardware profile library. This library is composed of three data structures:
 * Total resource count for the platform;
+	* Check the enums with ```MAX_DSP```, ```MAX_FF``` and so on at ```include/profile_h/HardwareProfile.h```;
 * Timing-constrained latencies;
-* Timing-constrained resources.
+	* Check the variable ```timeConstrainedLatencies``` at ```include/profile_h/HardwareProfile.h```;
+* Timing-constrained resources;
+	* Check the variables ```timeConstrainedDSPs```, ```timeConstrainedFFs``` and ```timeConstrainedLUTs``` at ```include/profile_h/HardwareProfile.h```.
 
 ## Files Description
 
@@ -491,7 +494,7 @@ Several points of the code must be adjusted if you want to insert a new platform
 	* ***InstrumentForDDDGPass.h:*** pass to instrument and execute the input code;
 	* ***lin-profile.h:*** main function;
 	* ***LoopNumberPass.h:*** pass to number loops;
-	* ***Multipath.h:*** class to handle a set of datapaths (non-perfect loop analysis)
+	* ***Multipath.h:*** class to handle a set of datapaths (non-perfect loop analysis);
 	* ***opcodes.h:*** LLVM opcodes;
 	* ***Passes.h:*** declaration of all passes;
 	* ***SlotTracker.h:*** slot tracker used by InstrumentForDDDGPass;
@@ -504,7 +507,7 @@ Several points of the code must be adjusted if you want to insert a new platform
 		* ***DDDGBuilder.cpp:*** DDDG builder;
 		* ***DynamicDatapath.cpp:*** extended class from BaseDatapath, simply coordinates some BaseDatapath calls;
 		* ***HardwareProfile.cpp:*** hardware profile library, characterising resources and latencies;
-		* ***Multipath.cpp:*** class to handle a set of datapaths (non-perfect loop analysis)
+		* ***Multipath.cpp:*** class to handle a set of datapaths (non-perfect loop analysis);
 		* ***opcodes.cpp:*** LLVM opcodes;
 		* ***SlotTracker.cpp:*** slot tracker used by InstrumentForDDDGPass;
 		* ***TraceFunctions.cpp:*** trace functions used by InstrumentForDDDGPass;
@@ -548,10 +551,10 @@ This is caused by newer versions of GCC being more sensitive to certain C++ synt
 
 1. At file ```llvm/include/llvm/ADT/IntrusiveRefCntPtr.h```, find the following line:
 	```
-	    template <class X>
-	    IntrusiveRefCntPtr(IntrusiveRefCntPtr<X>&& S) : Obj(S.get()) {
-	      S.Obj = 0;
-	    }
+		template <class X>
+		IntrusiveRefCntPtr(IntrusiveRefCntPtr<X>&& S) : Obj(S.get()) {
+			S.Obj = 0;
+		}
 	```
 2. Right before, add the following lines:
 	```

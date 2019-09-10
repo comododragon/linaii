@@ -229,16 +229,7 @@ public:
 	void setResourceLimits();
 };
 
-class XilinxZCU102HardwareProfile : public XilinxHardwareProfile {
-	enum {
-		MAX_DSP = 2520,
-		MAX_FF = 548160,
-		MAX_LUT = 274080,
-		// XXX: This device has BRAM36k units, that can be configured to be used as 2 BRAM18k units.
-		MAX_BRAM18K = 1824
-	};
-
-
+class XilinxZCUHardwareProfile : public XilinxHardwareProfile {
 	enum {
 		LATENCY_LOAD,
 		LATENCY_STORE,
@@ -303,10 +294,37 @@ class XilinxZCU102HardwareProfile : public XilinxHardwareProfile {
 	std::unordered_map<unsigned, std::pair<unsigned, double>> effectiveLatencies;
 
 public:
-	XilinxZCU102HardwareProfile();
-	void setResourceLimits();
+	XilinxZCUHardwareProfile();
 	unsigned getLatency(unsigned opcode);
 	double getInCycleLatency(unsigned opcode);
+};
+
+class XilinxZCU102HardwareProfile : public XilinxZCUHardwareProfile {
+	enum {
+		MAX_DSP = 2520,
+		MAX_FF = 548160,
+		MAX_LUT = 274080,
+		// XXX: This device has BRAM36k units, that can be configured to be used as 2 BRAM18k units.
+		MAX_BRAM18K = 1824
+	};
+
+public:
+	XilinxZCU102HardwareProfile() { }
+	void setResourceLimits();
+};
+
+class XilinxZCU104HardwareProfile : public XilinxZCUHardwareProfile {
+	enum {
+		MAX_DSP = 1728,
+		MAX_FF = 460800,
+		MAX_LUT = 230400,
+		// XXX: This device has BRAM36k units, that can be configured to be used as 2 BRAM18k units.
+		MAX_BRAM18K = 624
+	};
+
+public:
+	XilinxZCU104HardwareProfile() { }
+	void setResourceLimits();
 };
 
 #endif

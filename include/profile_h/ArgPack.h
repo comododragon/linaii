@@ -19,7 +19,8 @@ typedef struct {
 	enum {
 		TARGET_XILINX_ZC702 = 0,
 		TARGET_XILINX_ZCU102 = 1,
-		TARGET_XILINX_VC707 = 2
+		TARGET_XILINX_ZCU104 = 2,
+		TARGET_XILINX_VC707 = 3
 	};
 
 	bool verbose;

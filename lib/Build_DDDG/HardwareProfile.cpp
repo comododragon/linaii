@@ -34,6 +34,8 @@ HardwareProfile *HardwareProfile::createInstance() {
 			return new XilinxVC707HardwareProfile();
 		case ArgPack::TARGET_XILINX_ZCU102:
 			return new XilinxZCU102HardwareProfile();
+		case ArgPack::TARGET_XILINX_ZCU104:
+			return new XilinxZCU104HardwareProfile();
 		case ArgPack::TARGET_XILINX_ZC702:
 		default:
 			assert(args.fNoTCS && "Time-constrained scheduling is currently not supported with the selected platform. Please activate the \"--fno-tcs\" flag");
@@ -963,7 +965,7 @@ void XilinxZC702HardwareProfile::setResourceLimits() {
 	}
 }
 
-XilinxZCU102HardwareProfile::XilinxZCU102HardwareProfile() {
+XilinxZCUHardwareProfile::XilinxZCUHardwareProfile() {
 	effectivePeriod = (1000 / args.frequency) - (10 * args.uncertainty / args.frequency);
 
 	/* Even if time-constrained scheduling is disabled, we still need to define the latencies of each instruction according to effective clock */
@@ -1037,22 +1039,7 @@ XilinxZCU102HardwareProfile::XilinxZCU102HardwareProfile() {
 	}
 }
 
-void XilinxZCU102HardwareProfile::setResourceLimits() {
-	if(args.fNoFPUThresOpt) {
-		maxDSP = HardwareProfile::INFINITE_RESOURCES;
-		maxFF = HardwareProfile::INFINITE_RESOURCES;
-		maxLUT = HardwareProfile::INFINITE_RESOURCES;
-		maxBRAM18k = HardwareProfile::INFINITE_RESOURCES;
-	}
-	else {
-		maxDSP = MAX_DSP;
-		maxFF = MAX_FF;
-		maxLUT = MAX_LUT;
-		maxBRAM18k = MAX_BRAM18K;
-	}
-}
-
-unsigned XilinxZCU102HardwareProfile::getLatency(unsigned opcode) {
+unsigned XilinxZCUHardwareProfile::getLatency(unsigned opcode) {
 	switch(opcode) {
 		case LLVM_IR_Shl:
 		case LLVM_IR_LShr:
@@ -1100,7 +1087,7 @@ unsigned XilinxZCU102HardwareProfile::getLatency(unsigned opcode) {
 	}
 }
 
-double XilinxZCU102HardwareProfile::getInCycleLatency(unsigned opcode) {
+double XilinxZCUHardwareProfile::getInCycleLatency(unsigned opcode) {
 	switch(opcode) {
 		case LLVM_IR_Shl:
 		case LLVM_IR_LShr:
@@ -1145,5 +1132,35 @@ double XilinxZCU102HardwareProfile::getInCycleLatency(unsigned opcode) {
 			return effectiveLatencies[LATENCY_FCMP].second;
 		default: 
 			return 0;
+	}
+}
+
+void XilinxZCU102HardwareProfile::setResourceLimits() {
+	if(args.fNoFPUThresOpt) {
+		maxDSP = HardwareProfile::INFINITE_RESOURCES;
+		maxFF = HardwareProfile::INFINITE_RESOURCES;
+		maxLUT = HardwareProfile::INFINITE_RESOURCES;
+		maxBRAM18k = HardwareProfile::INFINITE_RESOURCES;
+	}
+	else {
+		maxDSP = MAX_DSP;
+		maxFF = MAX_FF;
+		maxLUT = MAX_LUT;
+		maxBRAM18k = MAX_BRAM18K;
+	}
+}
+
+void XilinxZCU104HardwareProfile::setResourceLimits() {
+	if(args.fNoFPUThresOpt) {
+		maxDSP = HardwareProfile::INFINITE_RESOURCES;
+		maxFF = HardwareProfile::INFINITE_RESOURCES;
+		maxLUT = HardwareProfile::INFINITE_RESOURCES;
+		maxBRAM18k = HardwareProfile::INFINITE_RESOURCES;
+	}
+	else {
+		maxDSP = MAX_DSP;
+		maxFF = MAX_FF;
+		maxLUT = MAX_LUT;
+		maxBRAM18k = MAX_BRAM18K;
 	}
 }

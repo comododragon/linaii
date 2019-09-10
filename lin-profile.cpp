@@ -45,6 +45,7 @@ const std::string helpMessage =
 	"        -t TARGET, --target=TARGET    : select TARGET FPGA platform, where TARGET may be:\n"
 	"                                            ZC702 : Xilinx Zynq-7000 SoC (DEFAULT)\n"
 	"                                            ZCU102: Xilinx Zynq UltraScale+ SoC\n"
+	"                                            ZCU104: Xilinx Zynq UltraScale+ SoC\n"
 	"                                            VC707 : Xilinx Virtex-7 FPGA\n"
 	"        -v       , --verbose          : be verbose, print a lot of information\n"
 	"        -x       , --compressed       : use compressed files to reduce memory footprint\n"
@@ -278,6 +279,8 @@ void parseInputArguments(int argc, char **argv) {
 					args.target = args.TARGET_XILINX_VC707;
 				else if(!optargStr.compare("ZCU102"))
 					args.target = args.TARGET_XILINX_ZCU102;
+				else if(!optargStr.compare("ZCU104"))
+					args.target = args.TARGET_XILINX_ZCU104;
 				break;
 			case 'v':
 				args.verbose = true;
@@ -451,7 +454,10 @@ void parseInputArguments(int argc, char **argv) {
 				errs() << "Xilinx Virtex-7 FPGA\n";
 				break;
 			case ArgPack::TARGET_XILINX_ZCU102:
-				errs() << "Xilinx Zynq UltraScale+ SoC\n";
+				errs() << "Xilinx Zynq UltraScale+ SoC (ZCU102)\n";
+				break;
+			case ArgPack::TARGET_XILINX_ZCU104:
+				errs() << "Xilinx Zynq UltraScale+ SoC (ZCU104)\n";
 				break;
 			case ArgPack::TARGET_XILINX_ZC702:
 			default:

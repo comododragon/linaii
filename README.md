@@ -169,6 +169,7 @@ Calling ```lina -h``` will show you the help, which is pretty self-explanatory. 
 * ```-t TARGET``` or ```--target=TARGET```: select the FPGA to perform cycle estimation:
 	* ```ZC702:``` Xilinx Zynq-7000 SoC (DEFAULT);
 	* ```ZCU102:``` Xilinx Zynq UltraScale+ ZCU102 kit;
+	* ```ZCU104:``` Xilinx Zynq UltraScale+ ZCU104 kit;
 	* ```VC707:``` Xilinx Virtex-7 FPGA;
 * ```-v``` or ```--verbose```: show more details about the estimation process and the results;
 * ```-f FREQ``` or ```--frequency=FREQ```: specify the target clock, in MHz;
@@ -461,6 +462,7 @@ If you want to try other values for the directives, changes are needed in the de
 Currently three platforms are supported:
 * ```ZC702:``` Xilinx Zynq-7000 SoC (DEFAULT);
 * ```ZCU102:``` Xilinx Zynq UltraScale+ ZCU102 kit;
+* ```ZCU104:``` Xilinx Zynq UltraScale+ ZCU104 kit;
 * ```VC707:``` Xilinx Virtex-7 FPGA.
 
 You can select one by specifying the ```-t``` or ```--target``` option.

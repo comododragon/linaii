@@ -621,7 +621,7 @@ void BaseDatapath::initScratchpadPartitions() {
 
 			int64_t finalAddress;
 			if(ConfigurationManager::partitionCfgTy::PARTITION_TYPE_BLOCK == type)
-				finalAddress = std::ceil(nextPowerOf2(size) / pFactor);
+				finalAddress = relAddress / std::ceil(nextPowerOf2(size) / pFactor);
 			else if(ConfigurationManager::partitionCfgTy::PARTITION_TYPE_CYCLIC == type)
 				finalAddress = relAddress % pFactor;
 			else

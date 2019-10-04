@@ -19,6 +19,8 @@ using namespace llvm;
 
 funcBBNmPair2numInstInBBMapTy funcBBNmPair2numInstInBBMap;
 getElementPtrName2arrayNameMapTy getElementPtrName2arrayNameMap;
+std::map<std::string, std::string> arrayName2MangledNameMap;
+std::map<std::string, std::string> mangledName2ArrayNameMap;
 
 AssignBasicBlockID::AssignBasicBlockID() : ModulePass(ID) {
 	counter = 0;
@@ -79,10 +81,32 @@ bool AssignBasicBlockID::runOnModule(Module &M) {
 
 				if(GetElementPtrInst *getElePtrInst = dyn_cast<GetElementPtrInst>(BBIt)) {
 					std::string getElementPtrName = getElePtrInst->getName().str();
-					std::string arrayName = getElePtrInst->getOperand(0)->getName().str();
+					std::string mangledName = getElePtrInst->getOperand(0)->getName().str();
+
+					// Atempt to get demangled name, if it doesn't work, the mangled named is used anyway
+					int status = -1;
+					std::unique_ptr<char, void(*)(void *)> _demangledName { abi::__cxa_demangle(mangledName.c_str(), NULL, NULL, &status), std::free };
+					std::string demangledName = status? mangledName : _demangledName.get();
+
+					// Remove full-qualified from the demangled name (if applicable)
+					size_t colonPos = demangledName.find_last_of(':');
+					if(colonPos != std::string::npos)
+						demangledName.erase(0, colonPos + 1);
+
+					// When demangling a name, ambiguity might occur. Currently not supported
+					std::map<std::string, std::string>::iterator found = mangledName2ArrayNameMap.find(mangledName);
+					std::map<std::string, std::string>::iterator found2 = arrayName2MangledNameMap.find(demangledName);
+					// If a same demangled name is found and if they refer to different mangled arrays, this is
+					// currently not supported (i.e. it is ambiguous)
+					if(found != mangledName2ArrayNameMap.end())
+						assert(arrayName2MangledNameMap.end() != found2 && "Already found an array with the same demangled name (variables with same names under different scopes?). Currently not supported");
+
+					arrayName2MangledNameMap.insert(std::make_pair(demangledName, mangledName));
+					mangledName2ArrayNameMap.insert(std::make_pair(mangledName, demangledName));
+
 					getElementPtrName2arrayNameMapTy::iterator itArrayName = getElementPtrName2arrayNameMap.find(getElementPtrName);
 					if(itArrayName == getElementPtrName2arrayNameMap.end())
-						getElementPtrName2arrayNameMap.insert(std::make_pair(getElementPtrName, arrayName));
+						getElementPtrName2arrayNameMap.insert(std::make_pair(getElementPtrName, mangledName));
 				}
 			}
 

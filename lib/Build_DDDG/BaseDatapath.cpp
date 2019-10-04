@@ -1522,7 +1522,7 @@ void BaseDatapath::dumpSummary(
 
 	*summaryFile << "Limited by ";
 	if(std::get<1>(resIIMem) > std::get<1>(resIIOp) && std::get<1>(resIIMem) > recII && std::get<1>(resIIMem) > 1)
-		*summaryFile << "memory, array name: " << std::get<0>(resIIMem) << "\n";
+		*summaryFile << "memory, array name: " << mangledName2ArrayNameMap.at(std::get<0>(resIIMem)) << "\n";
 	else if(std::get<1>(resIIOp) > std::get<1>(resIIMem) && std::get<1>(resIIOp) > recII && std::get<1>(resIIOp) > 1)
 		*summaryFile << "floating point operation: " << std::get<0>(resIIOp) << "\n";
 	else if(recII > std::get<1>(resIIMem) && recII > std::get<1>(resIIOp) && recII > 1)

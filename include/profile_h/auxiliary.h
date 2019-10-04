@@ -22,6 +22,7 @@
 // If enabled, sanity checks are performed in the multipath vector
 #define CHECK_MULTIPATH_STATE
 
+#include <cxxabi.h>
 #include <fstream>
 #include <list>
 #include <map>
@@ -68,6 +69,8 @@ uint64_t nextPowerOf2(uint64_t x);
 
 typedef std::map<std::string, std::string> getElementPtrName2arrayNameMapTy;
 extern getElementPtrName2arrayNameMapTy getElementPtrName2arrayNameMap;
+extern std::map<std::string, std::string> arrayName2MangledNameMap;
+extern std::map<std::string, std::string> mangledName2ArrayNameMap;
 
 #define VERBOSE_PRINT(X) \
 	do {\

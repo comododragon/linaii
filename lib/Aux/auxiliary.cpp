@@ -339,7 +339,7 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 			sscanf(i.c_str(), "%*[^,],%[^,],%lu,%zu\n", buff, &totalSize, &wordSize);
 
 			std::string arrayName(buff);
-			appendToArrayInfoCfg(arrayName, totalSize, wordSize);
+			appendToArrayInfoCfg(arrayName2MangledNameMap.at(arrayName), totalSize, wordSize);
 		}
 	}
 	else {
@@ -358,7 +358,7 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 			std::string typeStr(buff);
 			unsigned type = (typeStr.compare("cyclic"))? partitionCfgTy::PARTITION_TYPE_BLOCK : partitionCfgTy::PARTITION_TYPE_CYCLIC;
 			std::string baseAddr(buff2);
-			appendToPartitionCfg(type, baseAddr, size, wordSize, pFactor);
+			appendToPartitionCfg(type, arrayName2MangledNameMap.at(baseAddr), size, wordSize, pFactor);
 		}
 	}
 
@@ -369,7 +369,7 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 			sscanf(i.c_str(), "%*[^,],%*[^,],%[^,],%lu\n", buff, &size);
 
 			std::string baseAddr(buff);
-			appendToCompletePartitionCfg(baseAddr, size);
+			appendToCompletePartitionCfg(arrayName2MangledNameMap.at(baseAddr), size);
 		}
 	}
 

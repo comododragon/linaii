@@ -45,6 +45,10 @@
 
 #define CHECK_VISITED_NODES
 
+// XXX: Some codes (mainly codes that does not use FP units and has too many simple OPs) can explode the amount of paths to be explored.
+// To avoid this problem, we set an amount for maximum simultaneous paths.
+#define MAX_SIMULTANEOUS_TIMING_PATHS 500
+
 extern ArgPack args;
 #ifdef PROGRESSIVE_TRACE_CURSOR
 extern long int progressiveTraceCursor;

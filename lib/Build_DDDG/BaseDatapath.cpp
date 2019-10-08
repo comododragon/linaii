@@ -1522,7 +1522,7 @@ void BaseDatapath::dumpSummary(
 
 	*summaryFile << "Limited by ";
 	if(std::get<1>(resIIMem) > std::get<1>(resIIOp) && std::get<1>(resIIMem) > recII && std::get<1>(resIIMem) > 1)
-		*summaryFile << "memory, array name: " << mangledName2ArrayNameMap.at(std::get<0>(resIIMem)) << "\n";
+		*summaryFile << "memory, array name: " << std::get<0>(resIIMem) << "\n";
 	else if(std::get<1>(resIIOp) > std::get<1>(resIIMem) && std::get<1>(resIIOp) > recII && std::get<1>(resIIOp) > 1)
 		*summaryFile << "floating point operation: " << std::get<0>(resIIOp) << "\n";
 	else if(recII > std::get<1>(resIIMem) && recII > std::get<1>(resIIOp) && recII > 1)
@@ -2378,6 +2378,11 @@ std::pair<std::vector<BaseDatapath::TCScheduler::pathTy *>, std::vector<BaseData
 bool BaseDatapath::TCScheduler::tryAllocate(unsigned nodeID, bool checkTiming) {
 	std::pair<std::vector<pathTy *>, std::vector<pathTy>> pathsFound = findDependencies(nodeID);
 	double inCycleLatency = profile.getInCycleLatency(microops.at(nodeID));
+
+	// XXX: Some codes (mainly codes that does not use FP units_ can explode the amount of paths to be explored.
+	// To avoid this problem, we set an amount for maximum simultaneous paths.
+	if(paths.size() > MAX_SIMULTANEOUS_TIMING_PATHS)
+		return false; 
 
 	// If no dependency was found for this node, create a new path and return
 	if(!(pathsFound.first.size() || pathsFound.second.size())) {

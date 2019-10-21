@@ -38,6 +38,7 @@ typedef struct {
 	bool showScheduling;
 	bool fNPLA;
 	bool fNoTCS;
+	bool fNoMMA;
 	bool fSBOpt;
 	bool fSLROpt;
 	bool fNoSLROpt;

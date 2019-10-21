@@ -136,8 +136,13 @@ public:
 	} partitionCfgTy;
 	typedef std::unordered_map<std::string, partitionCfgTy> partitionCfgMapTy;
 	typedef struct {
+		enum {
+			ARRAY_TYPE_ONCHIP,
+			ARRAY_TYPE_OFFCHIP
+		};
 		uint64_t totalSize;
 		size_t wordSize;
+		unsigned type;
 	} arrayInfoCfgTy;
 	typedef std::map<std::string, arrayInfoCfgTy> arrayInfoCfgMapTy;
 
@@ -157,7 +162,7 @@ private:
 	void appendToUnrollingCfg(std::string funcName, unsigned loopNo, unsigned loopLevel, int lineNo, uint64_t unrollFactor);
 	void appendToPartitionCfg(unsigned type, std::string baseAddr, uint64_t size, size_t wordSize, uint64_t pFactor);
 	void appendToCompletePartitionCfg(std::string baseAddr, uint64_t size);
-	void appendToArrayInfoCfg(std::string arrayName, uint64_t totalSize, size_t wordSize);
+	void appendToArrayInfoCfg(std::string arrayName, uint64_t totalSize, size_t wordSize, unsigned type = arrayInfoCfgTy::ARRAY_TYPE_ONCHIP);
 
 public:
 	ConfigurationManager(std::string kernelName);

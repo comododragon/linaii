@@ -231,6 +231,10 @@ void Multipath::recursiveLookup(unsigned currLoopLevel, unsigned finalLoopLevel)
 		unsigned currUnrollFactor = unrolls.at(currLoopLevel - 1);
 		unsigned targetUnrollFactor = (currLoopBound < currUnrollFactor && currLoopBound)? currLoopBound : currUnrollFactor;
 
+		// XXX: SOMEWHERE AROUND HERE, the memory model must be consulted
+		// XXX: for example, if the memory model says that writeresp should be outside of the loop, it should be accounted here
+		// XXX: but also in the getLoopTotalLatency in BaseDatapath
+
 		if(currIsPerfect) {
 			VERBOSE_PRINT(errs() << "[][][][multipath][" << std::to_string(currLoopLevel) << "] This loop nest is perfect. Proceeding to next level\n");
 

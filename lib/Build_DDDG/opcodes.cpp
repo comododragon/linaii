@@ -135,3 +135,16 @@ bool isFCmpOp(unsigned microop) {
 bool isFloatOp(unsigned microop) {
 	return LLVM_IR_FAdd == microop || LLVM_IR_FSub == microop || LLVM_IR_FMul == microop || LLVM_IR_FDiv == microop;
 }
+
+// TODO: Todas as ops devem estar aqui de fato?
+bool isDDRMemoryOp(unsigned microop) {
+	return LLVM_IR_DDRReadReq == microop || LLVM_IR_DDRRead == microop || LLVM_IR_DDRWriteReq == microop || LLVM_IR_DDRWrite == microop || LLVM_IR_DDRWriteResp == microop;
+}
+
+bool isDDRLoad(unsigned microop) {
+	return LLVM_IR_DDRRead == microop;
+}
+
+bool isDDRStore(unsigned microop) {
+	return LLVM_IR_DDRWrite == microop;
+}

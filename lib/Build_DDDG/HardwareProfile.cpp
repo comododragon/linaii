@@ -563,6 +563,10 @@ void XilinxHardwareProfile::calculateRequiredResources(
 	std::map<std::string, unsigned> arrayNameToWritePorts;
 
 	for(auto &it : arrayInfoCfgMap) {
+		// Ignore if the array is allocated off-chip
+		if(ConfigurationManager::arrayInfoCfgTy::ARRAY_TYPE_OFFCHIP == it.second.type)
+			continue;
+
 		std::string arrayName = it.first;
 		arrayNameToReadPorts.insert(std::make_pair(arrayName, 0));
 		arrayNameToWritePorts.insert(std::make_pair(arrayName, 0));
@@ -681,6 +685,10 @@ void XilinxHardwareProfile::setMemoryCurrentUsage(
 
 	// Create array configuratiom map
 	for(auto &it : arrayInfoCfgMap) {
+		// Ignore if the array is allocated off-chip
+		if(ConfigurationManager::arrayInfoCfgTy::ARRAY_TYPE_OFFCHIP == it.second.type)
+			continue;
+
 		std::string arrayName = it.first;
 		uint64_t sizeInByte = it.second.totalSize;
 		size_t wordSizeInByte = it.second.wordSize;
@@ -1082,6 +1090,16 @@ unsigned XilinxZCUHardwareProfile::getLatency(unsigned opcode) {
 			return effectiveLatencies[LATENCY_FDIV32].first;
 		case LLVM_IR_FCmp:
 			return effectiveLatencies[LATENCY_FCMP].first;
+		case LLVM_IR_DDRReadReq:
+			return effectiveLatencies[LATENCY_DDRREADREQ].first;
+		case LLVM_IR_DDRRead:
+			return effectiveLatencies[LATENCY_DDRREAD].first;
+		case LLVM_IR_DDRWriteReq:
+			return effectiveLatencies[LATENCY_DDRWRITEREQ].first;
+		case LLVM_IR_DDRWrite:
+			return effectiveLatencies[LATENCY_DDRWRITE].first;
+		case LLVM_IR_DDRWriteResp:
+			return effectiveLatencies[LATENCY_DDRWRITERESP].first;
 		default: 
 			return 0;
 	}
@@ -1130,6 +1148,16 @@ double XilinxZCUHardwareProfile::getInCycleLatency(unsigned opcode) {
 			return effectiveLatencies[LATENCY_FDIV32].second;
 		case LLVM_IR_FCmp:
 			return effectiveLatencies[LATENCY_FCMP].second;
+		case LLVM_IR_DDRReadReq:
+			return effectiveLatencies[LATENCY_DDRREADREQ].second;
+		case LLVM_IR_DDRRead:
+			return effectiveLatencies[LATENCY_DDRREAD].second;
+		case LLVM_IR_DDRWriteReq:
+			return effectiveLatencies[LATENCY_DDRWRITEREQ].second;
+		case LLVM_IR_DDRWrite:
+			return effectiveLatencies[LATENCY_DDRWRITE].second;
+		case LLVM_IR_DDRWriteResp:
+			return effectiveLatencies[LATENCY_DDRWRITERESP].second;
 		default: 
 			return 0;
 	}

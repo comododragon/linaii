@@ -76,6 +76,32 @@ void ParsedTraceContainer::openAndClearAllFiles() {
 	}
 }
 
+void ParsedTraceContainer::openAllFilesForWrite() {
+	assert(!locked && "This container is locked, no modification permitted");
+	assert(!keepAliveRead && "This container is open for read, no modification permitted");
+
+	closeAllFiles();
+
+	if(compressed) {
+		funcFile = gzopen(funcFileName.c_str(), "a");
+		assert(funcFile != Z_NULL && "Could not open dynamic funcID file for write");
+		instIDFile = gzopen(instIDFileName.c_str(), "a");
+		assert(instIDFile != Z_NULL && "Could not open instID file for write");
+		lineNoFile = gzopen(lineNoFileName.c_str(), "a");
+		assert(lineNoFile != Z_NULL && "Could not open line num file for write");
+		memoryTraceFile = gzopen(memoryTraceFileName.c_str(), "a");
+		assert(memoryTraceFile != Z_NULL && "Could not open memory trace file for write");
+		getElementPtrFile = gzopen(getElementPtrFileName.c_str(), "a");
+		assert(getElementPtrFile != Z_NULL && "Could not open getelementptr file for write");
+		prevBasicBlockFile = gzopen(prevBasicBlockFileName.c_str(), "a");
+		assert(prevBasicBlockFile != Z_NULL && "Could not open prev BB file for write");
+		currBasicBlockFile = gzopen(currBasicBlockFileName.c_str(), "a");
+		assert(currBasicBlockFile != Z_NULL && "Could not open curr BB file for write");
+
+		keepAliveWrite = true;
+	}
+}
+
 void ParsedTraceContainer::openAllFilesForRead() {
 	assert(!keepAliveWrite && "This container is open for write, no reading permitted");
 
@@ -132,6 +158,10 @@ void ParsedTraceContainer::closeAllFiles() {
 
 void ParsedTraceContainer::lock() {
 	locked = true;
+}
+
+void ParsedTraceContainer::unlock() {
+	locked = false;
 }
 
 void ParsedTraceContainer::appendToFuncList(std::string elem) {

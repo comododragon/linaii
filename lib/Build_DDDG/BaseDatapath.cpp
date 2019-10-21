@@ -45,6 +45,9 @@ BaseDatapath::BaseDatapath(
 	// Create hardware profile based on selected platform
 	profile = HardwareProfile::createInstance();
 
+	// Create memory model based on selected platform
+	memmodel = MemoryModel::createInstance(microops, graph, numOfTotalNodes, nameToVertex, vertexToName, baseAddress, PC);
+
 	VERBOSE_PRINT(errs() << "\tBuild initial DDDG\n");
 
 	builder = new DDDGBuilder(this, PC);
@@ -163,6 +166,16 @@ void BaseDatapath::postDDDGBuild() {
 	}
 }
 
+void BaseDatapath::refreshDDDG() {
+	// XXX: See method postDDDGBuild() for more information about the following line
+	numOfTotalNodes = getNumNodes();
+
+	BGL_FORALL_VERTICES(v, graph, Graph) nameToVertex[boost::get(boost::vertex_index, graph, v)] = v;
+	vertexToName = boost::get(boost::vertex_index, graph);
+
+	edgeToWeight = boost::get(boost::edge_weight, graph);
+}
+
 void BaseDatapath::insertMicroop(int microop) {
 	microops.push_back(microop);
 }
@@ -273,6 +286,16 @@ uint64_t BaseDatapath::fpgaEstimationOneMoreSubtraceForRecIICalculation() {
 		enableStoreBufferOptimisation();
 	}
 
+	if(!(args.fNoMMA)) {
+		VERBOSE_PRINT(errs() << "\tPerforming DDDG memory model-based analysis and transform\n");
+		memmodel->analyseAndTransform();
+
+		if(memmodel->mustRefreshDDDG()) {
+			VERBOSE_PRINT(errs() << "\tRefreshing DDDG after memory model transformation\n");
+			refreshDDDG();
+		}
+	}
+
 	// Put the node latency using selected architecture as edge weights in the graph
 	VERBOSE_PRINT(errs() << "\tUpdating DDDG edges with operation latencies according to selected hardware\n");
 	bool nonNullFound = false;
@@ -317,6 +340,19 @@ uint64_t BaseDatapath::fpgaEstimation() {
 	if(args.fSBOpt) {
 		VERBOSE_PRINT(errs() << "\tOptimising store buffers\n");
 		enableStoreBufferOptimisation();
+	}
+
+	if(!(args.fNoMMA)) {
+		VERBOSE_PRINT(errs() << "\tPerforming DDDG memory model-based analysis and transform\n");
+		memmodel->analyseAndTransform();
+
+		if(memmodel->mustRefreshDDDG()) {
+			VERBOSE_PRINT(errs() << "\tRefreshing DDDG after memory model transformation\n");
+			refreshDDDG();
+		}
+
+		// TODO: ta aqui só pra debug
+		//dumpGraph();
 	}
 
 	// Put the node latency using selected architecture as edge weights in the graph

@@ -7,6 +7,7 @@ instName2bbNameMapTy instName2bbNameMap;
 headerBBFuncNamePair2lastInstMapTy headerBBFuncNamePair2lastInstMap;
 headerBBFuncNamePair2lastInstMapTy exitingBBFuncNamePair2lastInstMap;
 loopName2levelUnrollVecMapTy loopName2levelUnrollVecMap;
+memoryTraceMapTy memoryTraceMap;
 
 using namespace llvm;
 
@@ -396,6 +397,8 @@ void InstrumentForDDDG::extractMemoryTraceForAccessPattern() {
 	traceFile = gzopen(traceFileName.c_str(), "r");
 	assert(traceFile != Z_NULL && "Could not open trace input file");
 
+	std::pair<std::string, std::string> wholeLoopNameInstNamePair;
+
 	// Walk through the dynamic trace
 	while(!gzeof(traceFile)) {
 		char buffer[BUFF_STR_SZ];
@@ -437,6 +440,8 @@ void InstrumentForDDDG::extractMemoryTraceForAccessPattern() {
 
 					memTraceFile << wholeLoopName << "," << numLevels << "," << instName << ",";
 
+					wholeLoopNameInstNamePair = std::make_pair(wholeLoopName, instName);
+
 					if(isLoadOp(opcode))
 						memTraceFile << "load,";
 					else if(isStoreOp(opcode))
@@ -452,6 +457,8 @@ void InstrumentForDDDG::extractMemoryTraceForAccessPattern() {
 
 			sscanf(rest.c_str(), "%*d,%lu,%*d,%*s\n", &addr);
 			memTraceFile << addr << ",";
+
+			memoryTraceMap[wholeLoopNameInstNamePair].push_back(addr);
 		}
 		// Print result value of this load/store
 		else if(traceEntry && ((!(tag.compare("r")) && isLoadOp(opcode)) || (!(tag.compare("1")) && isStoreOp(opcode)))) {

@@ -50,6 +50,12 @@ typedef std::unordered_multimap<unsigned, edgeNodeInfo> u2eMMap;
 
 typedef std::unordered_map<int64_t, unsigned> i642uMap;
 
+// TODO: The typedef is here but variable is declared at InstrumentForDDDGPass
+// But the idea is to bring the generation of this map here, to the getTraceLineFromTo
+// To save gzip processing twice (memory trace and DDDG generation)
+// The idea would be to use the parsing logic the same way is used to calculate the dynamic loop bounds
+typedef std::map<std::pair<std::string, std::string>, std::vector<uint64_t>> memoryTraceMapTy;
+
 class BaseDatapath;
 
 class ParsedTraceContainer {
@@ -89,9 +95,11 @@ public:
 	~ParsedTraceContainer();
 
 	void openAndClearAllFiles();
+	void openAllFilesForWrite();
 	void openAllFilesForRead();
 	void closeAllFiles();
 	void lock();
+	void unlock();
 
 	void appendToFuncList(std::string elem);
 	void appendToInstIDList(std::string elem);

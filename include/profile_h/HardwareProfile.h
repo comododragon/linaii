@@ -241,7 +241,12 @@ class XilinxZCUHardwareProfile : public XilinxHardwareProfile {
 		LATENCY_FSUB32,
 		LATENCY_FMUL32,
 		LATENCY_FDIV32,
-		LATENCY_FCMP
+		LATENCY_FCMP,
+		LATENCY_DDRREADREQ,
+		LATENCY_DDRREAD,
+		LATENCY_DDRWRITEREQ,
+		LATENCY_DDRWRITE,
+		LATENCY_DDRWRITERESP
 	};
 
 	/* We are assuming here that effective frequency will never be above 500 MHz, thus the cases where timing latencies are below 2 ns are excluded */
@@ -260,7 +265,13 @@ class XilinxZCUHardwareProfile : public XilinxHardwareProfile {
 			{1, 54.60}, {2, 43.70}, {3, 36.40}, {4, 33.90}, {5, 17.60}, {6, 12.00}, {7, 9.66}, {8, 8.27}, {9, 7.05}, {10, 5.69}, {12, 4.36},
 			{15, 4.34}, {16, 3.03}, {28, 3.01}, {29, 2.91}, {30, 2.23}
 		}},
-		{LATENCY_FCMP, {{1, 3.47}, {2, 2.78}, {3, 2.31}}}
+		{LATENCY_FCMP, {{1, 3.47}, {2, 2.78}, {3, 2.31}}},
+		// TODO: Montar esse HWL direito!!!!!!
+		{LATENCY_DDRREADREQ, {{134, 7.30}}},
+		{LATENCY_DDRREAD, {{1, 7.30}}},
+		{LATENCY_DDRWRITEREQ, {{1, 7.30}}},
+		{LATENCY_DDRWRITE, {{1, 7.30}}},
+		{LATENCY_DDRWRITERESP, {{132, 7.30}}}
 	};
 	const std::unordered_map<unsigned, std::map<unsigned, unsigned>> timeConstrainedDSPs = {
 		{LATENCY_FADD32, {{1, 2}, {2, 2}, {3, 2}, {4, 2}, {5, 2}, {6, 2}, {7, 2}, {8, 2}, {10, 2}, {11, 2}}},

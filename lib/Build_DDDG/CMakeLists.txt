@@ -2,6 +2,7 @@ include_directories( ${ZLIB_INCLUDE_DIRS} )
 
 add_llvm_library(BuildDDDGlib
 	HardwareProfile.cpp
+	MemoryModel.cpp
 	Multipath.cpp
 	DynamicDatapath.cpp
 	BaseDatapath.cpp

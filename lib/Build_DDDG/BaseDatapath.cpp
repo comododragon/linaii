@@ -46,7 +46,7 @@ BaseDatapath::BaseDatapath(
 	profile = HardwareProfile::createInstance();
 
 	// Create memory model based on selected platform
-	memmodel = MemoryModel::createInstance(microops, graph, numOfTotalNodes, nameToVertex, vertexToName, baseAddress, PC);
+	memmodel = MemoryModel::createInstance(this);
 
 	VERBOSE_PRINT(errs() << "\tBuild initial DDDG\n");
 
@@ -147,12 +147,7 @@ Pack &BaseDatapath::getPack() {
 }
 
 void BaseDatapath::postDDDGBuild() {
-	// XXX: Changed from old logic that seemed buggish (i.e. numOfTotalNodes had always one more isolated node)
-	// that was read from getTraceLineFromTo()
-	numOfTotalNodes = getNumNodes();
-
-	BGL_FORALL_VERTICES(v, graph, Graph) nameToVertex[boost::get(boost::vertex_index, graph, v)] = v;
-	vertexToName = boost::get(boost::vertex_index, graph);
+	refreshDDDG();
 
 	for(auto &it : PC.getFuncList()) {
 #ifdef LEGACY_SEPARATOR
@@ -167,7 +162,8 @@ void BaseDatapath::postDDDGBuild() {
 }
 
 void BaseDatapath::refreshDDDG() {
-	// XXX: See method postDDDGBuild() for more information about the following line
+	// XXX: Changed from old logic that seemed buggish (i.e. numOfTotalNodes had always one more isolated node)
+	// that was read from getTraceLineFromTo()
 	numOfTotalNodes = getNumNodes();
 
 	BGL_FORALL_VERTICES(v, graph, Graph) nameToVertex[boost::get(boost::vertex_index, graph, v)] = v;
@@ -206,12 +202,42 @@ void BaseDatapath::updateRemoveDDDGNodes(std::vector<unsigned> &nodesToRemove) {
 		boost::clear_vertex(nameToVertex[it], graph);
 }
 
+ConfigurationManager &BaseDatapath::getConfigurationManager() {
+	return CM;
+}
+
+ParsedTraceContainer &BaseDatapath::getParsedTraceContainer() {
+	return PC;
+}
+
+Graph &BaseDatapath::getDDDG() {
+	return graph;
+}
+
+VertexNameMap &BaseDatapath::getVertexToName() {
+	return vertexToName;
+}
+
+EdgeWeightMap &BaseDatapath::getEdgeToWeight() {
+	return edgeToWeight;
+}
+
+std::unordered_map<unsigned, Vertex> &BaseDatapath::getNameToVertex() {
+	return nameToVertex;
+}
+
+std::vector<int> &BaseDatapath::getMicroops() {
+	return microops;
+}
+
+std::unordered_map<int, std::pair<std::string, int64_t>> &BaseDatapath::getBaseAddress() {
+	return baseAddress;
+}
+
 void BaseDatapath::initBaseAddress() {
 	const ConfigurationManager::partitionCfgMapTy &partitionMap = CM.getPartitionCfgMap();
 	const ConfigurationManager::partitionCfgMapTy &completePartitionMap = CM.getCompletePartitionCfgMap();
 	const std::unordered_map<int, std::pair<std::string, int64_t>> &getElementPtrMap = PC.getGetElementPtrList();
-
-	edgeToWeight = boost::get(boost::edge_weight, graph);
 
 	VertexIterator vi, viEnd;
 	for(std::tie(vi, viEnd) = vertices(graph); vi != viEnd; vi++) {
@@ -289,11 +315,6 @@ uint64_t BaseDatapath::fpgaEstimationOneMoreSubtraceForRecIICalculation() {
 	if(!(args.fNoMMA)) {
 		VERBOSE_PRINT(errs() << "\tPerforming DDDG memory model-based analysis and transform\n");
 		memmodel->analyseAndTransform();
-
-		if(memmodel->mustRefreshDDDG()) {
-			VERBOSE_PRINT(errs() << "\tRefreshing DDDG after memory model transformation\n");
-			refreshDDDG();
-		}
 	}
 
 	// Put the node latency using selected architecture as edge weights in the graph
@@ -346,11 +367,6 @@ uint64_t BaseDatapath::fpgaEstimation() {
 		VERBOSE_PRINT(errs() << "\tPerforming DDDG memory model-based analysis and transform\n");
 		memmodel->analyseAndTransform();
 
-		if(memmodel->mustRefreshDDDG()) {
-			VERBOSE_PRINT(errs() << "\tRefreshing DDDG after memory model transformation\n");
-			refreshDDDG();
-		}
-
 		// TODO: ta aqui só pra debug
 		//dumpGraph();
 	}
@@ -396,12 +412,24 @@ uint64_t BaseDatapath::fpgaEstimation() {
 	rcIL = rcPair.first;
 	double achievedPeriod = rcPair.second;
 
+	// TODO: Ver como colocar os load/stores offchip aqui
+	// Uma ideia é mudar o endereço de todas as palavras que estão offchip (tipo somar um offset grande 0x1000000000 sei la)
+	// E daí deixar a função iterar normal em cima dos load/stores offchip
+	// Talvez seja necessário mudanças no hardwareprofile e outros lugares para "incluir" os load/stores offchip de maneira certa
+	// Além disso, vou ter que ver TODOS os lugares onde eu preciso "atualizar" o baseaddress
+	// XXX: Na vdd, acho que nem preciso atualizar os baseaddress.
 	VERBOSE_PRINT(errs() << "\tGetting memory-constrained II\n");
-	std::tuple<std::string, uint64_t> resIIMem = calculateResIIMem();
+	// TODO ARRUMAR
+	// TODO ARRUMAR
+	// TODO ARRUMAR
+	// TODO ARRUMAR
+	// TODO ARRUMAR
+	// TODO ARRUMAR
+	//std::tuple<std::string, uint64_t> resIIMem = calculateResIIMem();
+	std::tuple<std::string, uint64_t> resIIMem = std::make_tuple("none", 1);
 
 	VERBOSE_PRINT(errs() << "\tGetting hardware-constrained II\n");
 	std::tuple<std::string, uint64_t> resIIOp = profile->calculateResIIOp();
-
 
 	VERBOSE_PRINT(errs() << "\tGetting recurrence-constrained II\n");
 	uint64_t recII = calculateRecII(std::get<0>(asapResult));
@@ -709,6 +737,8 @@ void BaseDatapath::optimiseDDDG() {
 void BaseDatapath::performMemoryDisambiguation() {
 	assert(false && "Memory disambiguation is untested for now and was deactivated");
 
+	// XXX: Logic was not changed to handle offchip (if even needed)
+
 	std::unordered_multimap<std::string, std::string> loadStorePairs;
 	std::unordered_set<std::string> pairedStore;
 	const std::vector<std::string> &dynamicMethodID = PC.getFuncList();
@@ -837,6 +867,7 @@ void BaseDatapath::removeSharedLoads() {
 			continue;
 
 		// From this point only active store and loads are considered
+		// XXX: offchip not being considered
 
 		std::unordered_map<int, std::pair<int64_t, unsigned>>::const_iterator found = memoryTraceList.find(nodeID);
 		assert(found != memoryTraceList.end() && "Storage operation found with no memory trace element");
@@ -896,6 +927,7 @@ void BaseDatapath::removeRepeatedStores() {
 			continue;
 
 		// From this point only active stores are considered
+		// XXX: offchip not being considered
 
 		int64_t nodeAddress = memoryTraceList.at(nodeID).first;
 		std::unordered_map<int64_t, unsigned>::iterator found = addressStoreMap.find(nodeAddress);
@@ -1056,8 +1088,18 @@ std::tuple<uint64_t, uint64_t> BaseDatapath::asapScheduling() {
 	std::set<unsigned> visitedNodes;
 #endif
 
-	for(unsigned nodeID = 0; nodeID < numOfTotalNodes; nodeID++) {
-		Vertex currNode = nameToVertex[nodeID];
+	std::vector<Vertex> topologicalSortedNodes;
+	boost::topological_sort(graph, std::back_inserter(topologicalSortedNodes));
+
+	// TODO: this loop was iterated with a node index only and it worked
+	// since the "virgin" DDDG is naturally topologically sorted.
+	// After the memorymodel, this is not the case anymore, so we need to sort it before running ASAP/ALAP
+	// To avoid that, another approach would maintain the DDDG unchanged in terms of nodes.
+	// This is possible by creating composite nodes, such as DDRWriteReq+DDRWrite and DDRWrite+DDRWriteResp
+	// for example.
+	for(auto vi = topologicalSortedNodes.rbegin(); vi != topologicalSortedNodes.rend(); vi++) {
+		Vertex currNode = *vi;
+		unsigned nodeID = vertexToName[currNode];
 
 		// Set scheduled time to 0 to root nodes
 		if(!boost::in_degree(currNode, graph)) {
@@ -1123,9 +1165,13 @@ void BaseDatapath::alapScheduling(std::tuple<uint64_t, uint64_t> asapResult) {
 	std::set<unsigned> visitedNodes;
 #endif
 
-	// nodeID is incremented by 1 here, so that we can use unsigned (otherwise exit condition would be i < 0)
-	for(unsigned nodeID = numOfTotalNodes - 1; nodeID + 1; nodeID--) {
-		Vertex currNode = nameToVertex[nodeID];
+	std::vector<Vertex> topologicalSortedNodes;
+	boost::topological_sort(graph, std::back_inserter(topologicalSortedNodes));
+
+	// TODO: See the same loop from asap for more info
+	for(auto vi = topologicalSortedNodes.begin(); vi != topologicalSortedNodes.end(); vi++) {
+		Vertex currNode = *vi;
+		unsigned nodeID = vertexToName[currNode];
 
 		// Set scheduled time to maximum time from ASAP to leaf nodes
 		if(!boost::out_degree(currNode, graph)) {
@@ -1687,6 +1733,7 @@ BaseDatapath::RCScheduler::RCScheduler(
 	storeReady.clear();
 	intOpReady.clear();
 	callReady.clear();
+	ddrOpReady.clear();
 	othersReady.clear();
 
 	fAddSelected.clear();
@@ -1698,6 +1745,7 @@ BaseDatapath::RCScheduler::RCScheduler(
 	storeSelected.clear();
 	intOpSelected.clear();
 	callSelected.clear();
+	ddrOpSelected.clear();
 
 	fAddExecuting.clear();
 	fSubExecuting.clear();
@@ -1708,6 +1756,7 @@ BaseDatapath::RCScheduler::RCScheduler(
 	storeExecuting.clear();
 	intOpExecuting.clear();
 	callExecuting.clear();
+	ddrOpExecuting.clear();
 
 	// Select root connected nodes to start scheduling
 	VertexIterator vi, vEnd;
@@ -1790,6 +1839,8 @@ std::pair<uint64_t, double> BaseDatapath::RCScheduler::schedule() {
 				tcSched.tryAllocate(it.first, false);
 			for(auto &it : callExecuting)
 				tcSched.tryAllocate(it.first, false);
+			for(auto &it : ddrOpExecuting)
+				tcSched.tryAllocate(it.first, false);
 		}
 
 		// Nodes must be executed only once per clock tick. These lists hold which nodes were already executed
@@ -1802,6 +1853,7 @@ std::pair<uint64_t, double> BaseDatapath::RCScheduler::schedule() {
 		storeExecuted.clear();
 		intOpExecuted.clear();
 		callExecuted.clear();
+		ddrOpExecuted.clear();
 
 		// Normal cycle allocation
 		readyChanged = false;
@@ -1926,6 +1978,7 @@ void BaseDatapath::RCScheduler::select() {
 	trySelect(storeReady, storeSelected, &HardwareProfile::storeTryAllocate);
 	trySelect(intOpReady, intOpSelected, &HardwareProfile::intOpTryAllocate);
 	trySelect(callReady, callSelected, &HardwareProfile::callTryAllocate);
+	trySelect(ddrOpReady, ddrOpSelected, &HardwareProfile::ddrOpTryAllocate);
 }
 
 void BaseDatapath::RCScheduler::execute() {
@@ -1939,6 +1992,7 @@ void BaseDatapath::RCScheduler::execute() {
 	enqueueExecute(LLVM_IR_Store, storeSelected, storeExecuting, &HardwareProfile::storeRelease);
 	enqueueExecute(intOpSelected, intOpExecuting, &HardwareProfile::intOpRelease);
 	enqueueExecute(LLVM_IR_Call, callSelected, callExecuting, &HardwareProfile::callRelease);
+	enqueueExecute(ddrOpSelected, ddrOpExecuting, &HardwareProfile::ddrOpRelease);
 }
 
 void BaseDatapath::RCScheduler::release() {
@@ -1952,6 +2006,7 @@ void BaseDatapath::RCScheduler::release() {
 	tryRelease(LLVM_IR_Store, storeExecuting, storeExecuted, &HardwareProfile::storeRelease);
 	tryRelease(intOpExecuting, intOpExecuted, &HardwareProfile::intOpRelease);
 	tryRelease(LLVM_IR_Call, callExecuting, callExecuted, &HardwareProfile::callRelease);
+	tryRelease(ddrOpExecuting, ddrOpExecuted, &HardwareProfile::ddrOpRelease);
 }
 
 void BaseDatapath::RCScheduler::pushReady(unsigned nodeID, uint64_t tick) {
@@ -1988,6 +2043,13 @@ void BaseDatapath::RCScheduler::pushReady(unsigned nodeID, uint64_t tick) {
 			break;
 		case LLVM_IR_Call:
 			callReady.push_back(std::make_pair(nodeID, tick));
+			break;
+		case LLVM_IR_DDRReadReq:
+		case LLVM_IR_DDRRead:
+		case LLVM_IR_DDRWriteReq:
+		case LLVM_IR_DDRWrite:
+		case LLVM_IR_DDRWriteResp:
+			ddrOpReady.push_back(std::make_pair(nodeID, tick));
 			break;
 		default:
 			othersReady.push_back(std::make_pair(nodeID, tick));
@@ -2048,7 +2110,7 @@ void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &sel
 	}
 }
 
-void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocateInt)(unsigned, bool)) {
+void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocateOp)(unsigned, bool)) {
 	if(ready.size()) {
 		selected.clear();
 
@@ -2060,14 +2122,14 @@ void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &sel
 
 			// If allocation is successful (i.e. there is one operation unit available), select this operation
 			// If timing-constrained scheduling is enabled, allocation is not yet performed, only attempted
-			if((profile.*tryAllocateInt)(microops.at(nodeID), args.fNoTCS)) {
+			if((profile.*tryAllocateOp)(microops.at(nodeID), args.fNoTCS)) {
 				bool timingConstrained = false;
 
 				// Timing-constrained scheduling (taa-daa)
 				if(!(args.fNoTCS)) {
 					// If selecting the current node does not violate timing in any way, proceed
 					if(tcSched.tryAllocate(nodeID))
-						(profile.*tryAllocateInt)(microops.at(nodeID), true);
+						(profile.*tryAllocateOp)(microops.at(nodeID), true);
 					// Else, fail
 					else
 						timingConstrained = true;
@@ -2174,7 +2236,7 @@ void BaseDatapath::RCScheduler::enqueueExecute(unsigned opcode, selectedListTy &
 	}
 }
 
-void BaseDatapath::RCScheduler::enqueueExecute(selectedListTy &selected, executingMapTy &executing, void (HardwareProfile::*releaseInt)(unsigned)) {
+void BaseDatapath::RCScheduler::enqueueExecute(selectedListTy &selected, executingMapTy &executing, void (HardwareProfile::*releaseOp)(unsigned)) {
 	while(selected.size()) {
 		unsigned selectedNodeID = selected.front();
 		unsigned opcode = microops.at(selectedNodeID);
@@ -2261,7 +2323,7 @@ void BaseDatapath::RCScheduler::tryRelease(unsigned opcode, executingMapTy &exec
 		executing.erase(it);
 }
 
-void BaseDatapath::RCScheduler::tryRelease(executingMapTy &executing, executedListTy &executed, void (HardwareProfile::*releaseInt)(unsigned)) {
+void BaseDatapath::RCScheduler::tryRelease(executingMapTy &executing, executedListTy &executed, void (HardwareProfile::*releaseOp)(unsigned)) {
 	std::vector<unsigned> toErase;
 
 	for(auto &it: executing) {
@@ -2289,7 +2351,7 @@ void BaseDatapath::RCScheduler::tryRelease(executingMapTy &executing, executedLi
 
 			// If operation is pipelined, the resource was already released before
 			if(!(profile.isPipelined(opcode)))
-				(profile.*releaseInt)(opcode);
+				(profile.*releaseOp)(opcode);
 		}
 		else {
 			if(args.showScheduling)

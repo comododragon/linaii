@@ -111,6 +111,7 @@ public:
 		nodeTickTy intOpReady;
 		nodeTickTy callReady;
 		nodeTickTy othersReady;
+		nodeTickTy ddrOpReady;
 
 		selectedListTy fAddSelected;
 		selectedListTy fSubSelected;
@@ -121,6 +122,7 @@ public:
 		selectedListTy storeSelected;
 		selectedListTy intOpSelected;
 		selectedListTy callSelected;
+		selectedListTy ddrOpSelected;
 
 		executingMapTy fAddExecuting;
 		executingMapTy fSubExecuting;
@@ -131,6 +133,7 @@ public:
 		executingMapTy storeExecuting;
 		executingMapTy intOpExecuting;
 		executingMapTy callExecuting;
+		executingMapTy ddrOpExecuting;
 
 		executedListTy fAddExecuted;
 		executedListTy fSubExecuted;
@@ -141,6 +144,7 @@ public:
 		executedListTy storeExecuted;
 		executedListTy intOpExecuted;
 		executedListTy callExecuted;
+		executedListTy ddrOpExecuted;
 
 		std::ofstream dumpFile;
 
@@ -154,13 +158,13 @@ public:
 
 		void pushReady(unsigned nodeID, uint64_t tick);
 		void trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocate)(bool));
-		void trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocateInt)(unsigned, bool));
+		void trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocateOp)(unsigned, bool));
 		void trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocateMem)(std::string, bool));
 		void enqueueExecute(unsigned opcode, selectedListTy &selected, executingMapTy &executing, void (HardwareProfile::*release)());
-		void enqueueExecute(selectedListTy &selected, executingMapTy &executing, void (HardwareProfile::*releaseInt)(unsigned));
+		void enqueueExecute(selectedListTy &selected, executingMapTy &executing, void (HardwareProfile::*releaseOp)(unsigned));
 		void enqueueExecute(unsigned opcde, selectedListTy &selected, executingMapTy &executing, void (HardwareProfile::*releaseMem)(std::string));
 		void tryRelease(unsigned opcode, executingMapTy &executing, executedListTy &executed, void (HardwareProfile::*release)());
-		void tryRelease(executingMapTy &executing, executedListTy &executed, void (HardwareProfile::*releaseInt)(unsigned));
+		void tryRelease(executingMapTy &executing, executedListTy &executed, void (HardwareProfile::*releaseOp)(unsigned));
 		void tryRelease(unsigned opcode, executingMapTy &executing, executedListTy &executed, void (HardwareProfile::*releaseMem)(std::string));
 		void setScheduledAndAssignReadyChildren(unsigned nodeID);
 
@@ -257,6 +261,16 @@ public:
 	void updateRemoveDDDGNodes(std::vector<unsigned> &nodesToRemove);
 
 	std::string constructUniqueID(std::string funcID, std::string instID, std::string bbID);
+
+	// Interface for non-subclasses (e.g. MemoryModel)
+	ConfigurationManager &getConfigurationManager();
+	ParsedTraceContainer &getParsedTraceContainer();
+	Graph &getDDDG();
+	VertexNameMap &getVertexToName();
+	EdgeWeightMap &getEdgeToWeight();
+	std::unordered_map<unsigned, Vertex> &getNameToVertex();
+	std::vector<int> &getMicroops();
+	std::unordered_map<int, std::pair<std::string, int64_t>> &getBaseAddress();
 
 protected:
 	// Special edge types

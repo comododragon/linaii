@@ -94,6 +94,7 @@ public:
 	bool storeTryAllocate(std::string arrayPartitionName, bool commit = true);
 	bool intOpTryAllocate(unsigned opcode, bool commit = true);
 	bool callTryAllocate(bool commit = true);
+	bool ddrOpTryAllocate(unsigned opcode, bool commit = true);
 
 	void pipelinedRelease();
 	void fAddRelease();
@@ -105,6 +106,7 @@ public:
 	void storeRelease(std::string arrayPartitionName);
 	void intOpRelease(unsigned opcode);
 	void callRelease();
+	void ddrOpRelease(unsigned opcode);
 };
 
 class XilinxHardwareProfile : public HardwareProfile {

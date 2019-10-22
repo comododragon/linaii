@@ -349,6 +349,11 @@ bool HardwareProfile::callTryAllocate(bool commit) {
 	return true;
 }
 
+bool HardwareProfile::ddrOpTryAllocate(unsigned opcode, bool commit) {
+	// TODO: We are leaving all constraining to the DDDG edges for DDR transactions, at least for now
+	return true;
+}
+
 void HardwareProfile::pipelinedRelease() {
 	// Release constrained pipelined functional units
 	if(isPipelined(LLVM_IR_FAdd))
@@ -369,6 +374,8 @@ void HardwareProfile::pipelinedRelease() {
 		for(auto &it : arrayPartitionToWritePortsInUse)
 			it.second = 0;
 	}
+
+	// TODO: Perhaps any ddr release here?
 }
 
 void HardwareProfile::fAddRelease() {
@@ -415,6 +422,10 @@ void HardwareProfile::intOpRelease(unsigned opcode) {
 
 void HardwareProfile::callRelease() {
 	//assert(false && "Calls are not constrained");
+}
+
+void HardwareProfile::ddrOpRelease(unsigned opcode) {
+	// TODO: We are leaving all constraining to the DDDG edges for DDR transactions, at least for now
 }
 
 XilinxHardwareProfile::XilinxHardwareProfile() {

@@ -4,31 +4,19 @@
 
 extern memoryTraceMapTy memoryTraceMap;
 
-MemoryModel::MemoryModel(
-	std::vector<int> &microops, Graph &graph, unsigned &numOfTotalNodes,
-	std::unordered_map<unsigned, Vertex> &nameToVertex, VertexNameMap &vertexToName,
-	std::unordered_map<int, std::pair<std::string, int64_t>> &baseAddress,
-	ParsedTraceContainer &PC
-) : microops(microops), graph(graph), numOfTotalNodes(numOfTotalNodes),
-	nameToVertex(nameToVertex), vertexToName(vertexToName), baseAddress(baseAddress),
-	PC(PC)
-{
-	changedDDDG = false;
-}
+MemoryModel::MemoryModel(BaseDatapath *datapath) :
+	datapath(datapath), microops(datapath->getMicroops()), graph(datapath->getDDDG()),
+	nameToVertex(datapath->getNameToVertex()), vertexToName(datapath->getVertexToName()), edgeToWeight(datapath->getEdgeToWeight()),
+	baseAddress(datapath->getBaseAddress()), CM(datapath->getConfigurationManager()), PC(datapath->getParsedTraceContainer()) { }
 
-MemoryModel *MemoryModel::createInstance(
-	std::vector<int> &microops, Graph &graph, unsigned &numOfTotalNodes,
-	std::unordered_map<unsigned, Vertex> &nameToVertex, VertexNameMap &vertexToName,
-	std::unordered_map<int, std::pair<std::string, int64_t>> &baseAddress,
-	ParsedTraceContainer &PC
-) {
+MemoryModel *MemoryModel::createInstance(BaseDatapath *datapath) {
 	switch(args.target) {
 		case ArgPack::TARGET_XILINX_VC707:
 			assert(args.fNoMMA && "Memory model analysis is currently not supported with the selected platform. Please activate the \"--fno-mma\" flag");
 			return nullptr;
 		case ArgPack::TARGET_XILINX_ZCU102:
 		case ArgPack::TARGET_XILINX_ZCU104:
-			return new XilinxZCUMemoryModel(microops, graph, numOfTotalNodes, nameToVertex, vertexToName, baseAddress, PC);
+			return new XilinxZCUMemoryModel(datapath);
 		case ArgPack::TARGET_XILINX_ZC702:
 		default:
 			assert(args.fNoMMA && "Memory model analysis is currently not supported with the selected platform. Please activate the \"--fno-mma\" flag");
@@ -36,13 +24,7 @@ MemoryModel *MemoryModel::createInstance(
 	}
 }
 
-void MemoryModel::analyseAndTransform() {
-	changedDDDG = false;
-}
-
-bool MemoryModel::mustRefreshDDDG() {
-	return changedDDDG;
-}
+void MemoryModel::analyseAndTransform() { }
 
 void XilinxZCUMemoryModel::findInBursts(
 		std::unordered_map<unsigned, uint64_t> &foundNodes,
@@ -115,17 +97,13 @@ std::string XilinxZCUMemoryModel::generateInstID(unsigned opcode, std::vector<st
 	return instID;
 }
 
-XilinxZCUMemoryModel::XilinxZCUMemoryModel(
-	std::vector<int> &microops, Graph &graph, unsigned &numOfTotalNodes,
-	std::unordered_map<unsigned, Vertex> &nameToVertex, VertexNameMap &vertexToName,
-	std::unordered_map<int, std::pair<std::string, int64_t>> &baseAddress,
-	ParsedTraceContainer &PC
-) : MemoryModel(microops, graph, numOfTotalNodes, nameToVertex, vertexToName, baseAddress, PC) { }
+XilinxZCUMemoryModel::XilinxZCUMemoryModel(BaseDatapath *datapath) : MemoryModel(datapath) { }
 
 void XilinxZCUMemoryModel::analyseAndTransform() {
+	const ConfigurationManager::arrayInfoCfgMapTy arrayInfoCfgMap = CM.getArrayInfoCfgMap();
 	const std::unordered_map<int, std::pair<int64_t, unsigned>> &memoryTraceList = PC.getMemoryTraceList();
 
-	// Change all load/stores to DDR read/writes (and mark their locations)
+	// Change all load/stores marked as offchip to DDR read/writes (and mark their locations)
 	VertexIterator vi, viEnd;
 	for(std::tie(vi, viEnd) = vertices(graph); vi != viEnd; vi++) {
 		Vertex currNode = *vi;
@@ -133,6 +111,10 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 		int nodeMicroop = microops.at(nodeID);
 
 		if(!isMemoryOp(nodeMicroop))
+			continue;
+
+		// Only consider offchip arrays
+		if(arrayInfoCfgMap.at(baseAddress[nodeID].first).type != ConfigurationManager::arrayInfoCfgTy::ARRAY_TYPE_OFFCHIP)
 			continue;
 
 		if(isLoadOp(nodeMicroop)) {
@@ -188,13 +170,10 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 
 	// Add the relevant DDDG nodes for offchip load
 	for(auto &burst : burstedLoads) {
-		// Mark DDDG as changed
-		changedDDDG = true;
-
 		unsigned newID = microops.size();
 
 		// Create a node with opcode LLVM_IR_DDRReadReq
-		microops.push_back(LLVM_IR_DDRReadReq);
+		datapath->insertMicroop(LLVM_IR_DDRReadReq);
 
 		// Since we will add new nodes to the DDDG, we must update the auxiliary structures accordingly
 		// Get values from the first load, we will use most of them
@@ -217,18 +196,103 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 		PC.closeAllFiles();
 		PC.lock();
 
+		// Disconnect the edges incoming to the first load and connect to the read request
+		std::set<Edge> edgesToRemove;
+		std::vector<edgeTy> edgesToAdd;
+		InEdgeIterator inEdgei, inEdgeEnd;
+		for(std::tie(inEdgei, inEdgeEnd) = boost::in_edges(nameToVertex[burst.first], graph); inEdgei != inEdgeEnd; inEdgei++) {
+			unsigned sourceID = vertexToName[boost::source(*inEdgei, graph)];
+			edgesToRemove.insert(*inEdgei);
+			edgesToAdd.push_back({sourceID, newID, edgeToWeight[*inEdgei]});
+		}
 		// Connect this node to the first load
 		// XXX: Does the edge weight matter here?
-		boost::add_edge(newID, burst.first, EdgeProperty(0), graph);
+		edgesToAdd.push_back({newID, burst.first, 0});
 
 		// Now, chain the loads to create the burst effect
 		std::vector<unsigned> burstChain = std::get<2>(burst.second);
 		for(unsigned i = 1; i < burstChain.size(); i++)
-			boost::add_edge(burstChain[i - 1], burstChain[i], EdgeProperty(0), graph);
+			edgesToAdd.push_back({burstChain[i - 1], burstChain[i], 0});
+
+		// Update DDDG
+		datapath->updateRemoveDDDGEdges(edgesToRemove);
+		datapath->updateAddDDDGEdges(edgesToAdd);
 	}
 
 	// Add the relevant DDDG nodes for offchip store
-	// TODO
+	for(auto &burst : burstedStores) {
+		// DDRWriteReq is positioned before the burst
+
+		unsigned newID = microops.size();
+
+		// Create a node with opcode LLVM_IR_DDRWriteReq
+		microops.push_back(LLVM_IR_DDRWriteReq);
+
+		// Since we will add new nodes to the DDDG, we must update the auxiliary structures accordingly
+		// Get values from the first store, we will use most of them
+		std::string currDynamicFunction = PC.getFuncList()[burst.first];
+		std::string currInstID = generateInstID(LLVM_IR_DDRWriteReq, PC.getInstIDList());
+		int lineNo = PC.getLineNoList()[burst.first];
+		std::string prevBB = PC.getPrevBBList()[burst.first];
+		std::string currBB = PC.getCurrBBList()[burst.first];
+		// TODO: checar se está tudo sendo atualizado apropriadamente nas próximas linhas
+		PC.unlock();
+		PC.openAllFilesForWrite();
+		// Update ParsedTraceContainer containers with the new node.
+		// XXX: We use the values from the first store
+		PC.appendToFuncList(currDynamicFunction);
+		PC.appendToInstIDList(currInstID);
+		PC.appendToLineNoList(lineNo);
+		PC.appendToPrevBBList(prevBB);
+		PC.appendToCurrBBList(currBB);
+		// Finished
+		PC.closeAllFiles();
+		PC.lock();
+
+		// Connect this node to the first store
+		// XXX: Does the edge weight matter here?
+		boost::add_edge(newID, burst.first, EdgeProperty(0), graph);
+
+		// Now, chain the stores to create the burst effect
+		std::vector<unsigned> burstChain = std::get<2>(burst.second);
+		for(unsigned i = 1; i < burstChain.size(); i++)
+			boost::add_edge(burstChain[i - 1], burstChain[i], EdgeProperty(0), graph);
+
+		// DDRWriteResp is positioned after the last burst beat
+		newID = microops.size();
+		unsigned lastStore = std::get<2>(burst.second).back();
+
+		// Create a node with opcode LLVM_IR_DDRWriteResp
+		microops.push_back(LLVM_IR_DDRWriteResp);
+
+		// Since we will add new nodes to the DDDG, we must update the auxiliary structures accordingly
+		// Get values from the last store, we will use most of them
+		currDynamicFunction = PC.getFuncList()[lastStore];
+		currInstID = generateInstID(LLVM_IR_DDRWriteResp, PC.getInstIDList());
+		lineNo = PC.getLineNoList()[lastStore];
+		prevBB = PC.getPrevBBList()[lastStore];
+		currBB = PC.getCurrBBList()[lastStore];
+		// TODO: checar se está tudo sendo atualizado apropriadamente nas próximas linhas
+		PC.unlock();
+		PC.openAllFilesForWrite();
+		// Update ParsedTraceContainer containers with the new node.
+		// XXX: We use the values from the last store
+		PC.appendToFuncList(currDynamicFunction);
+		PC.appendToInstIDList(currInstID);
+		PC.appendToLineNoList(lineNo);
+		PC.appendToPrevBBList(prevBB);
+		PC.appendToCurrBBList(currBB);
+		// Finished
+		PC.closeAllFiles();
+		PC.lock();
+
+		// TODO: implementar a mesma lógica do burst load para reconectar os edges que tao indo pro DDRWrite
+		// agora precisa analisar se o mesmo precisa ser feito em ambos writereq e writeresp ou só um deles... etc, etc.
+
+		// Connect this node to the last store
+		// XXX: Does the edge weight matter here?
+		boost::add_edge(lastStore, newID, EdgeProperty(0), graph);
+	}
 
 	errs() << "-- behavedLoads\n";
 	for(auto const &x : behavedLoads)
@@ -264,6 +328,8 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 	// 1. Itera sobre o DDDG. Loads e stores à arrays offchip tem os opcodes trocados por LLVM_IR_DDRRead/LLVM_IR_DDRWrite
 	// 2. Analisar onde inserir writeReq e writeResp: se serao inseridos dentro do DDDG (aproveitando alguma rajada) ou se serao jogados pra fora do DDDG (fora do loop)
 	// 3. Analisar onde inserir readReq, na mesma lógica de 2
+
+	datapath->refreshDDDG();
 
 // TODO TODO TODO TODO
 // TODO TODO TODO TODO

@@ -9,34 +9,22 @@ class BaseDatapath;
 
 class MemoryModel {
 protected:
+	BaseDatapath *datapath;
 	std::vector<int> &microops;
 	Graph &graph;
-	unsigned &numOfTotalNodes;
 	std::unordered_map<unsigned, Vertex> &nameToVertex;
 	VertexNameMap &vertexToName;
+	EdgeWeightMap edgeToWeight;
 	std::unordered_map<int, std::pair<std::string, int64_t>> &baseAddress;
+	ConfigurationManager &CM;
 	ParsedTraceContainer &PC;
 
-	bool changedDDDG;
-
 public:
-	MemoryModel(
-		std::vector<int> &microops, Graph &graph, unsigned &numOfTotalNodes,
-		std::unordered_map<unsigned, Vertex> &nameToVertex, VertexNameMap &vertexToName,
-		std::unordered_map<int, std::pair<std::string, int64_t>> &baseAddress,
-		ParsedTraceContainer &PC
-	);
+	MemoryModel(BaseDatapath *datapath);
 	virtual ~MemoryModel() { }
-	static MemoryModel *createInstance(
-		std::vector<int> &microops, Graph &graph, unsigned &numOfTotalNodes,
-		std::unordered_map<unsigned, Vertex> &nameToVertex, VertexNameMap &vertexToName,
-		std::unordered_map<int, std::pair<std::string, int64_t>> &baseAddress,
-		ParsedTraceContainer &PC
-	);
+	static MemoryModel *createInstance(BaseDatapath *datapath);
 
 	virtual void analyseAndTransform() = 0;
-
-	bool mustRefreshDDDG();
 };
 
 class XilinxZCUMemoryModel : public MemoryModel {
@@ -55,12 +43,7 @@ class XilinxZCUMemoryModel : public MemoryModel {
 	std::string generateInstID(unsigned opcode, std::vector<std::string> instIDList);
 
 public:
-	XilinxZCUMemoryModel(
-		std::vector<int> &microops, Graph &graph, unsigned &numOfTotalNodes,
-		std::unordered_map<unsigned, Vertex> &nameToVertex, VertexNameMap &vertexToName,
-		std::unordered_map<int, std::pair<std::string, int64_t>> &baseAddress,
-		ParsedTraceContainer &PC
-	);
+	XilinxZCUMemoryModel(BaseDatapath *datapath);
 
 	void analyseAndTransform();
 

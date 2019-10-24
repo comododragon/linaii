@@ -5,6 +5,7 @@
 #include <iostream>
 
 #include "profile_h/auxiliary.h"
+#include "profile_h/MemoryModel.h"
 
 using namespace llvm;
 
@@ -23,10 +24,13 @@ protected:
 	unsigned fAddCount, fSubCount, fMulCount, fDivCount;
 	unsigned unrFAddCount, unrFSubCount, unrFMulCount, unrFDivCount;
 	unsigned fAddInUse, fSubInUse, fMulInUse, fDivInUse;
+	bool ddrReadPortInUse, ddrWritePortInUse;
 	unsigned fAddThreshold, fSubThreshold, fMulThreshold, fDivThreshold;
 	bool isConstrained;
 	bool thresholdSet;
 	std::set<int> limitedBy;
+
+	MemoryModel *memmodel;
 
 public:
 	enum {
@@ -39,8 +43,10 @@ public:
 	HardwareProfile();
 	virtual ~HardwareProfile() { }
 	static HardwareProfile *createInstance();
+	void setMemoryModel(MemoryModel *memmodel);
 	virtual void clear();
 
+	void performMemoryModelAnalysis();
 	virtual unsigned getLatency(unsigned opcode) = 0;
 	virtual double getInCycleLatency(unsigned opcode) = 0;
 	virtual bool isPipelined(unsigned opcode) = 0;
@@ -92,9 +98,9 @@ public:
 	bool fCmpTryAllocate(bool commit = true);
 	bool loadTryAllocate(std::string arrayPartitionName, bool commit = true);
 	bool storeTryAllocate(std::string arrayPartitionName, bool commit = true);
-	bool intOpTryAllocate(unsigned opcode, bool commit = true);
+	bool intOpTryAllocate(int opcode, bool commit = true);
 	bool callTryAllocate(bool commit = true);
-	bool ddrOpTryAllocate(unsigned opcode, bool commit = true);
+	bool ddrOpTryAllocate(unsigned node, int opcode, bool commit = true);
 
 	void pipelinedRelease();
 	void fAddRelease();
@@ -104,9 +110,9 @@ public:
 	void fCmpRelease();
 	void loadRelease(std::string arrayPartitionName);
 	void storeRelease(std::string arrayPartitionName);
-	void intOpRelease(unsigned opcode);
+	void intOpRelease(int opcode);
 	void callRelease();
-	void ddrOpRelease(unsigned opcode);
+	void ddrOpRelease(unsigned node, int opcode);
 };
 
 class XilinxHardwareProfile : public HardwareProfile {

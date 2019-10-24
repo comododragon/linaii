@@ -17,6 +17,8 @@ HardwareProfile::HardwareProfile() {
 	fSubInUse = 0;
 	fMulInUse = 0;
 	fDivInUse = 0;
+	ddrReadPortInUse = false;
+	ddrWritePortInUse = false;
 
 	fAddThreshold = 0;
 	fSubThreshold = 0;
@@ -25,6 +27,8 @@ HardwareProfile::HardwareProfile() {
 
 	isConstrained = false;
 	thresholdSet = false;
+
+	memmodel = nullptr;
 }
 
 HardwareProfile *HardwareProfile::createInstance() {
@@ -43,12 +47,20 @@ HardwareProfile *HardwareProfile::createInstance() {
 	}
 }
 
+void HardwareProfile::setMemoryModel(MemoryModel *memmodel) {
+	this->memmodel = memmodel;
+}
+
 void HardwareProfile::clear() {
 	arrayNameToNumOfPartitions.clear();
 	fAddCount = 0;
 	fSubCount = 0;
 	fMulCount = 0;
 	fDivCount = 0;
+}
+
+void HardwareProfile::performMemoryModelAnalysis() {
+	memmodel->analyseAndTransform();
 }
 
 void HardwareProfile::constrainHardware(
@@ -62,6 +74,8 @@ void HardwareProfile::constrainHardware(
 	fSubInUse = 0;
 	fMulInUse = 0;
 	fDivInUse = 0;
+	ddrReadPortInUse = false;
+	ddrWritePortInUse = false;
 
 	arrayNameToConfig.clear();
 	arrayNameToWritePortsPerPartition.clear();
@@ -339,7 +353,7 @@ bool HardwareProfile::storeTryAllocate(std::string arrayPartitionName, bool comm
 	return true;
 }
 
-bool HardwareProfile::intOpTryAllocate(unsigned opcode, bool commit) {
+bool HardwareProfile::intOpTryAllocate(int opcode, bool commit) {
 	// For now, int ops are not constrained
 	return true;
 }
@@ -349,9 +363,26 @@ bool HardwareProfile::callTryAllocate(bool commit) {
 	return true;
 }
 
-bool HardwareProfile::ddrOpTryAllocate(unsigned opcode, bool commit) {
-	// TODO: We are leaving all constraining to the DDDG edges for DDR transactions, at least for now
-	return true;
+bool HardwareProfile::ddrOpTryAllocate(unsigned node, int opcode, bool commit) {
+	// First, we check if the respective read or write AXI port is in use. If positive, we fail right away
+	// TODO: Maybe the read port should not be separated from the write port. We must check that!
+	if(ddrReadPortInUse && (LLVM_IR_DDRReadReq == opcode || LLVM_IR_DDRRead == opcode))
+		return false;
+	if(ddrWritePortInUse && (LLVM_IR_DDRWriteReq == opcode || LLVM_IR_DDRWrite == opcode || LLVM_IR_DDRWriteResp == opcode))
+		return false;
+
+	// If not, we let MemoryModel decide its fate
+	bool allocationResult = memmodel->tryAllocate(node, opcode, commit);
+
+	// If positive, we set the port usage accordingly
+	if(allocationResult) {
+		if(LLVM_IR_DDRReadReq == opcode || LLVM_IR_DDRRead == opcode)
+			ddrReadPortInUse = true;
+		if(LLVM_IR_DDRWriteReq == opcode || LLVM_IR_DDRWrite == opcode || LLVM_IR_DDRWriteResp == opcode)
+			ddrWritePortInUse = true;
+	}
+
+	return allocationResult;
 }
 
 void HardwareProfile::pipelinedRelease() {
@@ -375,7 +406,9 @@ void HardwareProfile::pipelinedRelease() {
 			it.second = 0;
 	}
 
-	// TODO: Perhaps any ddr release here?
+	// Release DDR ports (we are assuming that these ports are always pipelined)
+	ddrReadPortInUse = false;
+	ddrWritePortInUse = false;
 }
 
 void HardwareProfile::fAddRelease() {
@@ -416,7 +449,7 @@ void HardwareProfile::storeRelease(std::string arrayPartitionName) {
 	(found->second)--;
 }
 
-void HardwareProfile::intOpRelease(unsigned opcode) {
+void HardwareProfile::intOpRelease(int opcode) {
 	//assert(false && "Integer ops are not constrained");
 }
 
@@ -424,8 +457,9 @@ void HardwareProfile::callRelease() {
 	//assert(false && "Calls are not constrained");
 }
 
-void HardwareProfile::ddrOpRelease(unsigned opcode) {
-	// TODO: We are leaving all constraining to the DDDG edges for DDR transactions, at least for now
+void HardwareProfile::ddrOpRelease(unsigned node, int opcode) {
+	// MemoryModel is responsible for this
+	return memmodel->release(node, opcode);
 }
 
 XilinxHardwareProfile::XilinxHardwareProfile() {
@@ -541,6 +575,7 @@ double XilinxHardwareProfile::getInCycleLatency(unsigned opcode) {
 }
 
 bool XilinxHardwareProfile::isPipelined(unsigned opcode) {
+	// TODO: what about the DDR transactions?
 	switch(opcode) {
 		case LLVM_IR_FAdd:
 		case LLVM_IR_FSub:

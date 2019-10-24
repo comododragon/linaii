@@ -158,14 +158,17 @@ public:
 
 		void pushReady(unsigned nodeID, uint64_t tick);
 		void trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocate)(bool));
-		void trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocateOp)(unsigned, bool));
+		void trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocateOp)(int, bool));
 		void trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocateMem)(std::string, bool));
+		void trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocateDDRMem)(unsigned, int, bool));
 		void enqueueExecute(unsigned opcode, selectedListTy &selected, executingMapTy &executing, void (HardwareProfile::*release)());
-		void enqueueExecute(selectedListTy &selected, executingMapTy &executing, void (HardwareProfile::*releaseOp)(unsigned));
+		void enqueueExecute(selectedListTy &selected, executingMapTy &executing, void (HardwareProfile::*releaseOp)(int));
 		void enqueueExecute(unsigned opcde, selectedListTy &selected, executingMapTy &executing, void (HardwareProfile::*releaseMem)(std::string));
+		void enqueueExecute(selectedListTy &selected, executingMapTy &executing, void (HardwareProfile::*releaseDDRMem)(unsigned, int));
 		void tryRelease(unsigned opcode, executingMapTy &executing, executedListTy &executed, void (HardwareProfile::*release)());
-		void tryRelease(executingMapTy &executing, executedListTy &executed, void (HardwareProfile::*releaseOp)(unsigned));
+		void tryRelease(executingMapTy &executing, executedListTy &executed, void (HardwareProfile::*releaseOp)(int));
 		void tryRelease(unsigned opcode, executingMapTy &executing, executedListTy &executed, void (HardwareProfile::*releaseMem)(std::string));
+		void tryRelease(executingMapTy &executing, executedListTy &executed, void (HardwareProfile::*releaseDDRMem)(unsigned, int));
 		void setScheduledAndAssignReadyChildren(unsigned nodeID);
 
 	public:

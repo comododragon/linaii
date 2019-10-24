@@ -97,7 +97,10 @@ std::string XilinxZCUMemoryModel::generateInstID(unsigned opcode, std::vector<st
 	return instID;
 }
 
-XilinxZCUMemoryModel::XilinxZCUMemoryModel(BaseDatapath *datapath) : MemoryModel(datapath) { }
+XilinxZCUMemoryModel::XilinxZCUMemoryModel(BaseDatapath *datapath) : MemoryModel(datapath) {
+	readActive = false;
+	writeActive = false;
+}
 
 void XilinxZCUMemoryModel::analyseAndTransform() {
 	const ConfigurationManager::arrayInfoCfgMapTy arrayInfoCfgMap = CM.getArrayInfoCfgMap();
@@ -172,6 +175,9 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 	for(auto &burst : burstedLoads) {
 		unsigned newID = microops.size();
 
+		// Add this new node to the mapping map (lol)
+		ddrNodesToRootLS[newID] = burst.first;
+
 		// Create a node with opcode LLVM_IR_DDRReadReq
 		datapath->insertMicroop(LLVM_IR_DDRReadReq);
 
@@ -225,6 +231,9 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 
 		unsigned newID = microops.size();
 
+		// Add this new node to the mapping map (lol)
+		ddrNodesToRootLS[newID] = burst.first;
+
 		// Create a node with opcode LLVM_IR_DDRWriteReq
 		microops.push_back(LLVM_IR_DDRWriteReq);
 
@@ -249,18 +258,43 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 		PC.closeAllFiles();
 		PC.lock();
 
+		// Two type of edges can come to a store: data and address
+		// For data, we keep it at the appropriate writes
+		// For address, we disconnect the incoming to the first store and connect to the write request
+		std::set<Edge> edgesToRemove;
+		std::vector<edgeTy> edgesToAdd;
+		InEdgeIterator inEdgei, inEdgeEnd;
+		for(std::tie(inEdgei, inEdgeEnd) = boost::in_edges(nameToVertex[burst.first], graph); inEdgei != inEdgeEnd; inEdgei++) {
+			unsigned sourceID = vertexToName[boost::source(*inEdgei, graph)];
+			uint8_t weight = edgeToWeight[*inEdgei];
+
+			// Store can receive two parameters: 1 is data and 2 is address
+			// We only want to move the address edges (weight 2)
+			if(weight != 2)
+				continue;
+
+			edgesToRemove.insert(*inEdgei);
+			edgesToAdd.push_back({sourceID, newID, weight});
+		}
 		// Connect this node to the first store
 		// XXX: Does the edge weight matter here?
-		boost::add_edge(newID, burst.first, EdgeProperty(0), graph);
+		edgesToAdd.push_back({newID, burst.first, 0});
 
 		// Now, chain the stores to create the burst effect
 		std::vector<unsigned> burstChain = std::get<2>(burst.second);
 		for(unsigned i = 1; i < burstChain.size(); i++)
-			boost::add_edge(burstChain[i - 1], burstChain[i], EdgeProperty(0), graph);
+			edgesToAdd.push_back({burstChain[i - 1], burstChain[i], 0});
+
+		// Update DDDG
+		datapath->updateRemoveDDDGEdges(edgesToRemove);
+		datapath->updateAddDDDGEdges(edgesToAdd);
 
 		// DDRWriteResp is positioned after the last burst beat
 		newID = microops.size();
 		unsigned lastStore = std::get<2>(burst.second).back();
+
+		// Add this new node to the mapping map (lol)
+		ddrNodesToRootLS[newID] = burst.first;
 
 		// Create a node with opcode LLVM_IR_DDRWriteResp
 		microops.push_back(LLVM_IR_DDRWriteResp);
@@ -286,12 +320,23 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 		PC.closeAllFiles();
 		PC.lock();
 
-		// TODO: implementar a mesma lógica do burst load para reconectar os edges que tao indo pro DDRWrite
-		// agora precisa analisar se o mesmo precisa ser feito em ambos writereq e writeresp ou só um deles... etc, etc.
+		// Disconnect the edges outcoming from the last store and connect to the write response
+		edgesToRemove.clear();
+		edgesToAdd.clear();
+		OutEdgeIterator outEdgei, outEdgeEnd;
+		for(std::tie(outEdgei, outEdgeEnd) = boost::out_edges(nameToVertex[lastStore], graph); outEdgei != outEdgeEnd; outEdgei++) {
+			unsigned destID = vertexToName[boost::target(*outEdgei, graph)];
 
+			edgesToRemove.insert(*outEdgei);
+			edgesToAdd.push_back({newID, destID, edgeToWeight[*outEdgei]});
+		}
 		// Connect this node to the last store
 		// XXX: Does the edge weight matter here?
-		boost::add_edge(lastStore, newID, EdgeProperty(0), graph);
+		edgesToAdd.push_back({lastStore, newID, 0});
+
+		// Update DDDG
+		datapath->updateRemoveDDDGEdges(edgesToRemove);
+		datapath->updateAddDDDGEdges(edgesToAdd);
 	}
 
 	errs() << "-- behavedLoads\n";
@@ -340,6 +385,135 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 #if 1
 	printDatabase();
 #endif
+}
+
+bool XilinxZCUMemoryModel::tryAllocate(unsigned node, int opcode, bool commit) {
+	std::cout << "ALLOCATED " << std::to_string(node) << " " << std::to_string(microops.at(node)) << "\n";
+	// The current memory policy here implemented consider read/write transactions as regions:
+	// - Read and write transactions can coexist if their regions do not overlap;
+	// - A read request can be issued when a read transaction is working only if the current read transaction is unbursted;
+	// - Write requests are exclusive.
+
+	if(LLVM_IR_DDRReadReq == opcode) {
+		unsigned nodeToRootLS = ddrNodesToRootLS.at(node);
+
+		// Read requests are issued when:
+
+		// - No active transactions;
+		// XXX: readActive and writeActive already handle this
+
+		// - If there are active reads, they must be unbursted;
+		bool allActiveReadsAreUnbursted = true;
+		if(readActive) {
+			for(auto &it : activeReads) {
+				if(std::get<1>(burstedLoads.at(it))) {
+					allActiveReadsAreUnbursted = false;
+					break;
+				}
+			}
+		}
+
+		// - If there is an active write, it must be for a different region.
+		bool activeWriteDoNotOverlap = true;
+		if(writeActive) {
+			uint64_t writeBase = std::get<0>(burstedStores.at(activeWrite));
+			// XXX: Once again, considering 32-bit
+			uint64_t writeEnd = writeBase + std::get<1>(burstedStores.at(activeWrite)) * 4;
+			uint64_t readBase = std::get<0>(burstedLoads.at(nodeToRootLS));
+			// XXX: Once again, considering 32-bit
+			uint64_t readEnd = readBase + std::get<1>(burstedLoads.at(nodeToRootLS)) * 4;
+
+			if(writeEnd >= readBase && readEnd >= writeBase)
+				activeWriteDoNotOverlap = false;
+		}
+
+		bool finalCond = (!readActive && !writeActive) || (allActiveReadsAreUnbursted && activeWriteDoNotOverlap);
+
+		if(finalCond) {
+			if(commit) {
+				activeReads.insert(nodeToRootLS);
+				readActive = true;
+			}
+		}
+
+		return finalCond;
+	}
+	else if(LLVM_IR_DDRRead == opcode) {
+		// Read transactions can always be issued, because their issuing is conditional to ReadReq
+		return true;
+	}
+	else if(LLVM_IR_DDRWriteReq == opcode) {
+		unsigned nodeToRootLS = ddrNodesToRootLS.at(node);
+
+		// Write requests are issued when:
+
+		// - No other active write
+		// XXX: writeActive already handles this
+
+		bool finalCond = !writeActive;
+
+		if(finalCond) {
+			if(commit) {
+				activeWrite = nodeToRootLS;
+				writeActive = true;
+			}
+		}
+
+		return finalCond;
+	}
+	else if(LLVM_IR_DDRWrite == opcode) {
+		// Write transactions can always be issued, because their issuing is conditional to WriteReq
+		return true;
+	}
+	else if(LLVM_IR_DDRWriteResp == opcode) {
+		// Write responses (when the data is actually sent to DDR) are issued when:
+
+		// - No active read
+		// XXX: readActive already handles this
+
+		// - If there are active reads, they must be for different regions
+		bool activeReadsDoNotOverlap = true;
+		if(readActive) {
+			for(auto &it : activeReads) {
+				uint64_t writeBase = std::get<0>(burstedStores.at(activeWrite));
+				// XXX: Once again, considering 32-bit
+				uint64_t writeEnd = writeBase + std::get<1>(burstedStores.at(activeWrite)) * 4;
+				uint64_t readBase = std::get<0>(burstedLoads.at(it));
+				// XXX: Once again, considering 32-bit
+				uint64_t readEnd = readBase + std::get<1>(burstedLoads.at(it)) * 4;
+
+				if(writeEnd >= readBase && readEnd >= writeBase)
+					activeReadsDoNotOverlap = false;
+			}
+		}
+
+		bool finalCond = !readActive || activeReadsDoNotOverlap;
+
+		return finalCond;
+	}
+	else {
+		return true;
+	}
+}
+
+void XilinxZCUMemoryModel::release(unsigned node, int opcode) {
+	std::cout << "RELEASED " << std::to_string(node) << " " << std::to_string(opcode) << "\n";
+
+	if(LLVM_IR_DDRRead == opcode) {
+		// If this is the last load, we must close this burst
+		for(auto &it : burstedLoads) {
+			if(std::get<2>(it.second).back() == node) {
+				activeReads.erase(it.first);
+			}
+		}
+
+		if(!(activeReads.size()))
+			readActive = false;
+	}
+	else if(LLVM_IR_DDRWriteResp == opcode) {
+		// Close the write transaction
+		writeActive = false;
+	}
 }
 
 // TODO TODO TODO TODO

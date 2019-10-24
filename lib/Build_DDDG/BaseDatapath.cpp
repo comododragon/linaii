@@ -47,6 +47,7 @@ BaseDatapath::BaseDatapath(
 
 	// Create memory model based on selected platform
 	memmodel = MemoryModel::createInstance(this);
+	profile->setMemoryModel(memmodel);
 
 	VERBOSE_PRINT(errs() << "\tBuild initial DDDG\n");
 
@@ -314,7 +315,7 @@ uint64_t BaseDatapath::fpgaEstimationOneMoreSubtraceForRecIICalculation() {
 
 	if(!(args.fNoMMA)) {
 		VERBOSE_PRINT(errs() << "\tPerforming DDDG memory model-based analysis and transform\n");
-		memmodel->analyseAndTransform();
+		profile->performMemoryModelAnalysis();
 	}
 
 	// Put the node latency using selected architecture as edge weights in the graph
@@ -365,7 +366,7 @@ uint64_t BaseDatapath::fpgaEstimation() {
 
 	if(!(args.fNoMMA)) {
 		VERBOSE_PRINT(errs() << "\tPerforming DDDG memory model-based analysis and transform\n");
-		memmodel->analyseAndTransform();
+		profile->performMemoryModelAnalysis();
 
 		// TODO: ta aqui só pra debug
 		//dumpGraph();
@@ -2110,7 +2111,7 @@ void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &sel
 	}
 }
 
-void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocateOp)(unsigned, bool)) {
+void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocateOp)(int, bool)) {
 	if(ready.size()) {
 		selected.clear();
 
@@ -2213,6 +2214,57 @@ void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &sel
 	}
 }
 
+void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocateDDRMem)(unsigned, int, bool)) {
+	if(ready.size()) {
+		selected.clear();
+
+		// Sort nodes by their ALAP, smallest first (urgent nodes first)
+		ready.sort(prioritiseSmallerALAP);
+		size_t initialReadySize = ready.size();
+		for(unsigned i = 0; i < initialReadySize; i++) {
+			unsigned nodeID = ready.front().first;
+			int microop = microops.at(nodeID);
+
+			// If allocation is successful (i.e. there is one operation unit available), select this operation
+			// If timing-constrained scheduling is enabled, allocation is not yet performed, only attempted
+			if((profile.*tryAllocateDDRMem)(nodeID, microop, args.fNoTCS)) {
+				bool timingConstrained = false;
+
+				// Timing-constrained scheduling (taa-daa)
+				if(!(args.fNoTCS)) {
+					// If selecting the current node does not violate timing in any way, proceed
+					if(tcSched.tryAllocate(nodeID))
+						(profile.*tryAllocateDDRMem)(nodeID, microop, true);
+					// Else, fail
+					else
+						timingConstrained = true;
+				}
+
+				// No timing-constraint, allocate
+				if(!timingConstrained) {
+					// If this node is in critical path, notify. This is used when allocation is being performed over the
+					// intended cycle tick to consume the timing budget (if TCS is enabled)
+					if(alap[nodeID] == asap[nodeID])
+						criticalPathAllocated = true;
+
+					selected.push_back(nodeID);
+					ready.pop_front();
+					readyChanged = true;
+					rc[nodeID] = cycleTick;
+				}
+				// Timing contention, not able to allocate now
+				else {
+					break;
+				}
+			}
+			// Resource contention, not able to allocate now
+			else {
+				break;
+			}
+		}
+	}
+}
+
 void BaseDatapath::RCScheduler::enqueueExecute(unsigned opcode, selectedListTy &selected, executingMapTy &executing, void (HardwareProfile::*release)()) {
 	while(selected.size()) {
 		unsigned selectedNodeID = selected.front();
@@ -2236,10 +2288,10 @@ void BaseDatapath::RCScheduler::enqueueExecute(unsigned opcode, selectedListTy &
 	}
 }
 
-void BaseDatapath::RCScheduler::enqueueExecute(selectedListTy &selected, executingMapTy &executing, void (HardwareProfile::*releaseOp)(unsigned)) {
+void BaseDatapath::RCScheduler::enqueueExecute(selectedListTy &selected, executingMapTy &executing, void (HardwareProfile::*releaseOp)(int)) {
 	while(selected.size()) {
 		unsigned selectedNodeID = selected.front();
-		unsigned opcode = microops.at(selectedNodeID);
+		int opcode = microops.at(selectedNodeID);
 		unsigned latency = profile.getLatency(opcode);
 
 		// Latency 0 or 1: this node was solved already. Set as scheduled and assign its children as ready
@@ -2284,6 +2336,30 @@ void BaseDatapath::RCScheduler::enqueueExecute(unsigned opcode, selectedListTy &
 	}
 }
 
+void BaseDatapath::RCScheduler::enqueueExecute(selectedListTy &selected, executingMapTy &executing, void (HardwareProfile::*releaseDDRMem)(unsigned, int)) {
+	while(selected.size()) {
+		unsigned selectedNodeID = selected.front();
+		int opcode = microops.at(selectedNodeID);
+		unsigned latency = profile.getLatency(opcode);
+
+		// Latency 0 or 1: this node was solved already. Set as scheduled and assign its children as ready
+		if(latency <= 1) {
+			isNullCycle = false;
+
+			if(args.showScheduling)
+				dumpFile << "\t[RELEASED] [1/" <<  std::to_string(latency) << "] Node " << selectedNodeID << " (" << reverseOpcodeMap.at(opcode) << ")\n";
+
+			setScheduledAndAssignReadyChildren(selectedNodeID);
+		}
+		// Multi-latency instruction: put into executing queue
+		else {
+			executing.insert(std::make_pair(selectedNodeID, latency));
+		}
+			
+		selected.pop_front();
+	}
+}
+
 void BaseDatapath::RCScheduler::tryRelease(unsigned opcode, executingMapTy &executing, executedListTy &executed, void (HardwareProfile::*release)()) {
 	std::vector<unsigned> toErase;
 
@@ -2323,12 +2399,12 @@ void BaseDatapath::RCScheduler::tryRelease(unsigned opcode, executingMapTy &exec
 		executing.erase(it);
 }
 
-void BaseDatapath::RCScheduler::tryRelease(executingMapTy &executing, executedListTy &executed, void (HardwareProfile::*releaseOp)(unsigned)) {
+void BaseDatapath::RCScheduler::tryRelease(executingMapTy &executing, executedListTy &executed, void (HardwareProfile::*releaseOp)(int)) {
 	std::vector<unsigned> toErase;
 
 	for(auto &it: executing) {
 		unsigned executingNodeID = it.first;
-		unsigned opcode = microops.at(executingNodeID);
+		int opcode = microops.at(executingNodeID);
 
 		// Check if this node was already accounted in this clock tick. If positive, pass.
 		if(executed.end() == std::find(executed.begin(), executed.end(), executingNodeID))
@@ -2392,6 +2468,46 @@ void BaseDatapath::RCScheduler::tryRelease(unsigned opcode, executingMapTy &exec
 			// If operation is pipelined, the resource was already released before
 			if(!(profile.isPipelined(opcode)))
 				(profile.*releaseMem)(arrayName);
+		}
+		else {
+			if(args.showScheduling)
+				dumpFile << "\t[ALLOCATED] [" << std::to_string(it.second + 1) << "/" <<  std::to_string(profile.getLatency(opcode)) << "] Node " << executingNodeID << " (" << reverseOpcodeMap.at(opcode) << ")\n";
+		}
+	}
+
+	for(auto &it : toErase)
+		executing.erase(it);
+}
+
+void BaseDatapath::RCScheduler::tryRelease(executingMapTy &executing, executedListTy &executed, void (HardwareProfile::*releaseDDRMem)(unsigned, int)) {
+	std::vector<unsigned> toErase;
+
+	for(auto &it: executing) {
+		unsigned executingNodeID = it.first;
+		int opcode = microops.at(executingNodeID);
+
+		// Check if this node was already accounted in this clock tick. If positive, pass.
+		if(executed.end() == std::find(executed.begin(), executed.end(), executingNodeID))
+			executed.push_back(executingNodeID);
+		else
+			continue;
+
+		isNullCycle = false;
+
+		// Decrease one cycle
+		(it.second)--;
+
+		// All cycles were consumed, this operation is done, release resource
+		if(!(it.second)) {
+			if(args.showScheduling)
+				dumpFile << "\t[RELEASED] [" << std::to_string(it.second + 1) << "/" <<  std::to_string(profile.getLatency(opcode)) << "] Node " << executingNodeID << " (" << reverseOpcodeMap.at(opcode) << ")\n";
+
+			setScheduledAndAssignReadyChildren(executingNodeID);
+			toErase.push_back(executingNodeID);
+
+			// If operation is pipelined, the resource was already released before
+			if(!(profile.isPipelined(opcode)))
+				(profile.*releaseDDRMem)(executingNodeID, opcode);
 		}
 		else {
 			if(args.showScheduling)

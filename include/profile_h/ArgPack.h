@@ -39,6 +39,7 @@ typedef struct {
 	bool fNPLA;
 	bool fNoTCS;
 	bool fNoMMA;
+	bool fNoMMABurst;
 	bool fSBOpt;
 	bool fSLROpt;
 	bool fNoSLROpt;

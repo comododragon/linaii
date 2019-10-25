@@ -71,6 +71,7 @@ const std::string helpMessage =
 	"                   --f-npla           : enable non-perfect loop analysis\n"
 	"                   --fno-tcs          : disable timing-constrained scheduling\n"
 	"                   --fno-mma          : disable memory model analysis\n"
+	"                   --fno-mmaburst     : disable memory model iteration burst analysis\n"
 	"                   --fno-sb           : disable store-buffer optimisation\n"
 	"                   --f-slr            : enable shared-load-removal optimisation\n"
 	"                   --fno-slr          : disable shared-load-removal optimisation. If\n"
@@ -192,6 +193,8 @@ void parseInputArguments(int argc, char **argv) {
 	args.showScheduling = false;
 	args.fNPLA = false;
 	args.fNoTCS = false;
+	args.fNoMMA = false;
+	args.fNoMMABurst = false;
 	args.fSBOpt = true;
 	args.fSLROpt = false;
 	args.fNoSLROpt = false;
@@ -232,16 +235,17 @@ void parseInputArguments(int argc, char **argv) {
 			{"f-npla", no_argument, 0, 0xF06},
 			{"fno-tcs", no_argument, 0, 0xF07},
 			{"fno-mma", no_argument, 0, 0xF08},
-			{"fno-sb", no_argument, 0, 0xF09},
-			{"f-slr", no_argument, 0, 0xF0A},
-			{"fno-slr", no_argument, 0, 0xF0B},
-			{"fno-rsr", no_argument, 0, 0xF0C},
-			{"f-thr-float", no_argument, 0, 0xF0D},
-			{"f-thr-int", no_argument, 0, 0xF0E},
-			{"f-md", no_argument, 0, 0xF0F},
-			{"fno-ft", no_argument, 0, 0xF10},
-			{"f-es", no_argument, 0, 0xF11},
-			{"f-rwrwm", no_argument, 0, 0xF12},
+			{"fno-mmaburst", no_argument, 0, 0xF08},
+			{"fno-sb", no_argument, 0, 0xF0A},
+			{"f-slr", no_argument, 0, 0xF0B},
+			{"fno-slr", no_argument, 0, 0xF0C},
+			{"fno-rsr", no_argument, 0, 0xF0D},
+			{"f-thr-float", no_argument, 0, 0xF0E},
+			{"f-thr-int", no_argument, 0, 0xF0F},
+			{"f-md", no_argument, 0, 0xF10},
+			{"fno-ft", no_argument, 0, 0xF11},
+			{"f-es", no_argument, 0, 0xF12},
+			{"f-rwrwm", no_argument, 0, 0xF13},
 			{0, 0, 0, 0}
 		};
 		int optionIndex = 0;
@@ -347,33 +351,36 @@ void parseInputArguments(int argc, char **argv) {
 				args.fNoMMA = true;
 				break;
 			case 0xF09:
-				args.fSBOpt = false;
+				args.fNoMMABurst = true;
 				break;
 			case 0xF0A:
-				args.fSLROpt = true;
+				args.fSBOpt = false;
 				break;
 			case 0xF0B:
-				args.fNoSLROpt = true;
+				args.fSLROpt = true;
 				break;
 			case 0xF0C:
-				args.fRSROpt = false;
+				args.fNoSLROpt = true;
 				break;
 			case 0xF0D:
-				args.fTHRFloatOpt = true;
+				args.fRSROpt = false;
 				break;
 			case 0xF0E:
-				args.fTHRIntOpt = true;
+				args.fTHRFloatOpt = true;
 				break;
 			case 0xF0F:
-				args.fMemDisambuigOpt = true;
+				args.fTHRIntOpt = true;
 				break;
 			case 0xF10:
-				args.fNoFPUThresOpt = true;
+				args.fMemDisambuigOpt = true;
 				break;
 			case 0xF11:
-				args.fExtraScalar = true;
+				args.fNoFPUThresOpt = true;
 				break;
 			case 0xF12:
+				args.fExtraScalar = true;
+				break;
+			case 0xF13:
 				args.fRWRWMem = true;
 				break;
 		}

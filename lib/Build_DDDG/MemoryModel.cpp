@@ -3,6 +3,7 @@
 #include "profile_h/BaseDatapath.h"
 
 extern memoryTraceMapTy memoryTraceMap;
+extern bool memoryTraceGenerated;
 
 MemoryModel::MemoryModel(BaseDatapath *datapath) :
 	datapath(datapath), microops(datapath->getMicroops()), graph(datapath->getDDDG()),
@@ -80,6 +81,53 @@ void XilinxZCUMemoryModel::findInBursts(
 	burstedNodes[currRootNode] = std::make_tuple(currBaseAddress, currOffset, currNodes);
 }
 
+bool XilinxZCUMemoryModel::findOutBursts(
+	std::unordered_map<unsigned, std::tuple<uint64_t, uint64_t, std::vector<unsigned>>> &burstedNodes,
+	std::string &wholeLoopName,
+	const std::vector<std::string> &instIDList
+) {
+	bool outBurstFound = false;
+
+	// Our current assumption for inter-iteration bursting is very restrictive. It should happen only when
+	// there is one (and one only) load/store transaction (which may be bursted) inside a loop iteration
+	if(1 == burstedNodes.size()) {
+		// We are optimistic at first
+		outBurstFound = true;
+
+		// In this case, all transactions between iterations must be contiguous with no overlap
+		// This means that all entangled nodes (i.e. DDDG nodes that represent the same instruction but
+		// different instances) must continuously increase their address by the burst size (offset)
+		// If any fails, we assume that inter-iteration bursting is not possible.
+		std::tuple<uint64_t, uint64_t, std::vector<unsigned>> burstedNode = burstedNodes.begin()->second;
+		uint64_t offset = std::get<1>(burstedNode) + 1;
+		std::vector<unsigned> burstedNodesVec = std::get<2>(burstedNode);
+
+		for(auto &it : burstedNodesVec) {
+			std::pair<std::string, std::string> wholeLoopNameInstNamePair = std::make_pair(wholeLoopName, instIDList[it]);
+
+			// Check if all instances of this instruction are well behaved in the memory trace
+			// XXX: We do not sort the list here like when searching for inner bursts, since we do not support loop reordering (for now)
+			std::vector<uint64_t> addresses = memoryTraceMap.at(wholeLoopNameInstNamePair);
+			uint64_t nextAddress = addresses[0] + 4 * offset;
+			for(unsigned i = 1; i < addresses.size(); i++) {
+				// TODO: For now we are assuming that all words are 32-bit
+				if(nextAddress != addresses[i]) {
+					outBurstFound = false;
+					break;
+				}
+				else {
+					nextAddress += 4 * offset;
+				}
+			}
+
+			if(!outBurstFound)
+				break;
+		}
+	}
+
+	return outBurstFound;
+}
+
 std::string XilinxZCUMemoryModel::generateInstID(unsigned opcode, std::vector<std::string> instIDList) {
 	static uint64_t idCtr = 0;
 
@@ -98,13 +146,45 @@ std::string XilinxZCUMemoryModel::generateInstID(unsigned opcode, std::vector<st
 }
 
 XilinxZCUMemoryModel::XilinxZCUMemoryModel(BaseDatapath *datapath) : MemoryModel(datapath) {
+	loadOutBurstFound = false;
+	storeOutBurstFound = false;
 	readActive = false;
 	writeActive = false;
 }
 
 void XilinxZCUMemoryModel::analyseAndTransform() {
+	if(!(args.fNoMMABurst)) {
+		// The memory trace map can be generated in two ways:
+		// - Running Lina with "--mem-trace" and any other mode than "--mode=estimation"
+		// - After running Lina once with the aforementioned configuration, the file "mem_trace.txt" will be available and can be used
+
+		// If memory trace map was not constructed yet, try to generate it from "mem_trace.txt"
+		if(!memoryTraceGenerated) {
+			std::string line;
+			std::string traceFileName = args.workDir + FILE_MEM_TRACE;
+			std::ifstream traceFile;
+
+			traceFile.open(traceFileName);
+			assert(traceFile.is_open() && "No memory trace found. Please run Lina with \"--mem-trace\" flag (leave it enabled) and any mode other than \"--mode=estimation\" (only once is needed) to generate it or deactivate inter-iteration burst analysis with \"--fno-mmaburst\"");
+
+			while(!traceFile.eof()) {
+				std::getline(traceFile, line);
+
+				char buffer[BUFF_STR_SZ];
+				char buffer2[BUFF_STR_SZ];
+				uint64_t address;
+				sscanf(line.c_str(), "%[^,],%*d,%[^,],%*[^,],%*d,%lu,%*d", buffer, buffer2, &address);
+				std::pair<std::string, std::string> wholeLoopNameInstNamePair = std::make_pair(std::string(buffer), std::string(buffer2));
+				memoryTraceMap[wholeLoopNameInstNamePair].push_back(address);
+			}
+
+			traceFile.close();
+			memoryTraceGenerated = true;
+		}
+	}
+
 	const ConfigurationManager::arrayInfoCfgMapTy arrayInfoCfgMap = CM.getArrayInfoCfgMap();
-	const std::unordered_map<int, std::pair<int64_t, unsigned>> &memoryTraceList = PC.getMemoryTraceList();
+	//const std::unordered_map<int, std::pair<int64_t, unsigned>> &memoryTraceList = PC.getMemoryTraceList();
 
 	// Change all load/stores marked as offchip to DDR read/writes (and mark their locations)
 	VertexIterator vi, viEnd;
@@ -122,12 +202,14 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 
 		if(isLoadOp(nodeMicroop)) {
 			microops.at(nodeID) = LLVM_IR_DDRRead;
-			loadNodes[nodeID] = memoryTraceList.at(nodeID).first;
+			//loadNodes[nodeID] = memoryTraceList.at(nodeID).first;
+			loadNodes[nodeID] = baseAddress.at(nodeID).second;
 		}
 
 		if(isStoreOp(nodeMicroop)) {
 			microops.at(nodeID) = LLVM_IR_DDRWrite;
-			storeNodes[nodeID] = memoryTraceList.at(nodeID).first;
+			//storeNodes[nodeID] = memoryTraceList.at(nodeID).first;
+			storeNodes[nodeID] = baseAddress.at(nodeID).second;
 		}
 	}
 
@@ -165,11 +247,20 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 	};
 	findInBursts(storeNodes, behavedStores, burstedStores, storeComparator);
 
-	// Try to find contiguous loads between loop iterations
-	// TODO
+	if(!(args.fNoMMABurst)) {
+		std::string wholeLoopName = appendDepthToLoopName(datapath->getTargetLoopName(), datapath->getTargetLoopLevel());
+		const std::vector<std::string> &instIDList = PC.getInstIDList();
 
-	// Try to find contiguous stores between loop iterations
-	// TODO
+		// Try to find contiguous loads between loop iterations
+		loadOutBurstFound = findOutBursts(burstedLoads, wholeLoopName, instIDList);
+		if(loadOutBurstFound)
+			errs() << ">>>>>>>>> Congratulations! We found a load out-burst\n";
+
+		// Try to find contiguous stores between loop iterations
+		storeOutBurstFound = findOutBursts(burstedStores, wholeLoopName, instIDList);
+		if(storeOutBurstFound)
+			errs() << ">>>>>>>>> Congratulations! We found a store out-burst\n";
+	}
 
 	// Add the relevant DDDG nodes for offchip load
 	for(auto &burst : burstedLoads) {
@@ -351,13 +442,13 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 	for(auto const &x : baseAddress)
 		errs() << "-- " << std::to_string(x.first) << ": <" << x.second.first << ", " << std::to_string(x.second.second) << ">\n";
 
-	errs() << "-- memoryTraceList\n";
-	for(auto const &x : PC.getMemoryTraceList())
-		errs() << "-- " << std::to_string(x.first) << ": <" << std::to_string(x.second.first) << ", " << std::to_string(x.second.second) << ">\n";
+	//errs() << "-- memoryTraceList\n";
+	//for(auto const &x : PC.getMemoryTraceList())
+	//	errs() << "-- " << std::to_string(x.first) << ": <" << std::to_string(x.second.first) << ", " << std::to_string(x.second.second) << ">\n";
 
-	errs() << "-- getElementPtrList\n";
-	for(auto const &x : PC.getGetElementPtrList())
-		errs() << "-- " << std::to_string(x.first) << ": <" << x.second.first << ", " << std::to_string(x.second.second) << ">\n";
+	//errs() << "-- getElementPtrList\n";
+	//for(auto const &x : PC.getGetElementPtrList())
+	//	errs() << "-- " << std::to_string(x.first) << ": <" << x.second.first << ", " << std::to_string(x.second.second) << ">\n";
 
 	//errs() << "-- memoryTraceMap\n";
 	//for(auto const &x : memoryTraceMap) {
@@ -388,7 +479,6 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 }
 
 bool XilinxZCUMemoryModel::tryAllocate(unsigned node, int opcode, bool commit) {
-	std::cout << "ALLOCATED " << std::to_string(node) << " " << std::to_string(microops.at(node)) << "\n";
 	// The current memory policy here implemented consider read/write transactions as regions:
 	// - Read and write transactions can coexist if their regions do not overlap;
 	// - A read request can be issued when a read transaction is working only if the current read transaction is unbursted;
@@ -497,8 +587,6 @@ bool XilinxZCUMemoryModel::tryAllocate(unsigned node, int opcode, bool commit) {
 }
 
 void XilinxZCUMemoryModel::release(unsigned node, int opcode) {
-	std::cout << "RELEASED " << std::to_string(node) << " " << std::to_string(opcode) << "\n";
-
 	if(LLVM_IR_DDRRead == opcode) {
 		// If this is the last load, we must close this burst
 		for(auto &it : burstedLoads) {

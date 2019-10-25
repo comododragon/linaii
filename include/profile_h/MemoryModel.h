@@ -35,6 +35,7 @@ class XilinxZCUMemoryModel : public MemoryModel {
 	std::unordered_map<unsigned, uint64_t> storeNodes;
 	std::unordered_map<unsigned, std::tuple<uint64_t, uint64_t, std::vector<unsigned>>> burstedLoads;
 	std::unordered_map<unsigned, std::tuple<uint64_t, uint64_t, std::vector<unsigned>>> burstedStores;
+	bool loadOutBurstFound, storeOutBurstFound;
 	// This map relates DDR nodes (e.g. ReadReq, WriteReq, WriteResp) to the node ID used in burstedLoad/burstedStores
 	std::unordered_map<unsigned, unsigned> ddrNodesToRootLS;
 	bool readActive, writeActive;
@@ -46,6 +47,11 @@ class XilinxZCUMemoryModel : public MemoryModel {
 		std::vector<unsigned> &behavedNodes,
 		std::unordered_map<unsigned, std::tuple<uint64_t, uint64_t, std::vector<unsigned>>> &burstedNodes,
 		std::function<bool(unsigned, unsigned)> comparator
+	);
+	bool findOutBursts(
+		std::unordered_map<unsigned, std::tuple<uint64_t, uint64_t, std::vector<unsigned>>> &burstedNodes,
+		std::string &wholeLoopName,
+		const std::vector<std::string> &instIDList
 	);
 
 	std::string generateInstID(unsigned opcode, std::vector<std::string> instIDList);

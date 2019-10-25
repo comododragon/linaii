@@ -8,6 +8,7 @@ headerBBFuncNamePair2lastInstMapTy headerBBFuncNamePair2lastInstMap;
 headerBBFuncNamePair2lastInstMapTy exitingBBFuncNamePair2lastInstMap;
 loopName2levelUnrollVecMapTy loopName2levelUnrollVecMap;
 memoryTraceMapTy memoryTraceMap;
+bool memoryTraceGenerated = false;
 
 using namespace llvm;
 
@@ -472,6 +473,8 @@ void InstrumentForDDDG::extractMemoryTraceForAccessPattern() {
 
 	gzclose(traceFile);
 	memTraceFile.close();
+
+	memoryTraceGenerated = true;
 
 	VERBOSE_PRINT(errs() << "[][memoryTrace] Memory trace finished\n");
 }

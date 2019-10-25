@@ -1030,6 +1030,15 @@ XilinxZCUHardwareProfile::XilinxZCUHardwareProfile() {
 			currLatency = it2.first;
 			currInCycleLatency = it2.second;
 
+			// If the current instruction has its delay defined as double::max, we have a special condition
+			if(std::numeric_limits<double>::max() == currInCycleLatency) {
+				// If currInCycleLatency is defined as double::max, it means that this instruction is constrained
+				// by the effective target period, regardless of its value. This can happen for example with
+				// offchip transactions.
+				currInCycleLatency = effectivePeriod;
+				break;
+			}
+
 			/* Found FU configuration that fits inside the target effective clock */
 			if(it2.second <= effectivePeriod)
 				break;
@@ -1152,6 +1161,8 @@ unsigned XilinxZCUHardwareProfile::getLatency(unsigned opcode) {
 }
 
 double XilinxZCUHardwareProfile::getInCycleLatency(unsigned opcode) {
+	// XXX: Changed from 0 to 0.001, to avoid these instructions of being
+	// merged with instructions that use the whole timing budget (e.g. offchip instructions)
 	switch(opcode) {
 		case LLVM_IR_Shl:
 		case LLVM_IR_LShr:
@@ -1161,7 +1172,7 @@ double XilinxZCUHardwareProfile::getInCycleLatency(unsigned opcode) {
 		case LLVM_IR_Xor:
 		case LLVM_IR_ICmp:
 		case LLVM_IR_Br:
-			return 0;
+			return 0.001;
 		case LLVM_IR_IndexAdd:
 			return effectiveLatencies[LATENCY_ADD].second;
 		case LLVM_IR_IndexSub:
@@ -1171,11 +1182,11 @@ double XilinxZCUHardwareProfile::getInCycleLatency(unsigned opcode) {
 		case LLVM_IR_Sub: 
 			return effectiveLatencies[LATENCY_SUB].second;
 		case LLVM_IR_Call:
-			return 0;
+			return 0.001;
 		case LLVM_IR_Store:
 			return effectiveLatencies[LATENCY_STORE].second;
 		case LLVM_IR_SilentStore:
-			return 0;
+			return 0.001;
 		case LLVM_IR_Load:
 			// XXX: Must fILL also affect here?
 			return effectiveLatencies[LATENCY_LOAD].second;
@@ -1205,7 +1216,7 @@ double XilinxZCUHardwareProfile::getInCycleLatency(unsigned opcode) {
 		case LLVM_IR_DDRWriteResp:
 			return effectiveLatencies[LATENCY_DDRWRITERESP].second;
 		default: 
-			return 0;
+			return 0.001;
 	}
 }
 

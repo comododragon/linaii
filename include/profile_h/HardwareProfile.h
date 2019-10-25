@@ -274,12 +274,13 @@ class XilinxZCUHardwareProfile : public XilinxHardwareProfile {
 			{15, 4.34}, {16, 3.03}, {28, 3.01}, {29, 2.91}, {30, 2.23}
 		}},
 		{LATENCY_FCMP, {{1, 3.47}, {2, 2.78}, {3, 2.31}}},
-		// TODO: Montar esse HWL direito!!!!!!
-		{LATENCY_DDRREADREQ, {{134, 7.30}}},
-		{LATENCY_DDRREAD, {{1, 7.30}}},
-		{LATENCY_DDRWRITEREQ, {{1, 7.30}}},
-		{LATENCY_DDRWRITE, {{1, 7.30}}},
-		{LATENCY_DDRWRITERESP, {{132, 7.30}}}
+		// XXX: DDR transactions are time-constrained to the effective target period. We set double::max for this
+		// XXX: Check the hardware profile constructor for more information about how this is processed (e.g. XilinxZCUHardwareProfile)
+		{LATENCY_DDRREADREQ, {{134, std::numeric_limits<double>::max()}}},
+		{LATENCY_DDRREAD, {{1, std::numeric_limits<double>::max()}}},
+		{LATENCY_DDRWRITEREQ, {{1, std::numeric_limits<double>::max()}}},
+		{LATENCY_DDRWRITE, {{1, std::numeric_limits<double>::max()}}},
+		{LATENCY_DDRWRITERESP, {{132, std::numeric_limits<double>::max()}}}
 	};
 	const std::unordered_map<unsigned, std::map<unsigned, unsigned>> timeConstrainedDSPs = {
 		{LATENCY_FADD32, {{1, 2}, {2, 2}, {3, 2}, {4, 2}, {5, 2}, {6, 2}, {7, 2}, {8, 2}, {10, 2}, {11, 2}}},

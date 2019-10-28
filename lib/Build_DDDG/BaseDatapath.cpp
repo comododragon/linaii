@@ -1518,7 +1518,7 @@ uint64_t BaseDatapath::getLoopTotalLatency(uint64_t maxII) {
 			}
 		}
 		// If there are out-burst nodes to allocate after DDDG, we add on the extra cycles
-		uint64_t extraExit = EXTRA_ENTER_LOOP_LATENCY;
+		uint64_t extraExit = EXTRA_EXIT_LOOP_LATENCY;
 		bool allocatedDDDGAfter = false;
 		for(auto &it : memmodel->getNodesToAfterDDDG()) {
 			unsigned latency = profile->getLatency(std::get<0>(it));

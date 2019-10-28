@@ -365,10 +365,11 @@ bool HardwareProfile::callTryAllocate(bool commit) {
 
 bool HardwareProfile::ddrOpTryAllocate(unsigned node, int opcode, bool commit) {
 	// First, we check if the respective read or write AXI port is in use. If positive, we fail right away
+	// (please note that silent operations are not actually executed, so there is no port limitation for them)
 	// TODO: Maybe the read port should not be separated from the write port. We must check that!
-	if(ddrReadPortInUse && (LLVM_IR_DDRReadReq == opcode || LLVM_IR_DDRRead == opcode))
+	if((LLVM_IR_DDRReadReq == opcode || LLVM_IR_DDRRead == opcode) && ddrReadPortInUse)
 		return false;
-	if(ddrWritePortInUse && (LLVM_IR_DDRWriteReq == opcode || LLVM_IR_DDRWrite == opcode || LLVM_IR_DDRWriteResp == opcode))
+	if((LLVM_IR_DDRWriteReq == opcode || LLVM_IR_DDRWrite == opcode || LLVM_IR_DDRWriteResp == opcode) && ddrWritePortInUse)
 		return false;
 
 	// If not, we let MemoryModel decide its fate
@@ -376,6 +377,8 @@ bool HardwareProfile::ddrOpTryAllocate(unsigned node, int opcode, bool commit) {
 
 	// If positive, we set the port usage accordingly
 	if(allocationResult) {
+		// Once again, silent operations do not affect port usage
+
 		if(LLVM_IR_DDRReadReq == opcode || LLVM_IR_DDRRead == opcode)
 			ddrReadPortInUse = true;
 		if(LLVM_IR_DDRWriteReq == opcode || LLVM_IR_DDRWrite == opcode || LLVM_IR_DDRWriteResp == opcode)
@@ -1155,6 +1158,10 @@ unsigned XilinxZCUHardwareProfile::getLatency(unsigned opcode) {
 			return effectiveLatencies[LATENCY_DDRWRITE].first;
 		case LLVM_IR_DDRWriteResp:
 			return effectiveLatencies[LATENCY_DDRWRITERESP].first;
+		case LLVM_IR_DDRSilentReadReq:
+		case LLVM_IR_DDRSilentWriteReq:
+		case LLVM_IR_DDRSilentWriteResp:
+			return 0;
 		default: 
 			return 0;
 	}
@@ -1215,6 +1222,10 @@ double XilinxZCUHardwareProfile::getInCycleLatency(unsigned opcode) {
 			return effectiveLatencies[LATENCY_DDRWRITE].second;
 		case LLVM_IR_DDRWriteResp:
 			return effectiveLatencies[LATENCY_DDRWRITERESP].second;
+		case LLVM_IR_DDRSilentReadReq:
+		case LLVM_IR_DDRSilentWriteReq:
+		case LLVM_IR_DDRSilentWriteResp:
+			return 0;
 		default: 
 			return 0.001;
 	}

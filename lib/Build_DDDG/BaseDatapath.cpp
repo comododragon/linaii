@@ -1506,10 +1506,33 @@ uint64_t BaseDatapath::getLoopTotalLatency(uint64_t maxII) {
 		uint64_t currentLoopBound = wholeloopName2loopBoundMap.at(currentWholeLoopName);
 		assert(currentLoopBound && "Loop bound is equal to zero");
 
+		// If there are out-burst nodes to allocate before DDDG, we add on the extra cycles
+		uint64_t extraEnter = EXTRA_ENTER_LOOP_LATENCY;
+		bool allocatedDDDGBefore = false;
+		// An out-burst was detected, we must compensate here
+		for(auto &it : memmodel->getNodesToBeforeDDDG()) {
+			unsigned latency = profile->getLatency(std::get<0>(it));
+			if(latency >= extraEnter) {
+				extraEnter = latency;
+				allocatedDDDGBefore = true;
+			}
+		}
+		// If there are out-burst nodes to allocate after DDDG, we add on the extra cycles
+		uint64_t extraExit = EXTRA_ENTER_LOOP_LATENCY;
+		bool allocatedDDDGAfter = false;
+		for(auto &it : memmodel->getNodesToAfterDDDG()) {
+			unsigned latency = profile->getLatency(std::get<0>(it));
+			if(latency >= extraExit) {
+				extraExit = latency;
+				allocatedDDDGAfter = true;
+			}
+		}
+		uint64_t extraEnterExit = extraEnter + extraExit;
+
 		if(loopLevel - 1 == i)
-			noPipelineLatency = rcIL * (currentLoopBound / unrollFactor) + EXTRA_ENTER_EXIT_LOOP_LATENCY;
+			noPipelineLatency = rcIL * (currentLoopBound / unrollFactor) + extraEnterExit;
 		else if(i)
-			noPipelineLatency = noPipelineLatency * (currentLoopBound / unrollFactor) + EXTRA_ENTER_EXIT_LOOP_LATENCY;
+			noPipelineLatency = noPipelineLatency * (currentLoopBound / unrollFactor) + extraEnterExit;
 		else
 			noPipelineLatency = noPipelineLatency * (currentLoopBound / unrollFactor);
 
@@ -1522,7 +1545,13 @@ uint64_t BaseDatapath::getLoopTotalLatency(uint64_t maxII) {
 			// are present, a cycle for each loop overhead can be merged (i.e. the exit condition of a loop can be evaluated
 			// at the same time as the enter condition of the following loop). Since right now consecutive inner loops are only
 			// possible with unroll, we compensate this cycle difference with the loop unroll factor
-			noPipelineLatency -= (upperLoopUnrollFactor - 1);
+			// XXX: However, if there are DDR operations before AND after the DDDG, we do not merge
+			// TODO: But maybe, the merge would be dependent on which addresses these operations access
+			// TODO: For example, if there is no overlap, they could execute together (e.g. LLVM_IR_DDRWriteResp together with an LLVM_IR_DDRReadReq)
+			// TODO: And since we separated enterExit to enter and exit, then this logic can be even more precise
+			// TODO: Call something here like a call memmodel->doOverlap(WriteRespNode, ReadReqNode)
+			if(!(allocatedDDDGBefore && allocatedDDDGAfter))
+				noPipelineLatency -= (upperLoopUnrollFactor - 1);
 		}
 	}
 
@@ -2050,6 +2079,9 @@ void BaseDatapath::RCScheduler::pushReady(unsigned nodeID, uint64_t tick) {
 		case LLVM_IR_DDRWriteReq:
 		case LLVM_IR_DDRWrite:
 		case LLVM_IR_DDRWriteResp:
+		case LLVM_IR_DDRSilentReadReq:
+		case LLVM_IR_DDRSilentWriteReq:
+		case LLVM_IR_DDRSilentWriteResp:
 			ddrOpReady.push_back(std::make_pair(nodeID, tick));
 			break;
 		default:

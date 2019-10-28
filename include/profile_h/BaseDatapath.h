@@ -39,7 +39,9 @@ public:
 	};
 	// Additional costs for latency calculation
 	enum {
-		EXTRA_ENTER_EXIT_LOOP_LATENCY = 2
+		EXTRA_ENTER_LOOP_LATENCY = 1,
+		EXTRA_EXIT_LOOP_LATENCY = 1,
+		EXTRA_ENTER_EXIT_LOOP_LATENCY = EXTRA_ENTER_LOOP_LATENCY + EXTRA_EXIT_LOOP_LATENCY
 	};
 
 	class TCScheduler {
@@ -226,7 +228,6 @@ private:
 	uint64_t loopUnrollFactor;
 
 	HardwareProfile *profile;
-	MemoryModel *memmodel;
 
 	void findMinimumRankPair(std::pair<unsigned, unsigned> &pair, std::map<unsigned, unsigned> rankMap);
 	static bool prioritiseSmallerResIIMem(const std::pair<std::string, double> &first, const std::pair<std::string, double> &second) { return first.second < second.second; }
@@ -290,6 +291,7 @@ protected:
 	DDDGBuilder *builder;
 	ParsedTraceContainer PC;
 	Pack P;
+	MemoryModel *memmodel;
 
 	// A map from node ID to its microop
 	std::vector<int> microops;

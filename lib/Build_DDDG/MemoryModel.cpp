@@ -90,6 +90,8 @@ bool XilinxZCUMemoryModel::findOutBursts(
 
 	// Our current assumption for inter-iteration bursting is very restrictive. It should happen only when
 	// there is one (and one only) load/store transaction (which may be bursted) inside a loop iteration
+	// XXX: This simplifies many parts of the DDR scheduling logic. If more is to be considered, this class
+	// should be revised
 	if(1 == burstedNodes.size()) {
 		// We are optimistic at first
 		outBurstFound = true;
@@ -253,29 +255,26 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 
 		// Try to find contiguous loads between loop iterations
 		loadOutBurstFound = findOutBursts(burstedLoads, wholeLoopName, instIDList);
-		if(loadOutBurstFound)
-			errs() << ">>>>>>>>> Congratulations! We found a load out-burst\n";
 
 		// Try to find contiguous stores between loop iterations
 		storeOutBurstFound = findOutBursts(burstedStores, wholeLoopName, instIDList);
-		if(storeOutBurstFound)
-			errs() << ">>>>>>>>> Congratulations! We found a store out-burst\n";
 	}
 
 	// Add the relevant DDDG nodes for offchip load
 	for(auto &burst : burstedLoads) {
 		unsigned newID = microops.size();
+		int microop = loadOutBurstFound? LLVM_IR_DDRSilentReadReq : LLVM_IR_DDRReadReq;
 
 		// Add this new node to the mapping map (lol)
 		ddrNodesToRootLS[newID] = burst.first;
 
 		// Create a node with opcode LLVM_IR_DDRReadReq
-		datapath->insertMicroop(LLVM_IR_DDRReadReq);
+		datapath->insertMicroop(microop);
 
 		// Since we will add new nodes to the DDDG, we must update the auxiliary structures accordingly
 		// Get values from the first load, we will use most of them
 		std::string currDynamicFunction = PC.getFuncList()[burst.first];
-		std::string currInstID = generateInstID(LLVM_IR_DDRReadReq, PC.getInstIDList());
+		std::string currInstID = generateInstID(microop, PC.getInstIDList());
 		int lineNo = PC.getLineNoList()[burst.first];
 		std::string prevBB = PC.getPrevBBList()[burst.first];
 		std::string currBB = PC.getCurrBBList()[burst.first];
@@ -293,6 +292,10 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 		PC.closeAllFiles();
 		PC.lock();
 
+		// If this is an out-bursted load, we must export the LLVM_IR_DDRReadReq node to be allocated to the DDDG before the current
+		if(loadOutBurstFound)
+			nodesToBeforeDDDG.push_back(std::make_tuple(LLVM_IR_DDRReadReq, currDynamicFunction, lineNo, prevBB, currBB));
+
 		// Disconnect the edges incoming to the first load and connect to the read request
 		std::set<Edge> edgesToRemove;
 		std::vector<edgeTy> edgesToAdd;
@@ -300,7 +303,11 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 		for(std::tie(inEdgei, inEdgeEnd) = boost::in_edges(nameToVertex[burst.first], graph); inEdgei != inEdgeEnd; inEdgei++) {
 			unsigned sourceID = vertexToName[boost::source(*inEdgei, graph)];
 			edgesToRemove.insert(*inEdgei);
-			edgesToAdd.push_back({sourceID, newID, edgeToWeight[*inEdgei]});
+
+			// If an out-burst was detected, we isolate these nodes instead of connecting them, since they will be "executed" outside this DDDG
+			// TODO: Perhaps we should isolate only relevant nodes (e.g. getelementptr and indexadd/sub)
+			if(!loadOutBurstFound)
+				edgesToAdd.push_back({sourceID, newID, edgeToWeight[*inEdgei]});
 		}
 		// Connect this node to the first load
 		// XXX: Does the edge weight matter here?
@@ -321,17 +328,18 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 		// DDRWriteReq is positioned before the burst
 
 		unsigned newID = microops.size();
+		int microop = storeOutBurstFound? LLVM_IR_DDRSilentWriteReq : LLVM_IR_DDRWriteReq;
 
 		// Add this new node to the mapping map (lol)
 		ddrNodesToRootLS[newID] = burst.first;
 
 		// Create a node with opcode LLVM_IR_DDRWriteReq
-		microops.push_back(LLVM_IR_DDRWriteReq);
+		microops.push_back(microop);
 
 		// Since we will add new nodes to the DDDG, we must update the auxiliary structures accordingly
 		// Get values from the first store, we will use most of them
 		std::string currDynamicFunction = PC.getFuncList()[burst.first];
-		std::string currInstID = generateInstID(LLVM_IR_DDRWriteReq, PC.getInstIDList());
+		std::string currInstID = generateInstID(microop, PC.getInstIDList());
 		int lineNo = PC.getLineNoList()[burst.first];
 		std::string prevBB = PC.getPrevBBList()[burst.first];
 		std::string currBB = PC.getCurrBBList()[burst.first];
@@ -349,6 +357,10 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 		PC.closeAllFiles();
 		PC.lock();
 
+		// If this is an out-bursted store, we must export the LLVM_IR_DDRWriteReq node to be allocated to the DDDG before the current
+		if(storeOutBurstFound)
+			nodesToBeforeDDDG.push_back(std::make_tuple(LLVM_IR_DDRWriteReq, currDynamicFunction, lineNo, prevBB, currBB));
+
 		// Two type of edges can come to a store: data and address
 		// For data, we keep it at the appropriate writes
 		// For address, we disconnect the incoming to the first store and connect to the write request
@@ -365,7 +377,10 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 				continue;
 
 			edgesToRemove.insert(*inEdgei);
-			edgesToAdd.push_back({sourceID, newID, weight});
+
+			// If an out-burst was detected, we isolate these nodes instead of connecting them, since they will be "executed" outside this DDDG
+			if(!storeOutBurstFound)
+				edgesToAdd.push_back({sourceID, newID, weight});
 		}
 		// Connect this node to the first store
 		// XXX: Does the edge weight matter here?
@@ -383,17 +398,18 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 		// DDRWriteResp is positioned after the last burst beat
 		newID = microops.size();
 		unsigned lastStore = std::get<2>(burst.second).back();
+		microop = storeOutBurstFound? LLVM_IR_DDRSilentWriteResp : LLVM_IR_DDRWriteResp;
 
 		// Add this new node to the mapping map (lol)
 		ddrNodesToRootLS[newID] = burst.first;
 
 		// Create a node with opcode LLVM_IR_DDRWriteResp
-		microops.push_back(LLVM_IR_DDRWriteResp);
+		microops.push_back(microop);
 
 		// Since we will add new nodes to the DDDG, we must update the auxiliary structures accordingly
 		// Get values from the last store, we will use most of them
 		currDynamicFunction = PC.getFuncList()[lastStore];
-		currInstID = generateInstID(LLVM_IR_DDRWriteResp, PC.getInstIDList());
+		currInstID = generateInstID(microop, PC.getInstIDList());
 		lineNo = PC.getLineNoList()[lastStore];
 		prevBB = PC.getPrevBBList()[lastStore];
 		currBB = PC.getCurrBBList()[lastStore];
@@ -410,6 +426,10 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 		// Finished
 		PC.closeAllFiles();
 		PC.lock();
+
+		// If this is an out-bursted store, we must export the LLVM_IR_DDRWriteResp node to be allocated to the DDDG after the current
+		if(storeOutBurstFound)
+			nodesToAfterDDDG.push_back(std::make_tuple(LLVM_IR_DDRWriteResp, currDynamicFunction, lineNo, prevBB, currBB));
 
 		// Disconnect the edges outcoming from the last store and connect to the write response
 		edgesToRemove.clear();
@@ -484,7 +504,7 @@ bool XilinxZCUMemoryModel::tryAllocate(unsigned node, int opcode, bool commit) {
 	// - A read request can be issued when a read transaction is working only if the current read transaction is unbursted;
 	// - Write requests are exclusive.
 
-	if(LLVM_IR_DDRReadReq == opcode) {
+	if(LLVM_IR_DDRReadReq == opcode || LLVM_IR_DDRSilentReadReq == opcode) {
 		unsigned nodeToRootLS = ddrNodesToRootLS.at(node);
 
 		// Read requests are issued when:
@@ -532,7 +552,7 @@ bool XilinxZCUMemoryModel::tryAllocate(unsigned node, int opcode, bool commit) {
 		// Read transactions can always be issued, because their issuing is conditional to ReadReq
 		return true;
 	}
-	else if(LLVM_IR_DDRWriteReq == opcode) {
+	else if(LLVM_IR_DDRWriteReq == opcode || LLVM_IR_DDRSilentWriteReq == opcode) {
 		unsigned nodeToRootLS = ddrNodesToRootLS.at(node);
 
 		// Write requests are issued when:
@@ -555,7 +575,7 @@ bool XilinxZCUMemoryModel::tryAllocate(unsigned node, int opcode, bool commit) {
 		// Write transactions can always be issued, because their issuing is conditional to WriteReq
 		return true;
 	}
-	else if(LLVM_IR_DDRWriteResp == opcode) {
+	else if(LLVM_IR_DDRWriteResp == opcode || LLVM_IR_DDRSilentWriteResp == opcode) {
 		// Write responses (when the data is actually sent to DDR) are issued when:
 
 		// - No active read
@@ -598,10 +618,18 @@ void XilinxZCUMemoryModel::release(unsigned node, int opcode) {
 		if(!(activeReads.size()))
 			readActive = false;
 	}
-	else if(LLVM_IR_DDRWriteResp == opcode) {
+	else if(LLVM_IR_DDRWriteResp == opcode || LLVM_IR_DDRSilentWriteResp == opcode) {
 		// Close the write transaction
 		writeActive = false;
 	}
+}
+
+std::vector<nodeExportTy> &XilinxZCUMemoryModel::getNodesToBeforeDDDG() {
+	return nodesToBeforeDDDG;
+}
+
+std::vector<nodeExportTy> &XilinxZCUMemoryModel::getNodesToAfterDDDG() {
+	return nodesToAfterDDDG;
 }
 
 // TODO TODO TODO TODO

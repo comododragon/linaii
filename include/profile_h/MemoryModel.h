@@ -5,6 +5,8 @@
 #include "profile_h/boostincls.h"
 #include "profile_h/DDDGBuilder.h"
 
+typedef std::tuple<int, std::string, int, std::string, std::string> nodeExportTy;
+
 class BaseDatapath;
 
 class MemoryModel {
@@ -28,6 +30,9 @@ public:
 
 	virtual bool tryAllocate(unsigned node, int opcode, bool commit = true) = 0;
 	virtual void release(unsigned node, int opcode) = 0;
+
+	virtual std::vector<nodeExportTy> &getNodesToBeforeDDDG() = 0;
+	virtual std::vector<nodeExportTy> &getNodesToAfterDDDG() = 0;
 };
 
 class XilinxZCUMemoryModel : public MemoryModel {
@@ -35,6 +40,8 @@ class XilinxZCUMemoryModel : public MemoryModel {
 	std::unordered_map<unsigned, uint64_t> storeNodes;
 	std::unordered_map<unsigned, std::tuple<uint64_t, uint64_t, std::vector<unsigned>>> burstedLoads;
 	std::unordered_map<unsigned, std::tuple<uint64_t, uint64_t, std::vector<unsigned>>> burstedStores;
+	std::vector<nodeExportTy> nodesToBeforeDDDG;
+	std::vector<nodeExportTy> nodesToAfterDDDG;
 	bool loadOutBurstFound, storeOutBurstFound;
 	// This map relates DDR nodes (e.g. ReadReq, WriteReq, WriteResp) to the node ID used in burstedLoad/burstedStores
 	std::unordered_map<unsigned, unsigned> ddrNodesToRootLS;
@@ -63,6 +70,9 @@ public:
 
 	bool tryAllocate(unsigned node, int opcode, bool commit = true);
 	void release(unsigned node, int opcode);
+
+	std::vector<nodeExportTy> &getNodesToBeforeDDDG();
+	std::vector<nodeExportTy> &getNodesToAfterDDDG();
 
 // TODO TODO TODO TODO
 // TODO TODO TODO TODO

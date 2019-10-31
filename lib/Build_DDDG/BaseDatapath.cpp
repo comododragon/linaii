@@ -92,6 +92,10 @@ BaseDatapath::BaseDatapath(
 	// Create hardware profile based on selected platform
 	profile = HardwareProfile::createInstance();
 
+	// Create memory model based on selected platform
+	memmodel = MemoryModel::createInstance(this);
+	profile->setMemoryModel(memmodel);
+
 	numCycles = 0;
 	rcIL = 0;
 
@@ -145,6 +149,72 @@ uint64_t BaseDatapath::getRCIL() const {
 
 Pack &BaseDatapath::getPack() {
 	return P;
+}
+
+const std::vector<nodeExportTy> &BaseDatapath::getExportedNodesToBeforeDDDG() {
+	return memmodel->getNodesToBeforeDDDG();
+}
+
+const std::vector<nodeExportTy> &BaseDatapath::getExportedNodesToAfterDDDG() {
+	return memmodel->getNodesToAfterDDDG();
+}
+
+void BaseDatapath::importNodes(std::vector<nodeExportTy> *nodesToImport1, std::vector<nodeExportTy> *nodesToImport2) {
+	// nodesToImport1 can be the nodes to import for a "before DDDG" or "after DDDG"
+	// nodesToImport2 can be the nodes to import for an "after DDDG". In this case nodesToImport1 will be for a "before DDDG"
+	// nodesToImport2 is only used when the "between DDDG" is being constructed
+
+	if(nodesToImport1) {
+		std::vector<edgeTy> edgesToAdd;
+
+		// Create the imported nodes
+		for(auto &it : *nodesToImport1) {
+			unsigned newID = microops.size();
+
+			int microop = std::get<0>(it);
+			std::string currDynamicFunction = std::get<1>(it);
+			std::string currInstID = generateInstID(microop, PC.getInstIDList());
+			int lineNo = std::get<2>(it);
+			std::string prevBB = std::get<3>(it);
+			std::string currBB = std::get<4>(it);
+
+			// Create a node with opcode LLVM_IR_DDRReadReq
+			insertMicroop(microop);
+
+			// TODO: checar se está tudo sendo atualizado apropriadamente nas próximas linhas
+			PC.unlock();
+			PC.openAllFilesForWrite();
+			// Update ParsedTraceContainer containers with the new node.
+			// XXX: We use the values from the first load
+			PC.appendToFuncList(currDynamicFunction);
+			PC.appendToInstIDList(currInstID);
+			PC.appendToLineNoList(lineNo);
+			PC.appendToPrevBBList(prevBB);
+			PC.appendToCurrBBList(currBB);
+			// Finished
+			PC.closeAllFiles();
+			PC.lock();
+
+			memmodel->importNode(newID, microop);
+			// TODO: por enquanto ta conectando esses nós no fim do DDDG (pra before) ou no começo do DDDG (pra after) e sem lógica por enquanto para between
+			// TODO: isso tem que ser melhor pensado, talvez até com ajuda do MemoryModel aqui
+			// TODO: parei aqui. Não funcionou, posso jogar essa lógica fora e fazer direito
+			// TODO: pra lembrar o que tá acontecendo, tenta compilar esse projeto e tudo vai voltar à tona
+			//if(BaseDatapath::NON_PERFECT_BEFORE == datapathType)
+			//	edgesToAdd.push_back({newID - 1, newID, 0});
+			//else if(BaseDatapath::NON_PERFECT_AFTER == datapathType)
+			//	edgesToAdd.push_back({newID, 0, 0});
+		}
+
+		// Update DDDG
+		//updateAddDDDGEdges(edgesToAdd);
+	}
+
+	if(nodesToImport2) {
+		// TODO: lógica para between
+	}
+
+	refreshDDDG();
 }
 
 void BaseDatapath::postDDDGBuild() {
@@ -1506,10 +1576,11 @@ uint64_t BaseDatapath::getLoopTotalLatency(uint64_t maxII) {
 		uint64_t currentLoopBound = wholeloopName2loopBoundMap.at(currentWholeLoopName);
 		assert(currentLoopBound && "Loop bound is equal to zero");
 
-		// If there are out-burst nodes to allocate before DDDG, we add on the extra cycles
 		uint64_t extraEnter = EXTRA_ENTER_LOOP_LATENCY;
+		uint64_t extraExit = EXTRA_EXIT_LOOP_LATENCY;
 		bool allocatedDDDGBefore = false;
-		// An out-burst was detected, we must compensate here
+		bool allocatedDDDGAfter = false;
+		// If there are out-burst nodes to allocate before DDDG, we add on the extra cycles
 		for(auto &it : memmodel->getNodesToBeforeDDDG()) {
 			unsigned latency = profile->getLatency(std::get<0>(it));
 			if(latency >= extraEnter) {
@@ -1518,8 +1589,6 @@ uint64_t BaseDatapath::getLoopTotalLatency(uint64_t maxII) {
 			}
 		}
 		// If there are out-burst nodes to allocate after DDDG, we add on the extra cycles
-		uint64_t extraExit = EXTRA_EXIT_LOOP_LATENCY;
-		bool allocatedDDDGAfter = false;
 		for(auto &it : memmodel->getNodesToAfterDDDG()) {
 			unsigned latency = profile->getLatency(std::get<0>(it));
 			if(latency >= extraExit) {
@@ -1545,13 +1614,10 @@ uint64_t BaseDatapath::getLoopTotalLatency(uint64_t maxII) {
 			// are present, a cycle for each loop overhead can be merged (i.e. the exit condition of a loop can be evaluated
 			// at the same time as the enter condition of the following loop). Since right now consecutive inner loops are only
 			// possible with unroll, we compensate this cycle difference with the loop unroll factor
-			// XXX: However, if there are DDR operations before AND after the DDDG, we do not merge
-			// TODO: But maybe, the merge would be dependent on which addresses these operations access
-			// TODO: For example, if there is no overlap, they could execute together (e.g. LLVM_IR_DDRWriteResp together with an LLVM_IR_DDRReadReq)
-			// TODO: And since we separated enterExit to enter and exit, then this logic can be even more precise
-			// TODO: Call something here like a call memmodel->doOverlap(WriteRespNode, ReadReqNode)
-			if(!(allocatedDDDGBefore && allocatedDDDGAfter))
-				noPipelineLatency -= (upperLoopUnrollFactor - 1);
+			// XXX: However, if there are DDR operations before AND after the DDDG, we do not merge if the address space overlap
+			// TODO: this is untested!
+			if(!(allocatedDDDGBefore && allocatedDDDGAfter) && !(memmodel->outBurstsOverlap()))
+				noPipelineLatency -= (upperLoopUnrollFactor - 1) * std::min(extraEnter, extraExit);
 		}
 	}
 
@@ -1793,7 +1859,9 @@ BaseDatapath::RCScheduler::RCScheduler(
 	for(std::tie(vi, vEnd) = boost::vertices(graph); vi != vEnd; vi++) {
 		unsigned currNodeID = vertexToName[*vi];
 
-		if(!boost::degree(*vi, graph))
+		// We have some exception of isolated nodes that should be allocated, such as:
+		// - DDR transactions (special case of imported nodes from inner DDDGs)
+		if(!(boost::degree(*vi, graph) || isDDRMemoryOp(microops.at(currNodeID))))
 			continue;
 
 		unsigned inDegree = boost::in_degree(*vi, graph);
@@ -2147,6 +2215,10 @@ void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &sel
 	if(ready.size()) {
 		selected.clear();
 
+		// XXX: Please note that if we start constraining these resources (i.e. tryAllocateOp might start returning false),
+		// We should remove the breaks from timing and resource contention. Also, the iterating loop should also be slightly
+		// modified. Please check trySelect() for DDR operations for more info, at it has the same characteristic.
+
 		// Sort nodes by their ALAP, smallest first (urgent nodes first)
 		ready.sort(prioritiseSmallerALAP);
 		size_t initialReadySize = ready.size();
@@ -2247,14 +2319,23 @@ void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &sel
 }
 
 void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &selected, bool (HardwareProfile::*tryAllocateDDRMem)(unsigned, int, bool)) {
+	// XXX: On the other trySelect() logics, if there is timing contention and/or resource contention for
+	// the first candidate, trySelect() already fails (i.e. the else { break } statements). This is expected
+	// for operations where if one fails, for sure the next one won't be able to succeed.
+	// But in the DDR case, if the most prioritised node fails, the next one might still succeed.
+	// Example: there is a readReq for the out-burst of the next loop nest, it has more priority than
+	// anyone but it will fail until all the DDR transactions for this level are solved, even though all
+	// these nodes has ALAP larger than this readReq
+	// XXX: Please also note that since elements from the middle of this ready queue can be selected
+	// (which doesn't happen in the other trySelects), this iteration loop is slightly different
+
 	if(ready.size()) {
 		selected.clear();
 
 		// Sort nodes by their ALAP, smallest first (urgent nodes first)
 		ready.sort(prioritiseSmallerALAP);
-		size_t initialReadySize = ready.size();
-		for(unsigned i = 0; i < initialReadySize; i++) {
-			unsigned nodeID = ready.front().first;
+		for(auto it = ready.begin(); it != ready.end(); it++) {
+			unsigned nodeID = it->first;
 			int microop = microops.at(nodeID);
 
 			// If allocation is successful (i.e. there is one operation unit available), select this operation
@@ -2280,19 +2361,13 @@ void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &sel
 						criticalPathAllocated = true;
 
 					selected.push_back(nodeID);
-					ready.pop_front();
+					it = ready.erase(it);
 					readyChanged = true;
 					rc[nodeID] = cycleTick;
 				}
-				// Timing contention, not able to allocate now
-				else {
-					break;
-				}
+				// Timing contention, not able to allocate now (but the next, less-prioritised node might allocate, so no break here)
 			}
-			// Resource contention, not able to allocate now
-			else {
-				break;
-			}
+			// Resource contention, not able to allocate now (but the next, less-prioritised node might allocate, so no break here)
 		}
 	}
 }

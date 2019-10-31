@@ -59,6 +59,8 @@ void Multipath::_Multipath() {
 		}
 #endif
 
+		// TODO: The logic here must be updated! See BaseDatapath::getLoopTotalLatency()
+		// (not only here, search for EXTRA_ENTER_EXIT_LOOP_LATENCY and check the logic for each part)
 		if(BaseDatapath::NORMAL_LOOP == latencyType) {
 			uint64_t unrolledBound = loopBound / currUnrollFactor;
 
@@ -212,11 +214,14 @@ void Multipath::recursiveLookup(unsigned currLoopLevel, unsigned finalLoopLevel)
 
 		DynamicDatapath DD(kernelName, CM, summaryFile, loopName, finalLoopLevel, loopUnrollFactor, enablePipelining, recII);
 
-		VERBOSE_PRINT(errs() << "[][][][multipath][" << std::to_string(finalLoopLevel) << "] Estimated cycles: " << std::to_string(DD.getCycles()) << "\n");
+		VERBOSE_PRINT(errs() << "[][][][multipath][" << std::to_string(finalLoopLevel) << "] Estimated cycles (might include bursts outside this loop): " << std::to_string(DD.getCycles()) << "\n");
 		VERBOSE_PRINT(errs() << "[][][][multipath][" << std::to_string(finalLoopLevel) << "] Finished\n");
 
 		latencies.push_back(std::make_tuple(finalLoopLevel, BaseDatapath::NORMAL_LOOP, DD.getRCIL(), DD.getMaxII()));
 		P.merge(DD.getPack());
+		// If there are out-bursts, save them as they will be useful later
+		nodesToBeforeDDDG = std::vector<nodeExportTy>(DD.getExportedNodesToBeforeDDDG());
+		nodesToAfterDDDG = std::vector<nodeExportTy>(DD.getExportedNodesToAfterDDDG());
 
 		return;
 	}
@@ -250,22 +255,26 @@ void Multipath::recursiveLookup(unsigned currLoopLevel, unsigned finalLoopLevel)
 			recursiveLookup(currLoopLevel + 1, finalLoopLevel);
 
 			VERBOSE_PRINT(errs() << "[][][][multipath][" << std::to_string(currLoopLevel) << "] Building dynamic datapath for the region before the nested loop\n");
-			DynamicDatapath DD(kernelName, CM, summaryFile, loopName, currLoopLevel, targetUnrollFactor, BaseDatapath::NON_PERFECT_BEFORE);
+			DynamicDatapath DD(kernelName, CM, summaryFile, loopName, currLoopLevel, targetUnrollFactor, nodesToBeforeDDDG, BaseDatapath::NON_PERFECT_BEFORE);
 			latencies.push_back(std::make_tuple(currLoopLevel, BaseDatapath::NON_PERFECT_BEFORE, DD.getRCIL(), 0));
 			P.merge(DD.getPack());
 
 			VERBOSE_PRINT(errs() << "[][][][multipath][" << std::to_string(currLoopLevel) << "] Building dynamic datapath for the region after the nested loop\n");
-			DynamicDatapath DD2(kernelName, CM, summaryFile, loopName, currLoopLevel, targetUnrollFactor, BaseDatapath::NON_PERFECT_AFTER);
+			DynamicDatapath DD2(kernelName, CM, summaryFile, loopName, currLoopLevel, targetUnrollFactor, nodesToAfterDDDG, BaseDatapath::NON_PERFECT_AFTER);
 			latencies.push_back(std::make_tuple(currLoopLevel, BaseDatapath::NON_PERFECT_AFTER, DD2.getRCIL(), 0));
 			P.merge(DD2.getPack());
 
 			// Unroll detected. Since the code is statically replicated, we also calculate the inter-iteration scheduling to improve acurracy
 			if(targetUnrollFactor > 1) {
 				VERBOSE_PRINT(errs() << "[][][][multipath][" << std::to_string(currLoopLevel) << "] Building dynamic datapath for the region between the unrolled nested loops\n");
-				DynamicDatapath DD3(kernelName, CM, summaryFile, loopName, currLoopLevel, targetUnrollFactor, BaseDatapath::NON_PERFECT_BETWEEN);
+				DynamicDatapath DD3(kernelName, CM, summaryFile, loopName, currLoopLevel, targetUnrollFactor, nodesToBeforeDDDG, nodesToAfterDDDG, BaseDatapath::NON_PERFECT_BETWEEN);
 				latencies.push_back(std::make_tuple(currLoopLevel, BaseDatapath::NON_PERFECT_BETWEEN, DD3.getRCIL(), 0));
 				P.merge(DD3.getPack());
 			}
+
+			// Since out-bursts are for now only performed up to one loop level, we reset these variables so they won't be used again
+			nodesToBeforeDDDG.clear();
+			nodesToAfterDDDG.clear();
 
 			VERBOSE_PRINT(errs() << "[][][][multipath][" << std::to_string(currLoopLevel) << "] Finished\n");
 		}

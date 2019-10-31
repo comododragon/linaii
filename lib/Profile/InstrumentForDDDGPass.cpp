@@ -888,6 +888,10 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 
 		unsigned unrollFactor = (targetLoopBound < targetUnrollFactor && targetLoopBound)? targetLoopBound : targetUnrollFactor;
 
+		// Reset counter of detected offchip transactions
+		noOfBurstedLoads = 0;
+		noOfBurstedStores = 0;
+
 		if(args.fNPLA && firstNonPerfectLoopLevel != -1) {
 			VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Non-perfect loop analysis triggered: building multipaths\n");
 

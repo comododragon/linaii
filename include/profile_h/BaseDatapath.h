@@ -254,7 +254,10 @@ public:
 	uint64_t getMaxII() const;
 	uint64_t getRCIL() const;
 	Pack &getPack();
+	const std::vector<nodeExportTy> &getExportedNodesToBeforeDDDG();
+	const std::vector<nodeExportTy> &getExportedNodesToAfterDDDG();
 
+	void importNodes(std::vector<nodeExportTy> *nodesToImport1, std::vector<nodeExportTy> *nodesToImport2);
 	void postDDDGBuild();
 	void refreshDDDG();
 	void insertMicroop(int microop);

@@ -40,6 +40,9 @@
 #define RESULT_LINE 19134
 #define FORWARD_LINE 24601
 
+extern unsigned noOfBurstedLoads;
+extern unsigned noOfBurstedStores;
+
 namespace llvm {
 
 typedef struct {

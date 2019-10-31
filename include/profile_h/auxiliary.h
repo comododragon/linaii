@@ -67,6 +67,7 @@ std::string constructLoopName(std::string funcName, unsigned loopNo, unsigned de
 std::string appendDepthToLoopName(std::string loopName, unsigned depth);
 std::tuple<std::string, unsigned> parseLoopName(std::string loopName);
 std::tuple<std::string, unsigned, unsigned> parseWholeLoopName(std::string wholeLoopName);
+std::string generateInstID(unsigned opcode, std::vector<std::string> instIDList);
 
 unsigned nextPowerOf2(unsigned x);
 uint64_t nextPowerOf2(uint64_t x);

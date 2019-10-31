@@ -5,6 +5,9 @@
 extern memoryTraceMapTy memoryTraceMap;
 extern bool memoryTraceGenerated;
 
+unsigned noOfBurstedLoads;
+unsigned noOfBurstedStores;
+
 MemoryModel::MemoryModel(BaseDatapath *datapath) :
 	datapath(datapath), microops(datapath->getMicroops()), graph(datapath->getDDDG()),
 	nameToVertex(datapath->getNameToVertex()), vertexToName(datapath->getVertexToName()), edgeToWeight(datapath->getEdgeToWeight()),
@@ -83,6 +86,7 @@ void XilinxZCUMemoryModel::findInBursts(
 
 bool XilinxZCUMemoryModel::findOutBursts(
 	std::unordered_map<unsigned, std::tuple<uint64_t, uint64_t, std::vector<unsigned>>> &burstedNodes,
+	unsigned &noOfBurstedNodes,
 	std::string &wholeLoopName,
 	const std::vector<std::string> &instIDList
 ) {
@@ -90,9 +94,10 @@ bool XilinxZCUMemoryModel::findOutBursts(
 
 	// Our current assumption for inter-iteration bursting is very restrictive. It should happen only when
 	// there is one (and one only) load/store transaction (which may be bursted) inside a loop iteration
+	// XXX: And also for now, it out-bursts only up to one loop level.
 	// XXX: This simplifies many parts of the DDR scheduling logic. If more is to be considered, this class
 	// should be revised
-	if(1 == burstedNodes.size()) {
+	if(1 == noOfBurstedNodes) {
 		// We are optimistic at first
 		outBurstFound = true;
 
@@ -130,28 +135,17 @@ bool XilinxZCUMemoryModel::findOutBursts(
 	return outBurstFound;
 }
 
-std::string XilinxZCUMemoryModel::generateInstID(unsigned opcode, std::vector<std::string> instIDList) {
-	static uint64_t idCtr = 0;
-
-	// TODO: completamente ineficiente!
-	// Create an instID, checking if the name does not exist already
-	std::string instID;
-	do {
-#ifdef LEGACY_SEPARATOR
-		instID = reverseOpcodeMap.at(opcode) + "-" + std::to_string(idCtr++);
-#else
-		instID = reverseOpcodeMap.at(opcode) + GLOBAL_SEPARATOR + std::to_string(idCtr++);
-#endif
-	} while(std::find(instIDList.begin(), instIDList.end(), instID) != instIDList.end());
-
-	return instID;
-}
-
 XilinxZCUMemoryModel::XilinxZCUMemoryModel(BaseDatapath *datapath) : MemoryModel(datapath) {
 	loadOutBurstFound = false;
 	storeOutBurstFound = false;
 	readActive = false;
 	writeActive = false;
+	completedTransactions = 0;
+	readReqImported = false;
+	writeReqImported = false;
+	writeRespImported = false;
+	allUnimportedComplete = false;
+	importedWriteRespComplete = true;
 }
 
 void XilinxZCUMemoryModel::analyseAndTransform() {
@@ -235,6 +229,7 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 		return this->loadNodes[a] < this->loadNodes[b];
 	};
 	findInBursts(loadNodes, behavedLoads, burstedLoads, loadComparator);
+	noOfBurstedLoads += burstedLoads.size();
 
 	// Try to find contiguous stores inside the DDDG.
 	std::vector<unsigned> behavedStores;
@@ -248,16 +243,17 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 		return this->storeNodes[a] < this->storeNodes[b];
 	};
 	findInBursts(storeNodes, behavedStores, burstedStores, storeComparator);
+	noOfBurstedStores += burstedStores.size();
 
 	if(!(args.fNoMMABurst)) {
 		std::string wholeLoopName = appendDepthToLoopName(datapath->getTargetLoopName(), datapath->getTargetLoopLevel());
 		const std::vector<std::string> &instIDList = PC.getInstIDList();
 
 		// Try to find contiguous loads between loop iterations
-		loadOutBurstFound = findOutBursts(burstedLoads, wholeLoopName, instIDList);
+		loadOutBurstFound = findOutBursts(burstedLoads, noOfBurstedLoads, wholeLoopName, instIDList);
 
 		// Try to find contiguous stores between loop iterations
-		storeOutBurstFound = findOutBursts(burstedStores, wholeLoopName, instIDList);
+		storeOutBurstFound = findOutBursts(burstedStores, noOfBurstedStores, wholeLoopName, instIDList);
 	}
 
 	// Add the relevant DDDG nodes for offchip load
@@ -504,6 +500,27 @@ bool XilinxZCUMemoryModel::tryAllocate(unsigned node, int opcode, bool commit) {
 	// - A read request can be issued when a read transaction is working only if the current read transaction is unbursted;
 	// - Write requests are exclusive.
 
+	// TODO: parei aqui
+	// TODO: This might be slightly wrong.
+	// TODO: I think that writeResp could naturally happen along other loads from the now-starting DDDG;
+	// TODO: We just have to check if it overlaps. Perhaps use doOverlap() or something similar?
+	// TODO: But before anything,first check the latency difference for rw-add2-np
+	// If the current node is an imported LLVM_IR_DDRReadReq or LLVM_IR_DDRWriteReq, they should execute
+	// only after all normal DDR nodes are allocated
+	if((readReqImported && node == importedReadReq) || (writeReqImported && node == importedWriteReq)) {
+		// If all DDR transactions from this DDDG are already solved, we don't even have to check, just allocate
+		return allUnimportedComplete;
+	}
+	// If the current node is an imported LLVM_IR_DDRWriteResp, it has priority over all
+	else if(writeRespImported && node == importedWriteResp) {
+		return true;
+	}
+	// If the current node is a normal node, they should execute only after the imported LLVM_IR_DDRWriteResp is executed (if present)
+	else {
+		if(!importedWriteRespComplete)
+			return false;
+	}
+
 	if(LLVM_IR_DDRReadReq == opcode || LLVM_IR_DDRSilentReadReq == opcode) {
 		unsigned nodeToRootLS = ddrNodesToRootLS.at(node);
 
@@ -550,6 +567,27 @@ bool XilinxZCUMemoryModel::tryAllocate(unsigned node, int opcode, bool commit) {
 	}
 	else if(LLVM_IR_DDRRead == opcode) {
 		// Read transactions can always be issued, because their issuing is conditional to ReadReq
+
+		// Since LLVM_IR_DDRRead takes only one cycle, its release logic is located here (MemoryModel::release() is not executed)
+		if(commit) {
+			// If this is the last load, we must close this burst
+			for(auto &it : burstedLoads) {
+				if(std::get<2>(it.second).back() == node) {
+					activeReads.erase(it.first);
+					completedTransactions++;
+				}
+			}
+
+			if(!(activeReads.size()))
+				readActive = false;
+
+			// Update auxiliary flags
+			// XXX: completedTransactions will account imported readReqs and writeReqs, which is against the logic that we
+			// expect for it, but this shouldn't be a problem, because it will happen in the end where the value of this variable is no longer important
+			if((burstedLoads.size() + burstedStores.size()) == completedTransactions)
+				allUnimportedComplete = true;
+		}
+
 		return true;
 	}
 	else if(LLVM_IR_DDRWriteReq == opcode || LLVM_IR_DDRSilentWriteReq == opcode) {
@@ -607,20 +645,54 @@ bool XilinxZCUMemoryModel::tryAllocate(unsigned node, int opcode, bool commit) {
 }
 
 void XilinxZCUMemoryModel::release(unsigned node, int opcode) {
-	if(LLVM_IR_DDRRead == opcode) {
-		// If this is the last load, we must close this burst
-		for(auto &it : burstedLoads) {
-			if(std::get<2>(it.second).back() == node) {
-				activeReads.erase(it.first);
-			}
-		}
-
-		if(!(activeReads.size()))
-			readActive = false;
-	}
-	else if(LLVM_IR_DDRWriteResp == opcode || LLVM_IR_DDRSilentWriteResp == opcode) {
+	if(LLVM_IR_DDRWriteResp == opcode || LLVM_IR_DDRSilentWriteResp == opcode) {
 		// Close the write transaction
 		writeActive = false;
+
+		// We only account for transactions that were not imported here (we only check writeResp as it's the only imported node possible to run before anyone, for now)
+		if(!writeRespImported || importedWriteResp != node)
+			completedTransactions++;
+	}
+
+	// XXX: completedTransactions will account imported readReqs and writeReqs, which is against the logic that we
+	// expect for it, but this shouldn't be a problem, because it will happen in the end where the value of this variable is no longer important
+	if((burstedLoads.size() + burstedStores.size()) == completedTransactions)
+		allUnimportedComplete = true;
+	if(writeRespImported && node == importedWriteResp)
+		importedWriteRespComplete = true;
+}
+
+bool XilinxZCUMemoryModel::outBurstsOverlap() {
+	// Check if the scheduled outbursts overlap
+	// XXX: Since for now only one write and one read outbursts are allowed, this check is somewhat simple
+	std::tuple<uint64_t, uint64_t, std::vector<unsigned>> &outBurstedWrite = burstedStores.begin()->second;
+	std::tuple<uint64_t, uint64_t, std::vector<unsigned>> &outBurstedRead = burstedLoads.begin()->second;
+	uint64_t writeBase = std::get<0>(outBurstedWrite);
+	// XXX: Once again, considering 32-bit
+	uint64_t writeEnd = writeBase + std::get<1>(outBurstedWrite) * 4;
+	uint64_t readBase = std::get<0>(outBurstedRead);
+	// XXX: Once again, considering 32-bit
+	uint64_t readEnd = readBase + std::get<1>(outBurstedRead) * 4;
+
+	return writeEnd >= readBase && readEnd >= writeBase;
+}
+
+void XilinxZCUMemoryModel::importNode(unsigned nodeID, int opcode) {
+	if(LLVM_IR_DDRReadReq == opcode) {
+		readReqImported = true;
+		importedReadReq = nodeID;
+	}
+	else if(LLVM_IR_DDRWriteReq == opcode) {
+		writeReqImported = true;
+		importedWriteReq = nodeID;
+	}
+	else if(LLVM_IR_DDRWriteResp == opcode) {
+		writeRespImported = true;
+		importedWriteRespComplete = false;
+		importedWriteResp = nodeID;
+	}
+	else {
+		assert(false && "Invalid type of node imported to the memory model");
 	}
 }
 

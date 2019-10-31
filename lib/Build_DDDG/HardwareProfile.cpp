@@ -376,7 +376,7 @@ bool HardwareProfile::ddrOpTryAllocate(unsigned node, int opcode, bool commit) {
 	bool allocationResult = memmodel->tryAllocate(node, opcode, commit);
 
 	// If positive, we set the port usage accordingly
-	if(allocationResult) {
+	if(commit && allocationResult) {
 		// Once again, silent operations do not affect port usage
 
 		if(LLVM_IR_DDRReadReq == opcode || LLVM_IR_DDRRead == opcode)

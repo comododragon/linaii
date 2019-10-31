@@ -21,6 +21,9 @@ class Multipath {
 	std::vector<std::tuple<unsigned, unsigned, uint64_t, uint64_t>> latencies;
 	Pack P;
 
+	std::vector<nodeExportTy> nodesToBeforeDDDG;
+	std::vector<nodeExportTy> nodesToAfterDDDG;
+
 	void _Multipath();
 
 	void recursiveLookup(unsigned currLoopLevel, unsigned finalLoopLevel);

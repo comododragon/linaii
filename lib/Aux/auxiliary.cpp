@@ -2,6 +2,8 @@
 
 #include "llvm/IR/Verifier.h"
 
+#include "profile_h/opcodes.h"
+
 using namespace llvm;
 
 const std::string functionNameMapperMDKindName = "lia.functionnamemapper";
@@ -94,6 +96,23 @@ std::tuple<std::string, unsigned, unsigned> parseWholeLoopName(std::string whole
 	unsigned loopLevel = std::stoi(rest.substr(tagPos + depthTagSize));
 
 	return std::make_tuple(funcName, loopNo, loopLevel);
+}
+
+std::string generateInstID(unsigned opcode, std::vector<std::string> instIDList) {
+	static uint64_t idCtr = 0;
+
+	// XXX: I don't think this is a performance bottleneck, but if it is, then we should re-think this logic to avoid name collision
+	// Create an instID, checking if the name does not exist already
+	std::string instID;
+	do {
+#ifdef LEGACY_SEPARATOR
+		instID = reverseOpcodeMap.at(opcode) + "-" + std::to_string(idCtr++);
+#else
+		instID = reverseOpcodeMap.at(opcode) + GLOBAL_SEPARATOR + std::to_string(idCtr++);
+#endif
+	} while(std::find(instIDList.begin(), instIDList.end(), instID) != instIDList.end());
+
+	return instID;
 }
 
 unsigned nextPowerOf2(unsigned x) {

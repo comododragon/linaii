@@ -30,7 +30,9 @@ public:
 
 	virtual bool tryAllocate(unsigned node, int opcode, bool commit = true) = 0;
 	virtual void release(unsigned node, int opcode) = 0;
+	virtual bool outBurstsOverlap() = 0;
 
+	virtual void importNode(unsigned nodeID, int opcode) = 0;
 	virtual std::vector<nodeExportTy> &getNodesToBeforeDDDG() = 0;
 	virtual std::vector<nodeExportTy> &getNodesToAfterDDDG() = 0;
 };
@@ -48,6 +50,10 @@ class XilinxZCUMemoryModel : public MemoryModel {
 	bool readActive, writeActive;
 	std::set<unsigned> activeReads;
 	unsigned activeWrite;
+	unsigned completedTransactions;
+	bool readReqImported, writeReqImported, writeRespImported;
+	unsigned importedReadReq, importedWriteReq, importedWriteResp;
+	bool allUnimportedComplete, importedWriteRespComplete;
 
 	void findInBursts(
 		std::unordered_map<unsigned, uint64_t> &foundNodes,
@@ -57,11 +63,10 @@ class XilinxZCUMemoryModel : public MemoryModel {
 	);
 	bool findOutBursts(
 		std::unordered_map<unsigned, std::tuple<uint64_t, uint64_t, std::vector<unsigned>>> &burstedNodes,
+		unsigned &noOfBurstedNodes,
 		std::string &wholeLoopName,
 		const std::vector<std::string> &instIDList
 	);
-
-	std::string generateInstID(unsigned opcode, std::vector<std::string> instIDList);
 
 public:
 	XilinxZCUMemoryModel(BaseDatapath *datapath);
@@ -70,7 +75,9 @@ public:
 
 	bool tryAllocate(unsigned node, int opcode, bool commit = true);
 	void release(unsigned node, int opcode);
+	bool outBurstsOverlap();
 
+	void importNode(unsigned nodeID, int opcode);
 	std::vector<nodeExportTy> &getNodesToBeforeDDDG();
 	std::vector<nodeExportTy> &getNodesToAfterDDDG();
 

@@ -1246,7 +1246,13 @@ void BaseDatapath::alapScheduling(std::tuple<uint64_t, uint64_t> asapResult) {
 
 		// Set scheduled time to maximum time from ASAP to leaf nodes
 		if(!boost::out_degree(currNode, graph)) {
-			alapScheduledTime[nodeID] = std::get<1>(asapResult);
+			// XXX: Since in current version the ordering of DDR nodes is defined by the MemoryModel during RC-scheduling,
+			// we apply 0 to isolated nodes that are imported DDR nodes instead
+			if(!boost::in_degree(currNode, graph) && isDDRMemoryOp(microops.at(nodeID)))
+				alapScheduledTime[nodeID] = 0;
+			else
+				alapScheduledTime[nodeID] = std::get<1>(asapResult);
+
 #ifdef CHECK_VISITED_NODES
 			visitedNodes.insert(nodeID);
 #endif

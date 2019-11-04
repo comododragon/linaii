@@ -1867,7 +1867,7 @@ BaseDatapath::RCScheduler::RCScheduler(
 
 		// We have some exception of isolated nodes that should be allocated, such as:
 		// - DDR transactions (special case of imported nodes from inner DDDGs)
-		if(!(boost::degree(*vi, graph) || isDDRMemoryOp(microops.at(currNodeID))))
+		if(!(boost::degree(*vi, graph)))
 			continue;
 
 		unsigned inDegree = boost::in_degree(*vi, graph);
@@ -2329,9 +2329,6 @@ void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &sel
 	// the first candidate, trySelect() already fails (i.e. the else { break } statements). This is expected
 	// for operations where if one fails, for sure the next one won't be able to succeed.
 	// But in the DDR case, if the most prioritised node fails, the next one might still succeed.
-	// Example: there is a readReq for the out-burst of the next loop nest, it has more priority than
-	// anyone but it will fail until all the DDR transactions for this level are solved, even though all
-	// these nodes has ALAP larger than this readReq
 	// XXX: Please also note that since elements from the middle of this ready queue can be selected
 	// (which doesn't happen in the other trySelects), this iteration loop is slightly different
 

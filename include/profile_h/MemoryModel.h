@@ -50,10 +50,10 @@ class XilinxZCUMemoryModel : public MemoryModel {
 	bool readActive, writeActive;
 	std::set<unsigned> activeReads;
 	unsigned activeWrite;
-	unsigned completedTransactions;
+	//unsigned completedTransactions;
 	bool readReqImported, writeReqImported, writeRespImported;
 	unsigned importedReadReq, importedWriteReq, importedWriteResp;
-	bool allUnimportedComplete, importedWriteRespComplete;
+	//bool allUnimportedComplete, importedWriteRespComplete;
 
 	void findInBursts(
 		std::unordered_map<unsigned, uint64_t> &foundNodes,

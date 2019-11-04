@@ -140,12 +140,12 @@ XilinxZCUMemoryModel::XilinxZCUMemoryModel(BaseDatapath *datapath) : MemoryModel
 	storeOutBurstFound = false;
 	readActive = false;
 	writeActive = false;
-	completedTransactions = 0;
+	//completedTransactions = 0;
 	readReqImported = false;
 	writeReqImported = false;
 	writeRespImported = false;
-	allUnimportedComplete = false;
-	importedWriteRespComplete = true;
+	//allUnimportedComplete = false;
+	//importedWriteRespComplete = true;
 }
 
 void XilinxZCUMemoryModel::analyseAndTransform() {
@@ -446,6 +446,52 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 		datapath->updateAddDDDGEdges(edgesToAdd);
 	}
 
+	// Connect imported LLVM_IR_DDRWriteResp (if any) to all root DDR transactions (LLVM_IR_DDRReadReq's and LLVM_IR_DDRWriteReq's)
+	if(writeRespImported) {
+		std::vector<edgeTy> edgesToAdd;
+
+		// Find for LLVM_IR_DDRReadReq and LLVM_IR_DDRWriteReq
+		for(auto &it : ddrNodesToRootLS) {
+			int opcode = microops.at(it.first);
+
+			// XXX: Does the edge weight matter here?
+			if(LLVM_IR_DDRReadReq == opcode || LLVM_IR_DDRWriteReq == opcode)
+				edgesToAdd.push_back({importedWriteResp, it.first, 0});
+		}
+
+		datapath->updateAddDDDGEdges(edgesToAdd);
+	}
+
+	// Connect imported LLVM_IR_DDRReadReq/LLVM_IR_DDRWriteReq (if any) to all last DDR transactions (LLVM_IR_DDRRead's and LLVM_IR_DDRWriteResp)
+	if(readReqImported || writeReqImported) {
+		std::vector<edgeTy> edgesToAdd;
+
+		// Find for LLVM_IR_DDRWriteResp
+		for(auto &it : ddrNodesToRootLS) {
+			int opcode = microops.at(it.first);
+
+			// XXX: Does the edge weight matter here?
+			if(LLVM_IR_DDRWriteResp == opcode) {
+				if(readReqImported)
+					edgesToAdd.push_back({it.first, importedReadReq, 0});
+				if(writeReqImported)
+					edgesToAdd.push_back({it.first, importedWriteReq, 0});
+			}
+		}
+
+		// Also, connect to the last node of DDR read transactions
+		for(auto &it : burstedLoads) {
+			unsigned lastLoad = std::get<2>(it.second).back();
+
+			if(readReqImported)
+				edgesToAdd.push_back({lastLoad, importedReadReq, 0});
+			if(writeReqImported)
+				edgesToAdd.push_back({lastLoad, importedWriteReq, 0});
+		}
+
+		datapath->updateAddDDDGEdges(edgesToAdd);
+	}
+
 	errs() << "-- behavedLoads\n";
 	for(auto const &x : behavedLoads)
 		errs() << "-- " << std::to_string(x) << ": " << std::to_string(loadNodes[x]) << "\n";
@@ -500,26 +546,14 @@ bool XilinxZCUMemoryModel::tryAllocate(unsigned node, int opcode, bool commit) {
 	// - A read request can be issued when a read transaction is working only if the current read transaction is unbursted;
 	// - Write requests are exclusive.
 
-	// TODO: parei aqui
-	// TODO: This might be slightly wrong.
-	// TODO: I think that writeResp could naturally happen along other loads from the now-starting DDDG;
-	// TODO: We just have to check if it overlaps. Perhaps use doOverlap() or something similar?
-	// TODO: But before anything,first check the latency difference for rw-add2-np
-	// If the current node is an imported LLVM_IR_DDRReadReq or LLVM_IR_DDRWriteReq, they should execute
-	// only after all normal DDR nodes are allocated
-	if((readReqImported && node == importedReadReq) || (writeReqImported && node == importedWriteReq)) {
-		// If all DDR transactions from this DDDG are already solved, we don't even have to check, just allocate
-		return allUnimportedComplete;
-	}
-	// If the current node is an imported LLVM_IR_DDRWriteResp, it has priority over all
-	else if(writeRespImported && node == importedWriteResp) {
+	// Imported nodes are controlled by the DDDG control edges and they will either be the last or first DDR thing to happen,
+	// so we do not control anything here
+	if(readReqImported && node == importedReadReq)
 		return true;
-	}
-	// If the current node is a normal node, they should execute only after the imported LLVM_IR_DDRWriteResp is executed (if present)
-	else {
-		if(!importedWriteRespComplete)
-			return false;
-	}
+	if(writeReqImported && node == importedWriteReq)
+		return true;
+	if(writeRespImported && node == importedWriteResp)
+		return true;
 
 	if(LLVM_IR_DDRReadReq == opcode || LLVM_IR_DDRSilentReadReq == opcode) {
 		unsigned nodeToRootLS = ddrNodesToRootLS.at(node);
@@ -572,20 +606,12 @@ bool XilinxZCUMemoryModel::tryAllocate(unsigned node, int opcode, bool commit) {
 		if(commit) {
 			// If this is the last load, we must close this burst
 			for(auto &it : burstedLoads) {
-				if(std::get<2>(it.second).back() == node) {
+				if(std::get<2>(it.second).back() == node)
 					activeReads.erase(it.first);
-					completedTransactions++;
-				}
 			}
 
 			if(!(activeReads.size()))
 				readActive = false;
-
-			// Update auxiliary flags
-			// XXX: completedTransactions will account imported readReqs and writeReqs, which is against the logic that we
-			// expect for it, but this shouldn't be a problem, because it will happen in the end where the value of this variable is no longer important
-			if((burstedLoads.size() + burstedStores.size()) == completedTransactions)
-				allUnimportedComplete = true;
 		}
 
 		return true;
@@ -648,18 +674,7 @@ void XilinxZCUMemoryModel::release(unsigned node, int opcode) {
 	if(LLVM_IR_DDRWriteResp == opcode || LLVM_IR_DDRSilentWriteResp == opcode) {
 		// Close the write transaction
 		writeActive = false;
-
-		// We only account for transactions that were not imported here (we only check writeResp as it's the only imported node possible to run before anyone, for now)
-		if(!writeRespImported || importedWriteResp != node)
-			completedTransactions++;
 	}
-
-	// XXX: completedTransactions will account imported readReqs and writeReqs, which is against the logic that we
-	// expect for it, but this shouldn't be a problem, because it will happen in the end where the value of this variable is no longer important
-	if((burstedLoads.size() + burstedStores.size()) == completedTransactions)
-		allUnimportedComplete = true;
-	if(writeRespImported && node == importedWriteResp)
-		importedWriteRespComplete = true;
 }
 
 bool XilinxZCUMemoryModel::outBurstsOverlap() {
@@ -688,7 +703,6 @@ void XilinxZCUMemoryModel::importNode(unsigned nodeID, int opcode) {
 	}
 	else if(LLVM_IR_DDRWriteResp == opcode) {
 		writeRespImported = true;
-		importedWriteRespComplete = false;
 		importedWriteResp = nodeID;
 	}
 	else {

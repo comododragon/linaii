@@ -1106,6 +1106,9 @@ XilinxZCUHardwareProfile::XilinxZCUHardwareProfile() {
 }
 
 unsigned XilinxZCUHardwareProfile::getLatency(unsigned opcode) {
+	// Combinational nodes are mapped as follows:
+	// Nodes that are abstract and don't generate critical path (e.g. truncate): latency 0, in-cycle delay 0.0
+	// Nodes that are combinational however take some time to execute: latency 1, in-cycle delay != 0
 	switch(opcode) {
 		case LLVM_IR_Shl:
 		case LLVM_IR_LShr:
@@ -1114,13 +1117,13 @@ unsigned XilinxZCUHardwareProfile::getLatency(unsigned opcode) {
 		case LLVM_IR_Or:
 		case LLVM_IR_Xor:
 		case LLVM_IR_ICmp:
+			return 1;
 		case LLVM_IR_Br:
 			return 0;
 		case LLVM_IR_IndexAdd:
-			// Even though a normal add/sub is performed here, it is not registered, so no latency (but it has an in-cycle latency!)
-			return 0;
+			return 1;
 		case LLVM_IR_IndexSub:
-			return 0;
+			return 1;
 		case LLVM_IR_Add:
 			return effectiveLatencies[LATENCY_ADD].first;
 		case LLVM_IR_Sub: 
@@ -1162,14 +1165,22 @@ unsigned XilinxZCUHardwareProfile::getLatency(unsigned opcode) {
 		case LLVM_IR_DDRSilentWriteReq:
 		case LLVM_IR_DDRSilentWriteResp:
 			return 0;
-		default: 
+		case LLVM_IR_Trunc:
+		case LLVM_IR_SExt:
+		case LLVM_IR_ZExt:
+		case LLVM_IR_GetElementPtr:
 			return 0;
+		case LLVM_IR_Dummy:
+			return 0;
+		default: 
+			return 1;
 	}
 }
 
 double XilinxZCUHardwareProfile::getInCycleLatency(unsigned opcode) {
-	// XXX: Changed from 0 to 0.001, to avoid these instructions of being
-	// merged with instructions that use the whole timing budget (e.g. offchip instructions)
+	// Instructions that have latency 0.001 are combinational operations
+	// that DO take some time. There are stuff, for example truncate,
+	// that is simply a question of "cutting" some wires, so there is no delay in this
 	switch(opcode) {
 		case LLVM_IR_Shl:
 		case LLVM_IR_LShr:
@@ -1178,8 +1189,9 @@ double XilinxZCUHardwareProfile::getInCycleLatency(unsigned opcode) {
 		case LLVM_IR_Or:
 		case LLVM_IR_Xor:
 		case LLVM_IR_ICmp:
-		case LLVM_IR_Br:
 			return 0.001;
+		case LLVM_IR_Br:
+			return 0;
 		case LLVM_IR_IndexAdd:
 			return effectiveLatencies[LATENCY_ADD].second;
 		case LLVM_IR_IndexSub:
@@ -1189,13 +1201,12 @@ double XilinxZCUHardwareProfile::getInCycleLatency(unsigned opcode) {
 		case LLVM_IR_Sub: 
 			return effectiveLatencies[LATENCY_SUB].second;
 		case LLVM_IR_Call:
-			return 0.001;
+			return 0;
 		case LLVM_IR_Store:
 			return effectiveLatencies[LATENCY_STORE].second;
 		case LLVM_IR_SilentStore:
-			return 0.001;
+			return 0;
 		case LLVM_IR_Load:
-			// XXX: Must fILL also affect here?
 			return effectiveLatencies[LATENCY_LOAD].second;
 		case LLVM_IR_Mul:
 			return effectiveLatencies[LATENCY_MUL32].second;
@@ -1225,6 +1236,13 @@ double XilinxZCUHardwareProfile::getInCycleLatency(unsigned opcode) {
 		case LLVM_IR_DDRSilentReadReq:
 		case LLVM_IR_DDRSilentWriteReq:
 		case LLVM_IR_DDRSilentWriteResp:
+			return 0;
+		case LLVM_IR_Trunc:
+		case LLVM_IR_SExt:
+		case LLVM_IR_ZExt:
+		case LLVM_IR_GetElementPtr:
+			return 0;
+		case LLVM_IR_Dummy:
 			return 0;
 		default: 
 			return 0.001;

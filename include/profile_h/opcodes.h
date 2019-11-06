@@ -66,14 +66,17 @@
 #define LLVM_IR_SilentStore         101
 
 // Pseudo-opcodes for offchip transactions
-#define LLVM_IR_DDRReadReq 0xf8
-#define LLVM_IR_DDRRead 0xf9
-#define LLVM_IR_DDRWriteReq 0xfa
-#define LLVM_IR_DDRWrite 0xfb
-#define LLVM_IR_DDRWriteResp 0xfc
-#define LLVM_IR_DDRSilentReadReq 0xfd
-#define LLVM_IR_DDRSilentWriteReq 0xfe
-#define LLVM_IR_DDRSilentWriteResp 0xff
+#define LLVM_IR_DDRReadReq 0xf7
+#define LLVM_IR_DDRRead 0xf8
+#define LLVM_IR_DDRWriteReq 0xf9
+#define LLVM_IR_DDRWrite 0xfa
+#define LLVM_IR_DDRWriteResp 0xfb
+#define LLVM_IR_DDRSilentReadReq 0xfc
+#define LLVM_IR_DDRSilentWriteReq 0xfd
+#define LLVM_IR_DDRSilentWriteResp 0xfe
+
+// Pseudo-opcode for dummy transaction
+#define LLVM_IR_Dummy 0xff
 
 static const std::map<unsigned, std::string> reverseOpcodeMap = {
 	{0, "move"},
@@ -140,14 +143,16 @@ static const std::map<unsigned, std::string> reverseOpcodeMap = {
 	{102, "indexsub"},
 	{101, "silentstore"},
 
-	{0xf8, "ddrreadreq"},
-	{0xf9, "ddrread"},
-	{0xfa, "ddrwritereq"},
-	{0xfb, "ddrwrite"},
-	{0xfc, "ddrwriteresp"},
-	{0xfd, "ddrsilentreadreq"},
-	{0xfe, "ddrsilentwritereq"},
-	{0xff, "ddrsilentwriteresp"}
+	{0xf7, "ddrreadreq"},
+	{0xf8, "ddrread"},
+	{0xf9, "ddrwritereq"},
+	{0xfa, "ddrwrite"},
+	{0xfb, "ddrwriteresp"},
+	{0xfc, "ddrsilentreadreq"},
+	{0xfd, "ddrsilentwritereq"},
+	{0xfe, "ddrsilentwriteresp"},
+
+	{0xff, "dummy"}
 };
 
 bool isAssociative(unsigned microop);

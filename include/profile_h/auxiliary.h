@@ -9,7 +9,18 @@
 #define ENABLE_TIMER
 
 // Uncomment this line if you want to see all the variables in the world printed for debugging
-#define DBG_PRINT_ALL
+//#define DBG_PRINT_ALL
+
+// Debug file: by activating this macro, a debug file will be available at the PWD after execution
+// you can fill this debug file by using DBG_DUMP
+#define DBG_FILE "debug.dump"
+#ifdef DBG_FILE
+extern std::ofstream debugFile;
+#define DBG_DUMP(X) \
+	do {\
+		debugFile << X << std::flush;\
+	} while(false)
+#endif
 
 // XXX: According to https://github.com/llvm-mirror/llvm/blob/6b547686c5410b7528212e898fe30fc7ee7a70a3/lib/Analysis/LoopPass.cpp,
 // the loop queue that runOnLoop is called is populated in reverse program order. Assuming that runOnLoop() will execute following

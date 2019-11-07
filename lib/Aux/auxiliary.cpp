@@ -6,6 +6,10 @@
 
 using namespace llvm;
 
+#ifdef DBG_FILE
+std::ofstream debugFile;
+#endif
+
 const std::string functionNameMapperMDKindName = "lia.functionnamemapper";
 const std::string loopNumberMDKindName = "lia.kernelloopnumber";
 const std::string assignBasicBlockIDMDKindName = "lia.kernelbbid";

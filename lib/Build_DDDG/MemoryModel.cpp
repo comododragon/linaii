@@ -245,7 +245,7 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 	findInBursts(storeNodes, behavedStores, burstedStores, storeComparator);
 	noOfBurstedStores += burstedStores.size();
 
-	if(!(args.fNoMMABurst)) {
+	if(!(args.fNoMMABurst) && burstedStores.size()) {
 		std::string wholeLoopName = appendDepthToLoopName(datapath->getTargetLoopName(), datapath->getTargetLoopLevel());
 		const std::vector<std::string> &instIDList = PC.getInstIDList();
 
@@ -496,62 +496,7 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 	// If there are no DDR transactions in this DDDG, the imported nodes (if any) are going to be disconnected
 	// So we create a dummy last node and connect the DDDG leaves and the imported nodes to it
 	else if(writeRespImported || readReqImported || writeReqImported) {
-		std::vector<edgeTy> edgesToAdd;
-		bool branchNodeFound = false;
-		unsigned branchNode;
-		std::vector<unsigned> leafNodes;
-
-		// We will search for 2 things here:
-		// - The branch node that is usually isolated: We will use its info, since it has a somewhat similar positioning as the dummy node ought to be
-		// - Leaf nodes that are going to be connected to the dummy node
-		for(unsigned nodeID = 0; nodeID < microops.size(); nodeID++) {
-			if(!boost::out_degree(nameToVertex[nodeID], graph))
-				leafNodes.push_back(nodeID);
-
-			if(isBranchOp(microops.at(nodeID))) {
-				branchNodeFound = true;
-				branchNode = nodeID;
-			}
-		}
-		assert(branchNodeFound && "No branch node was found to be used as a dummy node");
-
-		// Create the dummy node
-		unsigned newID = microops.size();
-		int microop = LLVM_IR_Dummy;
-		microops.push_back(microop);
-		// Since we will add new nodes to the DDDG, we must update the auxiliary structures accordingly
-		std::string currDynamicFunction = PC.getFuncList()[branchNode];
-		std::string currInstID = generateInstID(microop, PC.getInstIDList());
-		int lineNo = PC.getLineNoList()[branchNode];
-		std::string prevBB = PC.getPrevBBList()[branchNode];
-		std::string currBB = PC.getCurrBBList()[branchNode];
-		// TODO: checar se está tudo sendo atualizado apropriadamente nas próximas linhas
-		PC.unlock();
-		PC.openAllFilesForWrite();
-		// Update ParsedTraceContainer containers with the new node.
-		// XXX: We use the values from the first store
-		PC.appendToFuncList(currDynamicFunction);
-		PC.appendToInstIDList(currInstID);
-		PC.appendToLineNoList(lineNo);
-		PC.appendToPrevBBList(prevBB);
-		PC.appendToCurrBBList(currBB);
-		// Finished
-		PC.closeAllFiles();
-		PC.lock();
-
-		// Connect the imported nodes
-		if(writeRespImported)
-			edgesToAdd.push_back({importedWriteResp, newID, 0});
-		if(readReqImported)
-			edgesToAdd.push_back({importedReadReq, newID, 0});
-		if(writeReqImported)
-			edgesToAdd.push_back({importedWriteReq, newID, 0});
-
-		// Connect leaf nodes to the dummy node
-		for(auto &it : leafNodes)
-			edgesToAdd.push_back({it, newID, 0});
-
-		datapath->updateAddDDDGEdges(edgesToAdd);
+		datapath->createDummySink();
 	}
 
 	errs() << "-- behavedLoads\n";

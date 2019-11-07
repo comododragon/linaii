@@ -96,6 +96,10 @@ uint64_t progressiveTraceInstCount = 0;
 #endif
 
 int main(int argc, char **argv) {
+#ifdef DBG_FILE
+	debugFile.open(DBG_FILE);
+#endif
+
 	parseInputArguments(argc, argv);
 
 	errs() << "░░░░░░░░░░░░░░░░░░░░░░░░░░░░▒▒\n";
@@ -159,6 +163,10 @@ int main(int argc, char **argv) {
 
 	// Declare success.
 	Out->keep();
+
+#ifdef DBG_FILE
+	debugFile.close();
+#endif
 
 	return 0;
 }

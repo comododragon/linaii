@@ -73,6 +73,8 @@ BaseDatapath::BaseDatapath(
 
 	sharedLoadsRemoved = 0;
 	repeatedStoresRemoved = 0;
+
+	dummySinkCreated = false;
 }
 
 // This constructor does not perform DDDG generation. It should be generated externally via
@@ -110,6 +112,8 @@ BaseDatapath::BaseDatapath(
 
 	sharedLoadsRemoved = 0;
 	repeatedStoresRemoved = 0;
+
+	dummySinkCreated = false;
 }
 
 BaseDatapath::~BaseDatapath() {
@@ -271,6 +275,62 @@ void BaseDatapath::updateAddDDDGEdges(std::vector<edgeTy> &edgesToAdd) {
 void BaseDatapath::updateRemoveDDDGNodes(std::vector<unsigned> &nodesToRemove) {
 	for(auto &it : nodesToRemove)
 		boost::clear_vertex(nameToVertex[it], graph);
+}
+
+unsigned BaseDatapath::createDummySink() {
+	std::vector<edgeTy> edgesToAdd;
+	bool branchNodeFound = false;
+	unsigned branchNode;
+	std::vector<unsigned> leafNodes;
+
+	// We will search for 2 things here:
+	// - The branch node that is usually isolated: We will use its info, since it has a somewhat similar positioning as the dummy node ought to be
+	// - Leaf nodes that are going to be connected to the dummy node
+	for(unsigned nodeID = 0; nodeID < microops.size(); nodeID++) {
+		if(!boost::out_degree(nameToVertex[nodeID], graph))
+			leafNodes.push_back(nodeID);
+
+		if(isBranchOp(microops.at(nodeID))) {
+			branchNodeFound = true;
+			branchNode = nodeID;
+		}
+	}
+	assert(branchNodeFound && "No branch node was found to be used as a dummy node");
+
+	// Create the dummy node
+	unsigned newID = microops.size();
+	int microop = LLVM_IR_Dummy;
+	microops.push_back(microop);
+	// Since we will add new nodes to the DDDG, we must update the auxiliary structures accordingly
+	std::string currDynamicFunction = PC.getFuncList()[branchNode];
+	std::string currInstID = generateInstID(microop, PC.getInstIDList());
+	int lineNo = PC.getLineNoList()[branchNode];
+	std::string prevBB = PC.getPrevBBList()[branchNode];
+	std::string currBB = PC.getCurrBBList()[branchNode];
+	// TODO: checar se está tudo sendo atualizado apropriadamente nas próximas linhas
+	PC.unlock();
+	PC.openAllFilesForWrite();
+	// Update ParsedTraceContainer containers with the new node.
+	// XXX: We use the values from the first store
+	PC.appendToFuncList(currDynamicFunction);
+	PC.appendToInstIDList(currInstID);
+	PC.appendToLineNoList(lineNo);
+	PC.appendToPrevBBList(prevBB);
+	PC.appendToCurrBBList(currBB);
+	// Finished
+	PC.closeAllFiles();
+	PC.lock();
+
+	// Connect leaf nodes to the dummy node
+	for(auto &it : leafNodes)
+		edgesToAdd.push_back({it, newID, 0});
+
+	updateAddDDDGEdges(edgesToAdd);
+
+	dummySinkCreated = true;
+	dummySink = newID;
+
+	return dummySink;
 }
 
 ConfigurationManager &BaseDatapath::getConfigurationManager() {
@@ -1231,7 +1291,7 @@ void BaseDatapath::alapScheduling(std::tuple<uint64_t, uint64_t> asapResult) {
 
 	alapScheduledTime.assign(numOfTotalNodes, 0);
 
-	std::map<uint64_t, std::vector<unsigned>> minTimesNodesMap;
+	std::map<uint64_t, std::set<unsigned>> minTimesNodesMap;
 #ifdef CHECK_VISITED_NODES
 	std::set<unsigned> visitedNodes;
 #endif
@@ -1272,14 +1332,36 @@ void BaseDatapath::alapScheduling(std::tuple<uint64_t, uint64_t> asapResult) {
 		visitedNodes.insert(nodeID);
 #endif
 
-		minTimesNodesMap[minCurrStartTime].push_back(nodeID);
+		minTimesNodesMap[minCurrStartTime].insert(nodeID);
+	}
+
+	if(dummySinkCreated) {
+		VERBOSE_PRINT(errs() << "\t\tAdjusting ALAP values from 0-latency nodes directly connected to the dummy sink\n");
+
+		// Iterate over the nodes connected to the dummy node. If any has 0-latency, subtract 1 from their ALAP
+		// if it doesn't violate ASAP. 0-latency nodes can always be executed within a cycle regardless of timing budget,
+		// which means they will be allocated to the same cycle as the dummy cycle (as late as possible). Since the dummy
+		// cycle does not actually exist, it makes no sense to leave the 0-latency nodes with it. So we bring it back.
+		InEdgeIterator inEdgei, inEdgeEnd;
+		for(std::tie(inEdgei, inEdgeEnd) = boost::in_edges(dummySink, graph); inEdgei != inEdgeEnd; inEdgei++) {
+			unsigned parentNodeID = vertexToName[boost::source(*inEdgei, graph)];
+
+			if(!(profile->getLatency(microops.at(parentNodeID)))) {
+				unsigned minCurrStartTime = alapScheduledTime[parentNodeID];
+
+				minTimesNodesMap[minCurrStartTime--].erase(parentNodeID);
+				minTimesNodesMap[minCurrStartTime].insert(parentNodeID);
+
+				alapScheduledTime[parentNodeID] = minCurrStartTime;
+			}
+		}
 	}
 
 	// Calculate required resources for current scheduling, without imposing any restrictions
 	const ConfigurationManager::arrayInfoCfgMapTy &arrayInfoCfgMap = CM.getArrayInfoCfgMap();
 	profile->calculateRequiredResources(microops, arrayInfoCfgMap, baseAddress, minTimesNodesMap);
 
-	std::map<uint64_t, std::vector<unsigned>>().swap(minTimesNodesMap);
+	std::map<uint64_t, std::set<unsigned>>().swap(minTimesNodesMap);
 
 	P.clear();
 	profile->fillPack(P);
@@ -1617,7 +1699,7 @@ uint64_t BaseDatapath::getLoopTotalLatency(uint64_t maxII) {
 			// possible with unroll, we compensate this cycle difference with the loop unroll factor
 			// XXX: However, if there are DDR operations before AND after the DDDG, we do not merge if the address space overlap
 			// TODO: this is untested!
-			if(!(allocatedDDDGBefore && allocatedDDDGAfter) && !(memmodel->outBurstsOverlap()))
+			if((upperLoopUnrollFactor > 1) && !(allocatedDDDGBefore && allocatedDDDGAfter && memmodel->outBurstsOverlap()))
 				noPipelineLatency -= (upperLoopUnrollFactor - 1) * std::min(extraEnter, extraExit);
 		}
 	}

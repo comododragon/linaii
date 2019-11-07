@@ -266,6 +266,7 @@ public:
 	void updateRemoveDDDGEdges(std::set<Edge> &edgesToRemove);
 	void updateAddDDDGEdges(std::vector<edgeTy> &edgesToAdd);
 	void updateRemoveDDDGNodes(std::vector<unsigned> &nodesToRemove);
+	unsigned createDummySink();
 
 	std::string constructUniqueID(std::string funcID, std::string instID, std::string bbID);
 
@@ -336,6 +337,11 @@ protected:
 	// Optimisation counters
 	uint64_t sharedLoadsRemoved;
 	uint64_t repeatedStoresRemoved;
+
+	// Dummy sink node. This node is a 0-latency 0-delay node used to connect all leaves to a sink
+	// This forces relevant isolated nodes (i.e. out-bursted transactions) to be allocated properly
+	bool dummySinkCreated;
+	unsigned dummySink;
 
 	void initBaseAddress();
 

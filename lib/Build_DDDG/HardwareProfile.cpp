@@ -598,7 +598,7 @@ void XilinxHardwareProfile::calculateRequiredResources(
 	std::vector<int> &microops,
 	const ConfigurationManager::arrayInfoCfgMapTy &arrayInfoCfgMap,
 	std::unordered_map<int, std::pair<std::string, int64_t>> &baseAddress,
-	std::map<uint64_t, std::vector<unsigned>> &maxTimesNodesMap
+	std::map<uint64_t, std::set<unsigned>> &maxTimesNodesMap
 ) {
 	clear();
 
@@ -1173,6 +1173,7 @@ unsigned XilinxZCUHardwareProfile::getLatency(unsigned opcode) {
 		case LLVM_IR_Dummy:
 			return 0;
 		default: 
+			DBG_DUMP("Detected opcode (" << opcode << ", " << reverseOpcodeMap.at(opcode) << ") with unknown latency. Setting to default of 1\n");
 			return 1;
 	}
 }

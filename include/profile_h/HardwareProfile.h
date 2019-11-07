@@ -54,7 +54,7 @@ public:
 		std::vector<int> &microops,
 		const ConfigurationManager::arrayInfoCfgMapTy &arrayInfoCfgMap,
 		std::unordered_map<int, std::pair<std::string, int64_t>> &baseAddress,
-		std::map<uint64_t, std::vector<unsigned>> &maxTimesNodesMap
+		std::map<uint64_t, std::set<unsigned>> &maxTimesNodesMap
 	) = 0;
 	virtual void setResourceLimits() = 0;
 	virtual void setThresholdWithCurrentUsage() = 0;
@@ -181,7 +181,7 @@ public:
 		std::vector<int> &microops,
 		const ConfigurationManager::arrayInfoCfgMapTy &arrayInfoCfgMap,
 		std::unordered_map<int, std::pair<std::string, int64_t>> &baseAddress,
-		std::map<uint64_t, std::vector<unsigned>> &maxTimesNodesMap
+		std::map<uint64_t, std::set<unsigned>> &maxTimesNodesMap
 	);
 	void setThresholdWithCurrentUsage();
 	void setMemoryCurrentUsage(

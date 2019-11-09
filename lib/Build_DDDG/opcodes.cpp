@@ -141,24 +141,18 @@ bool isDDRMemoryOp(unsigned microop) {
 		LLVM_IR_DDRRead == microop ||
 		LLVM_IR_DDRWriteReq == microop ||
 		LLVM_IR_DDRWrite == microop ||
-		LLVM_IR_DDRWriteResp == microop ||
-		LLVM_IR_DDRSilentReadReq == microop ||
-		LLVM_IR_DDRSilentWriteReq == microop ||
-		LLVM_IR_DDRSilentWriteResp == microop;
+		LLVM_IR_DDRWriteResp == microop;
 }
 
 bool isDDRReadOp(unsigned microop) {
 	return LLVM_IR_DDRReadReq == microop ||
-		LLVM_IR_DDRRead == microop ||
-		LLVM_IR_DDRSilentReadReq == microop;
+		LLVM_IR_DDRRead == microop;
 }
 
 bool isDDRWriteOp(unsigned microop) {
 	return LLVM_IR_DDRWriteReq == microop ||
 		LLVM_IR_DDRWrite == microop ||
-		LLVM_IR_DDRWriteResp == microop ||
-		LLVM_IR_DDRSilentWriteReq == microop ||
-		LLVM_IR_DDRSilentWriteResp == microop;
+		LLVM_IR_DDRWriteResp == microop;
 }
 
 bool isDDRLoad(unsigned microop) {

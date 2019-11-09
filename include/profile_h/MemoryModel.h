@@ -5,7 +5,7 @@
 #include "profile_h/boostincls.h"
 #include "profile_h/DDDGBuilder.h"
 
-typedef std::tuple<int, std::string, int, std::string, std::string> nodeExportTy;
+typedef std::tuple<artificialNodeTy, uint64_t, uint64_t> nodeExportTy;
 
 class BaseDatapath;
 
@@ -32,7 +32,7 @@ public:
 	virtual void release(unsigned node, int opcode) = 0;
 	virtual bool outBurstsOverlap() = 0;
 
-	virtual void importNode(unsigned nodeID, int opcode) = 0;
+	virtual void importNode(nodeExportTy &exportedNode) = 0;
 	virtual std::vector<nodeExportTy> &getNodesToBeforeDDDG() = 0;
 	virtual std::vector<nodeExportTy> &getNodesToAfterDDDG() = 0;
 };
@@ -49,10 +49,13 @@ class XilinxZCUMemoryModel : public MemoryModel {
 	std::unordered_map<unsigned, unsigned> ddrNodesToRootLS;
 	bool readActive, writeActive;
 	std::set<unsigned> activeReads;
-	unsigned activeWrite;
+	std::set<unsigned> activeWrites;
+	//unsigned activeWrite;
 	//unsigned completedTransactions;
 	bool readReqImported, writeReqImported, writeRespImported;
-	unsigned importedReadReq, importedWriteReq, importedWriteResp;
+	std::unordered_map<unsigned, std::tuple<uint64_t, uint64_t, std::vector<unsigned>>> importedLoads;
+	std::unordered_map<unsigned, std::tuple<uint64_t, uint64_t, std::vector<unsigned>>> importedStores;
+	//unsigned importedReadReq, importedWriteReq, importedWriteResp;
 	//bool allUnimportedComplete, importedWriteRespComplete;
 
 	void findInBursts(
@@ -63,7 +66,6 @@ class XilinxZCUMemoryModel : public MemoryModel {
 	);
 	bool findOutBursts(
 		std::unordered_map<unsigned, std::tuple<uint64_t, uint64_t, std::vector<unsigned>>> &burstedNodes,
-		unsigned &noOfBurstedNodes,
 		std::string &wholeLoopName,
 		const std::vector<std::string> &instIDList
 	);
@@ -77,7 +79,7 @@ public:
 	void release(unsigned node, int opcode);
 	bool outBurstsOverlap();
 
-	void importNode(unsigned nodeID, int opcode);
+	void importNode(nodeExportTy &exportedNode);
 	std::vector<nodeExportTy> &getNodesToBeforeDDDG();
 	std::vector<nodeExportTy> &getNodesToAfterDDDG();
 

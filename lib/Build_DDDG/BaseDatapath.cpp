@@ -173,45 +173,8 @@ void BaseDatapath::importNodes(std::vector<nodeExportTy> *nodesToImport1, std::v
 
 		// Create the imported nodes
 		for(auto &it : *nodesToImport1) {
-			unsigned newID = microops.size();
-
-			int microop = std::get<0>(it);
-			std::string currDynamicFunction = std::get<1>(it);
-			std::string currInstID = generateInstID(microop, PC.getInstIDList());
-			int lineNo = std::get<2>(it);
-			std::string prevBB = std::get<3>(it);
-			std::string currBB = std::get<4>(it);
-
-			// Create a node with opcode LLVM_IR_DDRReadReq
-			insertMicroop(microop);
-
-			// TODO: checar se está tudo sendo atualizado apropriadamente nas próximas linhas
-			PC.unlock();
-			PC.openAllFilesForWrite();
-			// Update ParsedTraceContainer containers with the new node.
-			// XXX: We use the values from the first load
-			PC.appendToFuncList(currDynamicFunction);
-			PC.appendToInstIDList(currInstID);
-			PC.appendToLineNoList(lineNo);
-			PC.appendToPrevBBList(prevBB);
-			PC.appendToCurrBBList(currBB);
-			// Finished
-			PC.closeAllFiles();
-			PC.lock();
-
-			memmodel->importNode(newID, microop);
-			// TODO: por enquanto ta conectando esses nós no fim do DDDG (pra before) ou no começo do DDDG (pra after) e sem lógica por enquanto para between
-			// TODO: isso tem que ser melhor pensado, talvez até com ajuda do MemoryModel aqui
-			// TODO: parei aqui. Não funcionou, posso jogar essa lógica fora e fazer direito
-			// TODO: pra lembrar o que tá acontecendo, tenta compilar esse projeto e tudo vai voltar à tona
-			//if(BaseDatapath::NON_PERFECT_BEFORE == datapathType)
-			//	edgesToAdd.push_back({newID - 1, newID, 0});
-			//else if(BaseDatapath::NON_PERFECT_AFTER == datapathType)
-			//	edgesToAdd.push_back({newID, 0, 0});
+			memmodel->importNode(it);
 		}
-
-		// Update DDDG
-		//updateAddDDDGEdges(edgesToAdd);
 	}
 
 	if(nodesToImport2) {
@@ -277,6 +240,43 @@ void BaseDatapath::updateRemoveDDDGNodes(std::vector<unsigned> &nodesToRemove) {
 		boost::clear_vertex(nameToVertex[it], graph);
 }
 
+artificialNodeTy BaseDatapath::createArtificialNode(artificialNodeTy &aNode, int opcode) {
+	aNode.ID = microops.size();
+	aNode.currInstID = generateInstID(opcode, PC.getInstIDList());
+
+	// Create the node
+	insertMicroop(opcode);
+
+	// TODO: checar se está tudo sendo atualizado apropriadamente nas próximas linhas
+	PC.unlock();
+	PC.openAllFilesForWrite();
+	// Update ParsedTraceContainer containers with the new node.
+	// XXX: We use the values from the first store
+	PC.appendToFuncList(aNode.currDynamicFunction);
+	PC.appendToInstIDList(aNode.currInstID);
+	PC.appendToLineNoList(aNode.lineNo);
+	PC.appendToPrevBBList(aNode.prevBB);
+	PC.appendToCurrBBList(aNode.currBB);
+	// Finished
+	PC.closeAllFiles();
+	PC.lock();
+
+	return aNode;
+}
+
+artificialNodeTy BaseDatapath::createArtificialNode(unsigned baseNode, int opcode) {
+	artificialNodeTy aNode;
+
+	// Since we will add new nodes to the DDDG, we must update the auxiliary structures accordingly
+	aNode.opcode = opcode;
+	aNode.currDynamicFunction = PC.getFuncList()[baseNode];
+	aNode.lineNo = PC.getLineNoList()[baseNode];
+	aNode.prevBB = PC.getPrevBBList()[baseNode];
+	aNode.currBB = PC.getCurrBBList()[baseNode];
+
+	return createArtificialNode(aNode, opcode);
+}
+
 unsigned BaseDatapath::createDummySink() {
 	std::vector<edgeTy> edgesToAdd;
 	bool branchNodeFound = false;
@@ -297,38 +297,16 @@ unsigned BaseDatapath::createDummySink() {
 	}
 	assert(branchNodeFound && "No branch node was found to be used as a dummy node");
 
-	// Create the dummy node
-	unsigned newID = microops.size();
-	int microop = LLVM_IR_Dummy;
-	microops.push_back(microop);
-	// Since we will add new nodes to the DDDG, we must update the auxiliary structures accordingly
-	std::string currDynamicFunction = PC.getFuncList()[branchNode];
-	std::string currInstID = generateInstID(microop, PC.getInstIDList());
-	int lineNo = PC.getLineNoList()[branchNode];
-	std::string prevBB = PC.getPrevBBList()[branchNode];
-	std::string currBB = PC.getCurrBBList()[branchNode];
-	// TODO: checar se está tudo sendo atualizado apropriadamente nas próximas linhas
-	PC.unlock();
-	PC.openAllFilesForWrite();
-	// Update ParsedTraceContainer containers with the new node.
-	// XXX: We use the values from the first store
-	PC.appendToFuncList(currDynamicFunction);
-	PC.appendToInstIDList(currInstID);
-	PC.appendToLineNoList(lineNo);
-	PC.appendToPrevBBList(prevBB);
-	PC.appendToCurrBBList(currBB);
-	// Finished
-	PC.closeAllFiles();
-	PC.lock();
+	artificialNodeTy dummyNode = createArtificialNode(branchNode, LLVM_IR_Dummy);
 
 	// Connect leaf nodes to the dummy node
 	for(auto &it : leafNodes)
-		edgesToAdd.push_back({it, newID, 0});
+		edgesToAdd.push_back({it, dummyNode.ID, 0});
 
 	updateAddDDDGEdges(edgesToAdd);
 
 	dummySinkCreated = true;
-	dummySink = newID;
+	dummySink = dummyNode.ID;
 
 	return dummySink;
 }
@@ -1665,7 +1643,7 @@ uint64_t BaseDatapath::getLoopTotalLatency(uint64_t maxII) {
 		bool allocatedDDDGAfter = false;
 		// If there are out-burst nodes to allocate before DDDG, we add on the extra cycles
 		for(auto &it : memmodel->getNodesToBeforeDDDG()) {
-			unsigned latency = profile->getLatency(std::get<0>(it));
+			unsigned latency = profile->getLatency(std::get<0>(it).opcode);
 			if(latency >= extraEnter) {
 				extraEnter = latency;
 				allocatedDDDGBefore = true;
@@ -1673,7 +1651,7 @@ uint64_t BaseDatapath::getLoopTotalLatency(uint64_t maxII) {
 		}
 		// If there are out-burst nodes to allocate after DDDG, we add on the extra cycles
 		for(auto &it : memmodel->getNodesToAfterDDDG()) {
-			unsigned latency = profile->getLatency(std::get<0>(it));
+			unsigned latency = profile->getLatency(std::get<0>(it).opcode);
 			if(latency >= extraExit) {
 				extraExit = latency;
 				allocatedDDDGAfter = true;

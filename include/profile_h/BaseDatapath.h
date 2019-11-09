@@ -266,6 +266,8 @@ public:
 	void updateRemoveDDDGEdges(std::set<Edge> &edgesToRemove);
 	void updateAddDDDGEdges(std::vector<edgeTy> &edgesToAdd);
 	void updateRemoveDDDGNodes(std::vector<unsigned> &nodesToRemove);
+	artificialNodeTy createArtificialNode(artificialNodeTy &aNode, int opcode);
+	artificialNodeTy createArtificialNode(unsigned baseNode, int opcode);
 	unsigned createDummySink();
 
 	std::string constructUniqueID(std::string funcID, std::string instID, std::string bbID);

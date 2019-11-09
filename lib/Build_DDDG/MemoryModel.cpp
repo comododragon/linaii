@@ -5,9 +5,6 @@
 extern memoryTraceMapTy memoryTraceMap;
 extern bool memoryTraceGenerated;
 
-unsigned noOfBurstedLoads;
-unsigned noOfBurstedStores;
-
 MemoryModel::MemoryModel(BaseDatapath *datapath) :
 	datapath(datapath), microops(datapath->getMicroops()), graph(datapath->getDDDG()),
 	nameToVertex(datapath->getNameToVertex()), vertexToName(datapath->getVertexToName()), edgeToWeight(datapath->getEdgeToWeight()),
@@ -86,18 +83,15 @@ void XilinxZCUMemoryModel::findInBursts(
 
 bool XilinxZCUMemoryModel::findOutBursts(
 	std::unordered_map<unsigned, std::tuple<uint64_t, uint64_t, std::vector<unsigned>>> &burstedNodes,
-	unsigned &noOfBurstedNodes,
 	std::string &wholeLoopName,
 	const std::vector<std::string> &instIDList
 ) {
 	bool outBurstFound = false;
 
 	// Our current assumption for inter-iteration bursting is very restrictive. It should happen only when
-	// there is one (and one only) load/store transaction (which may be bursted) inside a loop iteration
-	// XXX: And also for now, it out-bursts only up to one loop level.
-	// XXX: This simplifies many parts of the DDR scheduling logic. If more is to be considered, this class
-	// should be revised
-	if(1 == noOfBurstedNodes) {
+	// there is one (and one only) load/store transaction (which may be bursted) inside a loop iteration,
+	// excluding imported out-bursted nodes from inner loops
+	if(1 == burstedNodes.size()) {
 		// We are optimistic at first
 		outBurstFound = true;
 
@@ -229,7 +223,6 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 		return this->loadNodes[a] < this->loadNodes[b];
 	};
 	findInBursts(loadNodes, behavedLoads, burstedLoads, loadComparator);
-	noOfBurstedLoads += burstedLoads.size();
 
 	// Try to find contiguous stores inside the DDDG.
 	std::vector<unsigned> behavedStores;
@@ -243,54 +236,30 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 		return this->storeNodes[a] < this->storeNodes[b];
 	};
 	findInBursts(storeNodes, behavedStores, burstedStores, storeComparator);
-	noOfBurstedStores += burstedStores.size();
 
+	// TODO: why && burstedStores.size()????
 	if(!(args.fNoMMABurst) && burstedStores.size()) {
 		std::string wholeLoopName = appendDepthToLoopName(datapath->getTargetLoopName(), datapath->getTargetLoopLevel());
 		const std::vector<std::string> &instIDList = PC.getInstIDList();
 
 		// Try to find contiguous loads between loop iterations
-		loadOutBurstFound = findOutBursts(burstedLoads, noOfBurstedLoads, wholeLoopName, instIDList);
+		loadOutBurstFound = findOutBursts(burstedLoads, wholeLoopName, instIDList);
 
 		// Try to find contiguous stores between loop iterations
-		storeOutBurstFound = findOutBursts(burstedStores, noOfBurstedStores, wholeLoopName, instIDList);
+		storeOutBurstFound = findOutBursts(burstedStores, wholeLoopName, instIDList);
 	}
 
 	// Add the relevant DDDG nodes for offchip load
 	for(auto &burst : burstedLoads) {
-		unsigned newID = microops.size();
-		int microop = loadOutBurstFound? LLVM_IR_DDRSilentReadReq : LLVM_IR_DDRReadReq;
+		// Create a node with opcode LLVM_IR_DDRReadReq
+		artificialNodeTy newNode = datapath->createArtificialNode(burst.first, loadOutBurstFound? LLVM_IR_DDRSilentReadReq : LLVM_IR_DDRReadReq);
 
 		// Add this new node to the mapping map (lol)
-		ddrNodesToRootLS[newID] = burst.first;
-
-		// Create a node with opcode LLVM_IR_DDRReadReq
-		datapath->insertMicroop(microop);
-
-		// Since we will add new nodes to the DDDG, we must update the auxiliary structures accordingly
-		// Get values from the first load, we will use most of them
-		std::string currDynamicFunction = PC.getFuncList()[burst.first];
-		std::string currInstID = generateInstID(microop, PC.getInstIDList());
-		int lineNo = PC.getLineNoList()[burst.first];
-		std::string prevBB = PC.getPrevBBList()[burst.first];
-		std::string currBB = PC.getCurrBBList()[burst.first];
-		// TODO: checar se está tudo sendo atualizado apropriadamente nas próximas linhas
-		PC.unlock();
-		PC.openAllFilesForWrite();
-		// Update ParsedTraceContainer containers with the new node.
-		// XXX: We use the values from the first load
-		PC.appendToFuncList(currDynamicFunction);
-		PC.appendToInstIDList(currInstID);
-		PC.appendToLineNoList(lineNo);
-		PC.appendToPrevBBList(prevBB);
-		PC.appendToCurrBBList(currBB);
-		// Finished
-		PC.closeAllFiles();
-		PC.lock();
+		ddrNodesToRootLS[newNode.ID] = burst.first;
 
 		// If this is an out-bursted load, we must export the LLVM_IR_DDRReadReq node to be allocated to the DDDG before the current
 		if(loadOutBurstFound)
-			nodesToBeforeDDDG.push_back(std::make_tuple(LLVM_IR_DDRReadReq, currDynamicFunction, lineNo, prevBB, currBB));
+			nodesToBeforeDDDG.push_back(std::make_tuple(newNode, std::get<0>(burst.second), std::get<1>(burst.second)));
 
 		// Disconnect the edges incoming to the first load and connect to the read request
 		std::set<Edge> edgesToRemove;
@@ -303,11 +272,11 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 			// If an out-burst was detected, we isolate these nodes instead of connecting them, since they will be "executed" outside this DDDG
 			// TODO: Perhaps we should isolate only relevant nodes (e.g. getelementptr and indexadd/sub)
 			if(!loadOutBurstFound)
-				edgesToAdd.push_back({sourceID, newID, edgeToWeight[*inEdgei]});
+				edgesToAdd.push_back({sourceID, newNode.ID, edgeToWeight[*inEdgei]});
 		}
 		// Connect this node to the first load
 		// XXX: Does the edge weight matter here?
-		edgesToAdd.push_back({newID, burst.first, 0});
+		edgesToAdd.push_back({newNode.ID, burst.first, 0});
 
 		// Now, chain the loads to create the burst effect
 		std::vector<unsigned> burstChain = std::get<2>(burst.second);
@@ -322,40 +291,14 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 	// Add the relevant DDDG nodes for offchip store
 	for(auto &burst : burstedStores) {
 		// DDRWriteReq is positioned before the burst
-
-		unsigned newID = microops.size();
-		int microop = storeOutBurstFound? LLVM_IR_DDRSilentWriteReq : LLVM_IR_DDRWriteReq;
+		artificialNodeTy newNode = datapath->createArtificialNode(burst.first, storeOutBurstFound? LLVM_IR_DDRSilentWriteReq : LLVM_IR_DDRWriteReq);
 
 		// Add this new node to the mapping map (lol)
-		ddrNodesToRootLS[newID] = burst.first;
-
-		// Create a node with opcode LLVM_IR_DDRWriteReq
-		microops.push_back(microop);
-
-		// Since we will add new nodes to the DDDG, we must update the auxiliary structures accordingly
-		// Get values from the first store, we will use most of them
-		std::string currDynamicFunction = PC.getFuncList()[burst.first];
-		std::string currInstID = generateInstID(microop, PC.getInstIDList());
-		int lineNo = PC.getLineNoList()[burst.first];
-		std::string prevBB = PC.getPrevBBList()[burst.first];
-		std::string currBB = PC.getCurrBBList()[burst.first];
-		// TODO: checar se está tudo sendo atualizado apropriadamente nas próximas linhas
-		PC.unlock();
-		PC.openAllFilesForWrite();
-		// Update ParsedTraceContainer containers with the new node.
-		// XXX: We use the values from the first store
-		PC.appendToFuncList(currDynamicFunction);
-		PC.appendToInstIDList(currInstID);
-		PC.appendToLineNoList(lineNo);
-		PC.appendToPrevBBList(prevBB);
-		PC.appendToCurrBBList(currBB);
-		// Finished
-		PC.closeAllFiles();
-		PC.lock();
+		ddrNodesToRootLS[newNode.ID] = burst.first;
 
 		// If this is an out-bursted store, we must export the LLVM_IR_DDRWriteReq node to be allocated to the DDDG before the current
 		if(storeOutBurstFound)
-			nodesToBeforeDDDG.push_back(std::make_tuple(LLVM_IR_DDRWriteReq, currDynamicFunction, lineNo, prevBB, currBB));
+			nodesToBeforeDDDG.push_back(std::make_tuple(newNode, std::get<0>(burst.second), std::get<1>(burst.second)));
 
 		// Two type of edges can come to a store: data and address
 		// For data, we keep it at the appropriate writes
@@ -376,11 +319,11 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 
 			// If an out-burst was detected, we isolate these nodes instead of connecting them, since they will be "executed" outside this DDDG
 			if(!storeOutBurstFound)
-				edgesToAdd.push_back({sourceID, newID, weight});
+				edgesToAdd.push_back({sourceID, newNode.ID, weight});
 		}
 		// Connect this node to the first store
 		// XXX: Does the edge weight matter here?
-		edgesToAdd.push_back({newID, burst.first, 0});
+		edgesToAdd.push_back({newNode.ID, burst.first, 0});
 
 		// Now, chain the stores to create the burst effect
 		std::vector<unsigned> burstChain = std::get<2>(burst.second);
@@ -392,40 +335,15 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 		datapath->updateAddDDDGEdges(edgesToAdd);
 
 		// DDRWriteResp is positioned after the last burst beat
-		newID = microops.size();
 		unsigned lastStore = std::get<2>(burst.second).back();
-		microop = storeOutBurstFound? LLVM_IR_DDRSilentWriteResp : LLVM_IR_DDRWriteResp;
+		newNode = datapath->createArtificialNode(lastStore, storeOutBurstFound? LLVM_IR_DDRSilentWriteResp : LLVM_IR_DDRWriteResp);
 
 		// Add this new node to the mapping map (lol)
-		ddrNodesToRootLS[newID] = burst.first;
-
-		// Create a node with opcode LLVM_IR_DDRWriteResp
-		microops.push_back(microop);
-
-		// Since we will add new nodes to the DDDG, we must update the auxiliary structures accordingly
-		// Get values from the last store, we will use most of them
-		currDynamicFunction = PC.getFuncList()[lastStore];
-		currInstID = generateInstID(microop, PC.getInstIDList());
-		lineNo = PC.getLineNoList()[lastStore];
-		prevBB = PC.getPrevBBList()[lastStore];
-		currBB = PC.getCurrBBList()[lastStore];
-		// TODO: checar se está tudo sendo atualizado apropriadamente nas próximas linhas
-		PC.unlock();
-		PC.openAllFilesForWrite();
-		// Update ParsedTraceContainer containers with the new node.
-		// XXX: We use the values from the last store
-		PC.appendToFuncList(currDynamicFunction);
-		PC.appendToInstIDList(currInstID);
-		PC.appendToLineNoList(lineNo);
-		PC.appendToPrevBBList(prevBB);
-		PC.appendToCurrBBList(currBB);
-		// Finished
-		PC.closeAllFiles();
-		PC.lock();
+		ddrNodesToRootLS[newNode.ID] = burst.first;
 
 		// If this is an out-bursted store, we must export the LLVM_IR_DDRWriteResp node to be allocated to the DDDG after the current
 		if(storeOutBurstFound)
-			nodesToAfterDDDG.push_back(std::make_tuple(LLVM_IR_DDRWriteResp, currDynamicFunction, lineNo, prevBB, currBB));
+			nodesToAfterDDDG.push_back(std::make_tuple(newNode, std::get<0>(burst.second), std::get<1>(burst.second)));
 
 		// Disconnect the edges outcoming from the last store and connect to the write response
 		edgesToRemove.clear();
@@ -435,69 +353,79 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 			unsigned destID = vertexToName[boost::target(*outEdgei, graph)];
 
 			edgesToRemove.insert(*outEdgei);
-			edgesToAdd.push_back({newID, destID, edgeToWeight[*outEdgei]});
+			edgesToAdd.push_back({newNode.ID, destID, edgeToWeight[*outEdgei]});
 		}
 		// Connect this node to the last store
 		// XXX: Does the edge weight matter here?
-		edgesToAdd.push_back({lastStore, newID, 0});
+		edgesToAdd.push_back({lastStore, newNode.ID, 0});
 
 		// Update DDDG
 		datapath->updateRemoveDDDGEdges(edgesToRemove);
 		datapath->updateAddDDDGEdges(edgesToAdd);
 	}
 
-	if(ddrNodesToRootLS.size()) {
-		// Connect imported LLVM_IR_DDRWriteResp (if any) to all root DDR transactions (LLVM_IR_DDRReadReq's and LLVM_IR_DDRWriteReq's)
-		if(writeRespImported) {
-			std::vector<edgeTy> edgesToAdd;
+	// Add the relevant DDDG nodes for imported offchip load
+	for(auto &burst : importedLoads) {
+		// Create a node with opcode LLVM_IR_DDRReadReq
+		artificialNodeTy newNode = datapath->createArtificialNode(burst.first, LLVM_IR_DDRReadReq);
 
-			// Find for LLVM_IR_DDRReadReq and LLVM_IR_DDRWriteReq
-			for(auto &it : ddrNodesToRootLS) {
-				int opcode = microops.at(it.first);
+		// Add this new node to the mapping map (lol)
+		ddrNodesToRootLS[newNode.ID] = burst.first;
 
-				// XXX: Does the edge weight matter here?
-				if(LLVM_IR_DDRReadReq == opcode || LLVM_IR_DDRWriteReq == opcode)
-					edgesToAdd.push_back({importedWriteResp, it.first, 0});
-			}
+		// Connect this node to the first load
+		// XXX: Does the edge weight matter here?
+		std::vector<edgeTy> edgesToAdd;
+		edgesToAdd.push_back({newNode.ID, burst.first, 0});
 
-			datapath->updateAddDDDGEdges(edgesToAdd);
-		}
+		// Update DDDG
+		datapath->updateAddDDDGEdges(edgesToAdd);
 
-		// Connect imported LLVM_IR_DDRReadReq/LLVM_IR_DDRWriteReq (if any) to all last DDR transactions (LLVM_IR_DDRRead's and LLVM_IR_DDRWriteResp)
-		if(readReqImported || writeReqImported) {
-			std::vector<edgeTy> edgesToAdd;
-
-			// Find for LLVM_IR_DDRWriteResp
-			for(auto &it : ddrNodesToRootLS) {
-				int opcode = microops.at(it.first);
-
-				// XXX: Does the edge weight matter here?
-				if(LLVM_IR_DDRWriteResp == opcode) {
-					if(readReqImported)
-						edgesToAdd.push_back({it.first, importedReadReq, 0});
-					if(writeReqImported)
-						edgesToAdd.push_back({it.first, importedWriteReq, 0});
-				}
-			}
-
-			// Also, connect to the last node of DDR read transactions
-			for(auto &it : burstedLoads) {
-				unsigned lastLoad = std::get<2>(it.second).back();
-
-				if(readReqImported)
-					edgesToAdd.push_back({lastLoad, importedReadReq, 0});
-				if(writeReqImported)
-					edgesToAdd.push_back({lastLoad, importedWriteReq, 0});
-			}
-
-			datapath->updateAddDDDGEdges(edgesToAdd);
-		}
+		// Add the imported loads to the bursted loads structure
+		burstedLoads.insert(burst);
 	}
-	// If there are no DDR transactions in this DDDG, the imported nodes (if any) are going to be disconnected
-	// So we create a dummy last node and connect the DDDG leaves and the imported nodes to it
-	else if(writeRespImported || readReqImported || writeReqImported) {
+
+	// Add the relevant DDDG nodes for imported offchip store
+	for(auto &burst : importedStores) {
+		// DDRWriteReq is positioned before the burst
+		artificialNodeTy newNode = datapath->createArtificialNode(burst.first, writeRespImported? LLVM_IR_DDRSilentWriteReq : LLVM_IR_DDRWriteReq);
+
+		// Add this new node to the mapping map (lol)
+		ddrNodesToRootLS[newNode.ID] = burst.first;
+
+		// Connect this node to the first store
+		// XXX: Does the edge weight matter here?
+		std::vector<edgeTy> edgesToAdd;
+		edgesToAdd.push_back({newNode.ID, burst.first, 0});
+
+		// Update DDDG
+		datapath->updateAddDDDGEdges(edgesToAdd);
+
+		// DDRWriteResp is positioned after the last burst beat
+		unsigned lastStore = std::get<2>(burst.second).back();
+		newNode = datapath->createArtificialNode(lastStore, writeReqImported? LLVM_IR_DDRSilentWriteResp : LLVM_IR_DDRWriteResp);
+
+		// Add this new node to the mapping map (lol)
+		ddrNodesToRootLS[newNode.ID] = burst.first;
+
+		// Connect this node to the last store
+		// XXX: Does the edge weight matter here?
+		edgesToAdd.clear();
+		edgesToAdd.push_back({lastStore, newNode.ID, 0});
+
+		// Update DDDG
+		datapath->updateAddDDDGEdges(edgesToAdd);
+
+		// Add the imported stores to the bursted stores structure
+		burstedStores.insert(burst);
+	}
+
+	datapath->refreshDDDG();
+
+	// Create a dummy last node and connect the DDDG leaves and the imported nodes to it,
+	// so that the imported nodes (if any) won't stay disconnected
+	// TODO: maybe this should be performed somewhere else, in a different timing?
+	if(writeRespImported || readReqImported || writeReqImported)
 		datapath->createDummySink();
-	}
 
 	errs() << "-- behavedLoads\n";
 	for(auto const &x : behavedLoads)
@@ -510,29 +438,6 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 	errs() << "-- baseAddress\n";
 	for(auto const &x : baseAddress)
 		errs() << "-- " << std::to_string(x.first) << ": <" << x.second.first << ", " << std::to_string(x.second.second) << ">\n";
-
-	//errs() << "-- memoryTraceList\n";
-	//for(auto const &x : PC.getMemoryTraceList())
-	//	errs() << "-- " << std::to_string(x.first) << ": <" << std::to_string(x.second.first) << ", " << std::to_string(x.second.second) << ">\n";
-
-	//errs() << "-- getElementPtrList\n";
-	//for(auto const &x : PC.getGetElementPtrList())
-	//	errs() << "-- " << std::to_string(x.first) << ": <" << x.second.first << ", " << std::to_string(x.second.second) << ">\n";
-
-	//errs() << "-- memoryTraceMap\n";
-	//for(auto const &x : memoryTraceMap) {
-	//	errs() << "-- <" << x.first.first << "," << x.first.second << ">:\n";
-	//	for(auto const &y : x.second)
-	//		errs() << "---- " << std::to_string(y) << "\n";
-	//}
-
-	//std::unordered_map<int, std::pair<int64_t, unsigned>> memoryTraceList;
-	//std::unordered_map<int, std::pair<std::string, int64_t>> getElementPtrList;
-
-	// TODO: Ideia inicial
-	// 1. Itera sobre o DDDG. Loads e stores à arrays offchip tem os opcodes trocados por LLVM_IR_DDRRead/LLVM_IR_DDRWrite
-	// 2. Analisar onde inserir writeReq e writeResp: se serao inseridos dentro do DDDG (aproveitando alguma rajada) ou se serao jogados pra fora do DDDG (fora do loop)
-	// 3. Analisar onde inserir readReq, na mesma lógica de 2
 
 	datapath->refreshDDDG();
 
@@ -549,53 +454,61 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 
 bool XilinxZCUMemoryModel::tryAllocate(unsigned node, int opcode, bool commit) {
 	// The current memory policy here implemented consider read/write transactions as regions:
-	// - Read and write transactions can coexist if their regions do not overlap;
-	// - A read request can be issued when a read transaction is working only if the current read transaction is unbursted;
-	// - Write requests are exclusive.
+	// - Any transaction can coexist if their regions do not overlap;
 
-	// Imported nodes are controlled by the DDDG control edges and they will either be the last or first DDR thing to happen,
-	// so we do not control anything here
-	if(readReqImported && node == importedReadReq)
-		return true;
-	if(writeReqImported && node == importedWriteReq)
-		return true;
-	if(writeRespImported && node == importedWriteResp)
-		return true;
+	// TODO parei aqui
+	// Seguinte, pelo rw-add2-np3 aparentemente é farra e as transações podem acontecer ao mesmo tempo e foda-se,
+	// CONTANTO QUE não haja overlap no endereçamento.
+	// Por causa disso, estou mudando a lógica toda. A ideia agora é que os nós importados sejam de fato importados
+	// e incorporados nas estruturas de dados normais para nós não-importados e apropriadamente alocados.
+	// Eu estou fazendo as modificações meio que seguindo o timeline de funcionamento do MemoryModel.
+	// Ja adaptei o construtor, o analyseAndTransform, os findIn/OutBursts e tal.
+	// o tryAllocate (aqui) e release também já foram modificados.
+	// O resto ainda precisa de uma olhada melhor.
+	// Por exemplo, o importNodes precisa colocar os nós dentro das estruturas de dados daqui.
+	// Além disso, preciso criar as versoes Silent dos nós que ainda nao tem
+	// e adicionar os opcodes dos silents aqui
+	// A ideia é seguir todo o procedimento normal de alocação, porém com os silents,
+	// é pra ocorrer tudo "invisivel", pelo menos eu espero
 
 	if(LLVM_IR_DDRReadReq == opcode || LLVM_IR_DDRSilentReadReq == opcode) {
 		unsigned nodeToRootLS = ddrNodesToRootLS.at(node);
+		uint64_t readBase = std::get<0>(burstedLoads.at(nodeToRootLS));
+		// XXX: Once again, considering 32-bit
+		uint64_t readEnd = readBase + std::get<1>(burstedLoads.at(nodeToRootLS)) * 4;
 
 		// Read requests are issued when:
 
 		// - No active transactions;
 		// XXX: readActive and writeActive already handle this
 
-		// - If there are active reads, they must be unbursted;
-		bool allActiveReadsAreUnbursted = true;
+		// - If there are active reads, they must be for different regions
+		bool activeReadsDoNotOverlap = true;
 		if(readActive) {
 			for(auto &it : activeReads) {
-				if(std::get<1>(burstedLoads.at(it))) {
-					allActiveReadsAreUnbursted = false;
-					break;
-				}
+				uint64_t otherBase = std::get<0>(burstedLoads.at(it));
+				// XXX: Once again, considering 32-bit
+				uint64_t otherEnd = otherBase + std::get<1>(burstedLoads.at(it)) * 4;
+
+				if(otherEnd >= readBase && readEnd >= otherBase)
+					activeReadsDoNotOverlap = false;
 			}
 		}
 
-		// - If there is an active write, it must be for a different region.
-		bool activeWriteDoNotOverlap = true;
+		// - If there are active writes, they must be for different regions
+		bool activeWritesDoNotOverlap = true;
 		if(writeActive) {
-			uint64_t writeBase = std::get<0>(burstedStores.at(activeWrite));
-			// XXX: Once again, considering 32-bit
-			uint64_t writeEnd = writeBase + std::get<1>(burstedStores.at(activeWrite)) * 4;
-			uint64_t readBase = std::get<0>(burstedLoads.at(nodeToRootLS));
-			// XXX: Once again, considering 32-bit
-			uint64_t readEnd = readBase + std::get<1>(burstedLoads.at(nodeToRootLS)) * 4;
+			for(auto &it : activeWrites) {
+				uint64_t otherBase = std::get<0>(burstedStores.at(it));
+				// XXX: Once again, considering 32-bit
+				uint64_t otherEnd = otherBase + std::get<1>(burstedStores.at(it)) * 4;
 
-			if(writeEnd >= readBase && readEnd >= writeBase)
-				activeWriteDoNotOverlap = false;
+				if(otherEnd >= readBase && readEnd >= otherBase)
+					activeWritesDoNotOverlap = false;
+			}
 		}
 
-		bool finalCond = (!readActive && !writeActive) || (allActiveReadsAreUnbursted && activeWriteDoNotOverlap);
+		bool finalCond = (!readActive && !writeActive) || (activeReadsDoNotOverlap && activeWritesDoNotOverlap);
 
 		if(finalCond) {
 			if(commit) {
@@ -606,7 +519,7 @@ bool XilinxZCUMemoryModel::tryAllocate(unsigned node, int opcode, bool commit) {
 
 		return finalCond;
 	}
-	else if(LLVM_IR_DDRRead == opcode) {
+	else if(LLVM_IR_DDRRead == opcode || LLVM_IR_DDRSilentRead == opcode) {
 		// Read transactions can always be issued, because their issuing is conditional to ReadReq
 
 		// Since LLVM_IR_DDRRead takes only one cycle, its release logic is located here (MemoryModel::release() is not executed)
@@ -625,52 +538,60 @@ bool XilinxZCUMemoryModel::tryAllocate(unsigned node, int opcode, bool commit) {
 	}
 	else if(LLVM_IR_DDRWriteReq == opcode || LLVM_IR_DDRSilentWriteReq == opcode) {
 		unsigned nodeToRootLS = ddrNodesToRootLS.at(node);
+		uint64_t writeBase = std::get<0>(burstedStores.at(nodeToRootLS));
+		// XXX: Once again, considering 32-bit
+		uint64_t writeEnd = writeBase + std::get<1>(burstedStores.at(nodeToRootLS)) * 4;
 
 		// Write requests are issued when:
 
-		// - No other active write
-		// XXX: writeActive already handles this
+		// - No active transactions;
+		// XXX: readActive and writeActive already handle this
 
-		bool finalCond = !writeActive;
+		// - If there are active reads, they must be for different regions
+		bool activeReadsDoNotOverlap = true;
+		if(readActive) {
+			for(auto &it : activeReads) {
+				uint64_t otherBase = std::get<0>(burstedLoads.at(it));
+				// XXX: Once again, considering 32-bit
+				uint64_t otherEnd = otherBase + std::get<1>(burstedLoads.at(it)) * 4;
+
+				if(otherEnd >= writeBase && writeEnd >= otherBase)
+					activeReadsDoNotOverlap = false;
+			}
+		}
+
+		// - If there are active writes, they must be for different regions
+		bool activeWritesDoNotOverlap = true;
+		if(writeActive) {
+			for(auto &it : activeWrites) {
+				uint64_t otherBase = std::get<0>(burstedStores.at(it));
+				// XXX: Once again, considering 32-bit
+				uint64_t otherEnd = otherBase + std::get<1>(burstedStores.at(it)) * 4;
+
+				if(otherEnd >= writeBase && writeEnd >= otherBase)
+					activeWritesDoNotOverlap = false;
+			}
+		}
+
+		bool finalCond = (!readActive && !writeActive) || (activeReadsDoNotOverlap && activeWritesDoNotOverlap);
 
 		if(finalCond) {
 			if(commit) {
-				activeWrite = nodeToRootLS;
+				activeWrites.insert(nodeToRootLS);
 				writeActive = true;
 			}
 		}
 
 		return finalCond;
 	}
-	else if(LLVM_IR_DDRWrite == opcode) {
+	else if(LLVM_IR_DDRWrite == opcode || LLVM_IR_DDRSilentWrite == opcode) {
 		// Write transactions can always be issued, because their issuing is conditional to WriteReq
 		return true;
 	}
 	else if(LLVM_IR_DDRWriteResp == opcode || LLVM_IR_DDRSilentWriteResp == opcode) {
-		// Write responses (when the data is actually sent to DDR) are issued when:
-
-		// - No active read
-		// XXX: readActive already handles this
-
-		// - If there are active reads, they must be for different regions
-		bool activeReadsDoNotOverlap = true;
-		if(readActive) {
-			for(auto &it : activeReads) {
-				uint64_t writeBase = std::get<0>(burstedStores.at(activeWrite));
-				// XXX: Once again, considering 32-bit
-				uint64_t writeEnd = writeBase + std::get<1>(burstedStores.at(activeWrite)) * 4;
-				uint64_t readBase = std::get<0>(burstedLoads.at(it));
-				// XXX: Once again, considering 32-bit
-				uint64_t readEnd = readBase + std::get<1>(burstedLoads.at(it)) * 4;
-
-				if(writeEnd >= readBase && readEnd >= writeBase)
-					activeReadsDoNotOverlap = false;
-			}
-		}
-
-		bool finalCond = !readActive || activeReadsDoNotOverlap;
-
-		return finalCond;
+		// Write responses can always be issued, because their issuing is conditional to WriteReq
+		// XXX: Should the overlap check logic from LLVM_IR_DDRWriteReq be here as well, or only here?
+		return true;
 	}
 	else {
 		return true;
@@ -679,8 +600,11 @@ bool XilinxZCUMemoryModel::tryAllocate(unsigned node, int opcode, bool commit) {
 
 void XilinxZCUMemoryModel::release(unsigned node, int opcode) {
 	if(LLVM_IR_DDRWriteResp == opcode || LLVM_IR_DDRSilentWriteResp == opcode) {
-		// Close the write transaction
-		writeActive = false;
+		unsigned nodeToRootLS = ddrNodesToRootLS.at(node);
+		activeWrites.erase(nodeToRootLS);
+
+		if(!(activeWrites.size()))
+			writeActive = false;
 	}
 }
 
@@ -699,18 +623,43 @@ bool XilinxZCUMemoryModel::outBurstsOverlap() {
 	return writeEnd >= readBase && readEnd >= writeBase;
 }
 
-void XilinxZCUMemoryModel::importNode(unsigned nodeID, int opcode) {
-	if(LLVM_IR_DDRReadReq == opcode) {
+void XilinxZCUMemoryModel::importNode(nodeExportTy &exportedNode) {
+	artificialNodeTy node = std::get<0>(exportedNode);
+	uint64_t baseAddress = std::get<1>(exportedNode);
+	uint64_t offset = std::get<2>(exportedNode);
+
+	if(LLVM_IR_DDRSilentReadReq == node.opcode) {
 		readReqImported = true;
-		importedReadReq = nodeID;
+
+		artificialNodeTy newNode = datapath->createArtificialNode(node, LLVM_IR_DDRSilentRead);
+
+		std::vector<unsigned> nodes;
+		nodes.push_back(newNode.ID);
+		importedLoads[newNode.ID] = std::make_tuple(baseAddress, offset, nodes);
+
+		//importedReadReq = newNode.ID;
 	}
-	else if(LLVM_IR_DDRWriteReq == opcode) {
+	else if(LLVM_IR_DDRSilentWriteReq == node.opcode) {
 		writeReqImported = true;
-		importedWriteReq = nodeID;
+
+		artificialNodeTy newNode = datapath->createArtificialNode(node, LLVM_IR_DDRSilentWrite);
+
+		std::vector<unsigned> nodes;
+		nodes.push_back(newNode.ID);
+		importedStores[newNode.ID] = std::make_tuple(baseAddress, offset, nodes);
+
+		//importedWriteReq = newNode.ID;
 	}
-	else if(LLVM_IR_DDRWriteResp == opcode) {
+	else if(LLVM_IR_DDRSilentWriteResp == node.opcode) {
 		writeRespImported = true;
-		importedWriteResp = nodeID;
+
+		artificialNodeTy newNode = datapath->createArtificialNode(node, LLVM_IR_DDRSilentWrite);
+
+		std::vector<unsigned> nodes;
+		nodes.push_back(newNode.ID);
+		importedStores[newNode.ID] = std::make_tuple(baseAddress, offset, nodes);
+
+		//importedWriteResp = newNode.ID;
 	}
 	else {
 		assert(false && "Invalid type of node imported to the memory model");

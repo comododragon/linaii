@@ -120,6 +120,17 @@ extern LpName2numLevelMapTy LpName2numLevelMap;
 extern std::map<std::string, std::string> functionName2MangledNameMap;
 extern std::map<std::string, std::string> mangledName2FunctionNameMap;
 
+// Datatype representing an artificial node (i.e. a node created after DDDG generation)
+typedef struct {
+	unsigned ID;
+	int opcode;
+	std::string currDynamicFunction;
+	std::string currInstID;
+	int lineNo;
+	std::string prevBB;
+	std::string currBB;
+} artificialNodeTy;
+
 class ConfigurationManager {
 public:
 	typedef struct {

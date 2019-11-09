@@ -1162,7 +1162,9 @@ unsigned XilinxZCUHardwareProfile::getLatency(unsigned opcode) {
 		case LLVM_IR_DDRWriteResp:
 			return effectiveLatencies[LATENCY_DDRWRITERESP].first;
 		case LLVM_IR_DDRSilentReadReq:
+		case LLVM_IR_DDRSilentRead:
 		case LLVM_IR_DDRSilentWriteReq:
+		case LLVM_IR_DDRSilentWrite:
 		case LLVM_IR_DDRSilentWriteResp:
 			return 0;
 		case LLVM_IR_Trunc:
@@ -1235,7 +1237,9 @@ double XilinxZCUHardwareProfile::getInCycleLatency(unsigned opcode) {
 		case LLVM_IR_DDRWriteResp:
 			return effectiveLatencies[LATENCY_DDRWRITERESP].second;
 		case LLVM_IR_DDRSilentReadReq:
+		case LLVM_IR_DDRSilentRead:
 		case LLVM_IR_DDRSilentWriteReq:
+		case LLVM_IR_DDRSilentWrite:
 		case LLVM_IR_DDRSilentWriteResp:
 			return 0;
 		case LLVM_IR_Trunc:

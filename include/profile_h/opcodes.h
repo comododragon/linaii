@@ -66,13 +66,15 @@
 #define LLVM_IR_SilentStore         101
 
 // Pseudo-opcodes for offchip transactions
-#define LLVM_IR_DDRReadReq 0xf7
-#define LLVM_IR_DDRRead 0xf8
-#define LLVM_IR_DDRWriteReq 0xf9
-#define LLVM_IR_DDRWrite 0xfa
-#define LLVM_IR_DDRWriteResp 0xfb
-#define LLVM_IR_DDRSilentReadReq 0xfc
-#define LLVM_IR_DDRSilentWriteReq 0xfd
+#define LLVM_IR_DDRReadReq 0xf5
+#define LLVM_IR_DDRRead 0xf6
+#define LLVM_IR_DDRWriteReq 0xf7
+#define LLVM_IR_DDRWrite 0xf8
+#define LLVM_IR_DDRWriteResp 0xf9
+#define LLVM_IR_DDRSilentReadReq 0xfa
+#define LLVM_IR_DDRSilentRead 0xfb
+#define LLVM_IR_DDRSilentWriteReq 0xfc
+#define LLVM_IR_DDRSilentWrite 0xfd
 #define LLVM_IR_DDRSilentWriteResp 0xfe
 
 // Pseudo-opcode for dummy transaction
@@ -143,13 +145,15 @@ static const std::map<unsigned, std::string> reverseOpcodeMap = {
 	{102, "indexsub"},
 	{101, "silentstore"},
 
-	{0xf7, "ddrreadreq"},
-	{0xf8, "ddrread"},
-	{0xf9, "ddrwritereq"},
-	{0xfa, "ddrwrite"},
-	{0xfb, "ddrwriteresp"},
-	{0xfc, "ddrsilentreadreq"},
-	{0xfd, "ddrsilentwritereq"},
+	{0xf5, "ddrreadreq"},
+	{0xf6, "ddrread"},
+	{0xf7, "ddrwritereq"},
+	{0xf8, "ddrwrite"},
+	{0xf9, "ddrwriteresp"},
+	{0xfa, "ddrsilentreadreq"},
+	{0xfb, "ddrsilentread"},
+	{0xfc, "ddrsilentwritereq"},
+	{0xfd, "ddrsilentwrite"},
 	{0xfe, "ddrsilentwriteresp"},
 
 	{0xff, "dummy"}

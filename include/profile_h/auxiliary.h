@@ -124,6 +124,9 @@ extern std::map<std::string, std::string> mangledName2FunctionNameMap;
 typedef struct {
 	unsigned ID;
 	int opcode;
+	// Non-silent latency
+	// (e.g. if the opcode is of type LLVM_IR_DDRSilentReadReq, the latency here will be from LLVM_IR_DDRReadReq)
+	unsigned nonSilentLatency;
 	std::string currDynamicFunction;
 	std::string currInstID;
 	int lineNo;

@@ -59,8 +59,6 @@ void Multipath::_Multipath() {
 		}
 #endif
 
-		// TODO: The logic here must be updated! See BaseDatapath::getLoopTotalLatency()
-		// (not only here, search for EXTRA_ENTER_EXIT_LOOP_LATENCY and check the logic for each part)
 		if(BaseDatapath::NORMAL_LOOP == latencyType) {
 			uint64_t unrolledBound = loopBound / currUnrollFactor;
 
@@ -132,9 +130,25 @@ void Multipath::_Multipath() {
 		unsigned currUnrollFactor = unrolls.at(i);
 
 		numCycles = numCycles * loopBound + BaseDatapath::EXTRA_ENTER_EXIT_LOOP_LATENCY;
+
 		// See explanation above, in the if(BaseDatapath::PERFECT_LOOP == ...)
 		numCycles -= (currUnrollFactor - 1) * (loopBound / currUnrollFactor);
 	}
+
+	// If there are any out-bursts for the top loop level, take into account here
+	uint64_t extraEnter = 0;
+	uint64_t extraExit = 0;
+	for(auto &it : nodesToBeforeDDDG) {
+		unsigned latency = std::get<0>(it).nonSilentLatency;
+		if(latency >= extraEnter)
+			extraEnter = latency;
+	}
+	for(auto &it : nodesToAfterDDDG) {
+		unsigned latency = std::get<0>(it).nonSilentLatency;
+		if(latency >= extraExit)
+			extraExit = latency;
+	}
+	numCycles += extraEnter + extraExit;
 
 	// Remove the enter/exit loop latency that was added to the top loop
 	numCycles -= BaseDatapath::EXTRA_ENTER_EXIT_LOOP_LATENCY;
@@ -272,9 +286,13 @@ void Multipath::recursiveLookup(unsigned currLoopLevel, unsigned finalLoopLevel)
 				P.merge(DD3.getPack());
 			}
 
-			// Since out-bursts are for now only performed up to one loop level, we reset these variables so they won't be used again
-			nodesToBeforeDDDG.clear();
-			nodesToAfterDDDG.clear();
+			// TODO: I'm just adding the detected out-bursts to the vectors, without properly checking
+			// overlappingness. Maybe we should think better about that
+			// If there are out-bursts, save them as they will be useful later
+			nodesToBeforeDDDG = std::vector<nodeExportTy>(DD.getExportedNodesToBeforeDDDG());
+			nodesToBeforeDDDG.insert(nodesToBeforeDDDG.end(), DD2.getExportedNodesToBeforeDDDG().begin(), DD2.getExportedNodesToBeforeDDDG().end());
+			nodesToAfterDDDG = std::vector<nodeExportTy>(DD2.getExportedNodesToAfterDDDG());
+			nodesToAfterDDDG.insert(nodesToAfterDDDG.end(), DD.getExportedNodesToAfterDDDG().begin(), DD.getExportedNodesToAfterDDDG().end());
 
 			VERBOSE_PRINT(errs() << "[][][][multipath][" << std::to_string(currLoopLevel) << "] Finished\n");
 		}

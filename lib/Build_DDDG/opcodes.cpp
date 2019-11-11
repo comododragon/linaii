@@ -162,3 +162,20 @@ bool isDDRLoad(unsigned microop) {
 bool isDDRStore(unsigned microop) {
 	return LLVM_IR_DDRWrite == microop;
 }
+
+unsigned getNonSilentOpcode(unsigned opcode) {
+	switch(opcode) {
+		case LLVM_IR_DDRSilentReadReq:
+			return LLVM_IR_DDRReadReq;
+		case LLVM_IR_DDRSilentRead:
+			return LLVM_IR_DDRRead;
+		case LLVM_IR_DDRSilentWriteReq:
+			return LLVM_IR_DDRWriteReq;
+		case LLVM_IR_DDRSilentWrite:
+			return LLVM_IR_DDRWrite;
+		case LLVM_IR_DDRSilentWriteResp:
+			return LLVM_IR_DDRWriteResp;
+		default:
+			return opcode;
+	}
+}

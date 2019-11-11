@@ -189,4 +189,6 @@ bool isDDRWriteOp(unsigned microop);
 bool isDDRLoad(unsigned microop);
 bool isDDRStore(unsigned microop);
 
+unsigned getNonSilentOpcode(unsigned opcode);
+
 #endif

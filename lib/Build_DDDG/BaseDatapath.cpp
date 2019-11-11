@@ -269,6 +269,7 @@ artificialNodeTy BaseDatapath::createArtificialNode(unsigned baseNode, int opcod
 
 	// Since we will add new nodes to the DDDG, we must update the auxiliary structures accordingly
 	aNode.opcode = opcode;
+	aNode.nonSilentLatency = profile->getLatency(getNonSilentOpcode(opcode));
 	aNode.currDynamicFunction = PC.getFuncList()[baseNode];
 	aNode.lineNo = PC.getLineNoList()[baseNode];
 	aNode.prevBB = PC.getPrevBBList()[baseNode];
@@ -1643,19 +1644,23 @@ uint64_t BaseDatapath::getLoopTotalLatency(uint64_t maxII) {
 		bool allocatedDDDGAfter = false;
 		// If there are out-burst nodes to allocate before DDDG, we add on the extra cycles
 		for(auto &it : memmodel->getNodesToBeforeDDDG()) {
-			unsigned latency = profile->getLatency(std::get<0>(it).opcode);
-			if(latency >= extraEnter) {
+			// We don't use profile->getLatency() here because the opcode might be silent
+			// and here we want the non-silent case. We could call getNonSilentOpcode(),
+			// but since we already have this calculated, why not use it?
+			unsigned latency = std::get<0>(it).nonSilentLatency;
+			if(latency >= extraEnter)
 				extraEnter = latency;
-				allocatedDDDGBefore = true;
-			}
+
+			allocatedDDDGBefore = true;
 		}
 		// If there are out-burst nodes to allocate after DDDG, we add on the extra cycles
 		for(auto &it : memmodel->getNodesToAfterDDDG()) {
-			unsigned latency = profile->getLatency(std::get<0>(it).opcode);
-			if(latency >= extraExit) {
+			// Look explanation on the previous loop
+			unsigned latency = std::get<0>(it).nonSilentLatency;
+			if(latency >= extraExit)
 				extraExit = latency;
-				allocatedDDDGAfter = true;
-			}
+
+			allocatedDDDGAfter = true;
 		}
 		uint64_t extraEnterExit = extraEnter + extraExit;
 
@@ -2207,7 +2212,9 @@ void BaseDatapath::RCScheduler::pushReady(unsigned nodeID, uint64_t tick) {
 		case LLVM_IR_DDRWrite:
 		case LLVM_IR_DDRWriteResp:
 		case LLVM_IR_DDRSilentReadReq:
+		case LLVM_IR_DDRSilentRead:
 		case LLVM_IR_DDRSilentWriteReq:
+		case LLVM_IR_DDRSilentWrite:
 		case LLVM_IR_DDRSilentWriteResp:
 			ddrOpReady.push_back(std::make_pair(nodeID, tick));
 			break;

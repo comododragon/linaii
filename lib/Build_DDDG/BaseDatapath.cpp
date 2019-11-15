@@ -179,6 +179,12 @@ void BaseDatapath::importNodes(std::vector<nodeExportTy> *nodesToImport1, std::v
 
 	if(nodesToImport2) {
 		// TODO: lógica para between
+		std::vector<edgeTy> edgesToAdd;
+
+		// Create the imported nodes
+		for(auto &it : *nodesToImport2) {
+			memmodel->importNode(it);
+		}
 	}
 
 	refreshDDDG();

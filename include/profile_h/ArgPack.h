@@ -23,6 +23,12 @@ typedef struct {
 		TARGET_XILINX_VC707 = 3
 	};
 
+	int ddrSched;
+	enum {
+		DDR_POLICY_CANNOT_OVERLAP = 0,
+		DDR_POLICY_CAN_OVERLAP = 1
+	};
+
 	bool verbose;
 	bool compressed;
 #ifdef PROGRESSIVE_TRACE_CURSOR

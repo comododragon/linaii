@@ -5,6 +5,8 @@
 extern memoryTraceMapTy memoryTraceMap;
 extern bool memoryTraceGenerated;
 
+bool anyDDRTransactionFound;
+
 MemoryModel::MemoryModel(BaseDatapath *datapath) :
 	datapath(datapath), microops(datapath->getMicroops()), graph(datapath->getDDDG()),
 	nameToVertex(datapath->getNameToVertex()), vertexToName(datapath->getVertexToName()), edgeToWeight(datapath->getEdgeToWeight()),
@@ -88,41 +90,45 @@ bool XilinxZCUMemoryModel::findOutBursts(
 ) {
 	bool outBurstFound = false;
 
-	// Our current assumption for inter-iteration bursting is very restrictive. It should happen only when
-	// there is one (and one only) load/store transaction (which may be bursted) inside a loop iteration,
-	// excluding imported out-bursted nodes from inner loops
-	if(1 == burstedNodes.size()) {
-		// We are optimistic at first
-		outBurstFound = true;
+	// If DDR scheduling policy is conservative, we only proceed if no DDR transaction was found yet.
+	// With other policies, we proceed anyway
+	if(!(ArgPack::DDR_POLICY_CANNOT_OVERLAP == args.ddrSched && anyDDRTransactionFound)) {
+		// Our current assumption for inter-iteration bursting is very restrictive. It should happen only when
+		// there is one (and one only) load/store transaction (which may be bursted) inside a loop iteration,
+		// excluding imported out-bursted nodes from inner loops
+		if(1 == burstedNodes.size()) {
+			// We are optimistic at first
+			outBurstFound = true;
 
-		// In this case, all transactions between iterations must be contiguous with no overlap
-		// This means that all entangled nodes (i.e. DDDG nodes that represent the same instruction but
-		// different instances) must continuously increase their address by the burst size (offset)
-		// If any fails, we assume that inter-iteration bursting is not possible.
-		std::tuple<uint64_t, uint64_t, std::vector<unsigned>> burstedNode = burstedNodes.begin()->second;
-		uint64_t offset = std::get<1>(burstedNode) + 1;
-		std::vector<unsigned> burstedNodesVec = std::get<2>(burstedNode);
+			// In this case, all transactions between iterations must be contiguous with no overlap
+			// This means that all entangled nodes (i.e. DDDG nodes that represent the same instruction but
+			// different instances) must continuously increase their address by the burst size (offset)
+			// If any fails, we assume that inter-iteration bursting is not possible.
+			std::tuple<uint64_t, uint64_t, std::vector<unsigned>> burstedNode = burstedNodes.begin()->second;
+			uint64_t offset = std::get<1>(burstedNode) + 1;
+			std::vector<unsigned> burstedNodesVec = std::get<2>(burstedNode);
 
-		for(auto &it : burstedNodesVec) {
-			std::pair<std::string, std::string> wholeLoopNameInstNamePair = std::make_pair(wholeLoopName, instIDList[it]);
+			for(auto &it : burstedNodesVec) {
+				std::pair<std::string, std::string> wholeLoopNameInstNamePair = std::make_pair(wholeLoopName, instIDList[it]);
 
-			// Check if all instances of this instruction are well behaved in the memory trace
-			// XXX: We do not sort the list here like when searching for inner bursts, since we do not support loop reordering (for now)
-			std::vector<uint64_t> addresses = memoryTraceMap.at(wholeLoopNameInstNamePair);
-			uint64_t nextAddress = addresses[0] + 4 * offset;
-			for(unsigned i = 1; i < addresses.size(); i++) {
-				// TODO: For now we are assuming that all words are 32-bit
-				if(nextAddress != addresses[i]) {
-					outBurstFound = false;
+				// Check if all instances of this instruction are well behaved in the memory trace
+				// XXX: We do not sort the list here like when searching for inner bursts, since we do not support loop reordering (for now)
+				std::vector<uint64_t> addresses = memoryTraceMap.at(wholeLoopNameInstNamePair);
+				uint64_t nextAddress = addresses[0] + 4 * offset;
+				for(unsigned i = 1; i < addresses.size(); i++) {
+					// TODO: For now we are assuming that all words are 32-bit
+					if(nextAddress != addresses[i]) {
+						outBurstFound = false;
+						break;
+					}
+					else {
+						nextAddress += 4 * offset;
+					}
+				}
+
+				if(!outBurstFound)
 					break;
-				}
-				else {
-					nextAddress += 4 * offset;
-				}
 			}
-
-			if(!outBurstFound)
-				break;
 		}
 	}
 
@@ -247,7 +253,16 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 
 		// Try to find contiguous stores between loop iterations
 		storeOutBurstFound = findOutBursts(burstedStores, wholeLoopName, instIDList);
+
+		// TODO: Perhaps if loadOutBurstFound and storeOutBurstFound are true, we should check if
+		// the spaces do not overlap before outbursting both
 	}
+
+	// After out-burst analysis, we update the DDR transaction flag to block further out-burst attempts (when scheduling policy is conservative)
+	// TODO: We are being conservative here. IF ANY operation is found, we already block any out-bursting, without checking if it is read or write
+	//       perhaps the best way would be to test for overlapness, but this was left as a TODO, as you can see.
+	if(burstedLoads.size() || burstedStores.size())
+		anyDDRTransactionFound = true;
 
 	// Add the relevant DDDG nodes for offchip load
 	for(auto &burst : burstedLoads) {
@@ -364,24 +379,44 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 		datapath->updateAddDDDGEdges(edgesToAdd);
 	}
 
+	// Temporary map used for the recently-imported nodes. The main structures are only updated after the imported nodes
+	// are successfully imported
+	std::unordered_map<unsigned, unsigned> ddrNodesToRootLSTmp;
+
 	// Add the relevant DDDG nodes for imported offchip load
 	for(auto &burst : importedLoads) {
 		// Create a node with opcode LLVM_IR_DDRReadReq
 		artificialNodeTy newNode = datapath->createArtificialNode(burst.first, LLVM_IR_DDRReadReq);
 
 		// Add this new node to the mapping map (lol)
-		ddrNodesToRootLS[newNode.ID] = burst.first;
+		ddrNodesToRootLSTmp[newNode.ID] = burst.first;
 
 		// Connect this node to the first load
 		// XXX: Does the edge weight matter here?
 		std::vector<edgeTy> edgesToAdd;
 		edgesToAdd.push_back({newNode.ID, burst.first, 0});
 
+		// With conservative DDR scheduling policy, this imported transaction must execute after all DDR transactions from this DDDG
+		if(ArgPack::DDR_POLICY_CANNOT_OVERLAP == args.ddrSched) {
+			// Connect imported LLVM_IR_DDRReadReq to all last DDR transactions (LLVM_IR_DDRRead's and LLVM_IR_DDRWriteResp)
+
+			// Find for LLVM_IR_DDRWriteResp
+			for(auto &it : ddrNodesToRootLS) {
+				int opcode = microops.at(it.first);
+				// XXX: Does the edge weight matter here?
+				if(LLVM_IR_DDRWriteResp == opcode)
+					edgesToAdd.push_back({it.first, newNode.ID, 0});
+			}
+
+			// Also, connect to the last node of DDR read transactions
+			for(auto &it : burstedLoads) {
+				unsigned lastLoad = std::get<2>(it.second).back();
+				edgesToAdd.push_back({lastLoad, newNode.ID, 0});
+			}
+		}
+
 		// Update DDDG
 		datapath->updateAddDDDGEdges(edgesToAdd);
-
-		// Add the imported loads to the bursted loads structure
-		burstedLoads.insert(burst);
 	}
 
 	// Add the relevant DDDG nodes for imported offchip store
@@ -390,12 +425,33 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 		artificialNodeTy newNode = datapath->createArtificialNode(burst.first, writeRespImported? LLVM_IR_DDRSilentWriteReq : LLVM_IR_DDRWriteReq);
 
 		// Add this new node to the mapping map (lol)
-		ddrNodesToRootLS[newNode.ID] = burst.first;
+		ddrNodesToRootLSTmp[newNode.ID] = burst.first;
 
 		// Connect this node to the first store
 		// XXX: Does the edge weight matter here?
 		std::vector<edgeTy> edgesToAdd;
 		edgesToAdd.push_back({newNode.ID, burst.first, 0});
+
+		// With conservative DDR scheduling policy, this imported transaction must execute after (for LLVM_IR_DDRWriteReq)
+		// all DDR transactions from this DDDG
+		if(ArgPack::DDR_POLICY_CANNOT_OVERLAP == args.ddrSched) {
+			// Connect imported LLVM_IR_DDRWriteReq to all last DDR transactions (LLVM_IR_DDRRead's and LLVM_IR_DDRWriteResp)
+			if(writeReqImported) {
+				// Find for LLVM_IR_DDRWriteResp
+				for(auto &it : ddrNodesToRootLS) {
+					int opcode = microops.at(it.first);
+					// XXX: Does the edge weight matter here?
+					if(LLVM_IR_DDRWriteResp == opcode)
+						edgesToAdd.push_back({it.first, newNode.ID, 0});
+				}
+
+				// Also, connect to the last node of DDR read transactions
+				for(auto &it : burstedLoads) {
+					unsigned lastLoad = std::get<2>(it.second).back();
+					edgesToAdd.push_back({lastLoad, newNode.ID, 0});
+				}
+			}
+		}
 
 		// Update DDDG
 		datapath->updateAddDDDGEdges(edgesToAdd);
@@ -405,19 +461,42 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 		newNode = datapath->createArtificialNode(lastStore, writeReqImported? LLVM_IR_DDRSilentWriteResp : LLVM_IR_DDRWriteResp);
 
 		// Add this new node to the mapping map (lol)
-		ddrNodesToRootLS[newNode.ID] = burst.first;
+		ddrNodesToRootLSTmp[newNode.ID] = burst.first;
 
 		// Connect this node to the last store
 		// XXX: Does the edge weight matter here?
 		edgesToAdd.clear();
 		edgesToAdd.push_back({lastStore, newNode.ID, 0});
 
+		// With conservative DDR scheduling policy, this imported transaction must execute before (for LLVM_IR_DDRWriteResp)
+		// all DDR transactions from this DDDG
+		if(ArgPack::DDR_POLICY_CANNOT_OVERLAP == args.ddrSched) {
+			// Connect imported LLVM_IR_DDRWriteResp to all root DDR transactions (LLVM_IR_DDRReadReq's and LLVM_IR_DDRWriteReq's)
+			if(writeRespImported) {
+				// Find for LLVM_IR_DDRReadReq and LLVM_IR_DDRWriteReq
+				for(auto &it : ddrNodesToRootLS) {
+					int opcode = microops.at(it.first);
+					// XXX: Does the edge weight matter here?
+					if(LLVM_IR_DDRReadReq == opcode || LLVM_IR_DDRWriteReq == opcode)
+						edgesToAdd.push_back({newNode.ID, it.first, 0});
+				}
+			}
+		}
+
 		// Update DDDG
 		datapath->updateAddDDDGEdges(edgesToAdd);
+	}
 
-		// Add the imported stores to the bursted stores structure
+	// Add the imported loads to the bursted loads structure
+	for(auto &burst : importedLoads) {
+		burstedLoads.insert(burst);
+	}
+	// Add the imported stores to the bursted stores structure
+	for(auto &burst : importedStores) {
 		burstedStores.insert(burst);
 	}
+	// And also commit the changes to ddrNodesToRootLS
+	ddrNodesToRootLS.insert(ddrNodesToRootLSTmp.begin(), ddrNodesToRootLSTmp.end());
 
 	datapath->refreshDDDG();
 
@@ -453,23 +532,13 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 }
 
 bool XilinxZCUMemoryModel::tryAllocate(unsigned node, int opcode, bool commit) {
-	// The current memory policy here implemented consider read/write transactions as regions:
+	// Two different memory policies are implemented here:
+	// Conservative:
+	// - Read and write transactions can coexist if their regions do not overlap;
+	// - A read request can be issued when a read transaction is working only if the current read transaction is unbursted;
+	// - Write requests are exclusive;
+	// Overlapping:
 	// - Any transaction can coexist if their regions do not overlap;
-
-	// TODO parei aqui
-	// Seguinte, pelo rw-add2-np3 aparentemente é farra e as transações podem acontecer ao mesmo tempo e foda-se,
-	// CONTANTO QUE não haja overlap no endereçamento.
-	// Por causa disso, estou mudando a lógica toda. A ideia agora é que os nós importados sejam de fato importados
-	// e incorporados nas estruturas de dados normais para nós não-importados e apropriadamente alocados.
-	// Eu estou fazendo as modificações meio que seguindo o timeline de funcionamento do MemoryModel.
-	// Ja adaptei o construtor, o analyseAndTransform, os findIn/OutBursts e tal.
-	// o tryAllocate (aqui) e release também já foram modificados.
-	// O resto ainda precisa de uma olhada melhor.
-	// Por exemplo, o importNodes precisa colocar os nós dentro das estruturas de dados daqui.
-	// Além disso, preciso criar as versoes Silent dos nós que ainda nao tem
-	// e adicionar os opcodes dos silents aqui
-	// A ideia é seguir todo o procedimento normal de alocação, porém com os silents,
-	// é pra ocorrer tudo "invisivel", pelo menos eu espero
 
 	if(LLVM_IR_DDRReadReq == opcode || LLVM_IR_DDRSilentReadReq == opcode) {
 		unsigned nodeToRootLS = ddrNodesToRootLS.at(node);
@@ -477,38 +546,76 @@ bool XilinxZCUMemoryModel::tryAllocate(unsigned node, int opcode, bool commit) {
 		// XXX: Once again, considering 32-bit
 		uint64_t readEnd = readBase + std::get<1>(burstedLoads.at(nodeToRootLS)) * 4;
 
-		// Read requests are issued when:
+		bool finalCond;
+		if(ArgPack::DDR_POLICY_CANNOT_OVERLAP == args.ddrSched) {
+			// Read requests are issued when:
 
-		// - No active transactions;
-		// XXX: readActive and writeActive already handle this
+			// - No active transactions;
+			// XXX: readActive and writeActive already handle this
 
-		// - If there are active reads, they must be for different regions
-		bool activeReadsDoNotOverlap = true;
-		if(readActive) {
-			for(auto &it : activeReads) {
-				uint64_t otherBase = std::get<0>(burstedLoads.at(it));
-				// XXX: Once again, considering 32-bit
-				uint64_t otherEnd = otherBase + std::get<1>(burstedLoads.at(it)) * 4;
-
-				if(otherEnd >= readBase && readEnd >= otherBase)
-					activeReadsDoNotOverlap = false;
+			// - If there are active reads, they must be unbursted;
+			bool allActiveReadsAreUnbursted = true;
+			if(readActive) {
+				for(auto &it : activeReads) {
+					if(std::get<1>(burstedLoads.at(it))) {
+						allActiveReadsAreUnbursted = false;
+						break;
+					}
+				}
 			}
-		}
 
-		// - If there are active writes, they must be for different regions
-		bool activeWritesDoNotOverlap = true;
-		if(writeActive) {
-			for(auto &it : activeWrites) {
-				uint64_t otherBase = std::get<0>(burstedStores.at(it));
-				// XXX: Once again, considering 32-bit
-				uint64_t otherEnd = otherBase + std::get<1>(burstedStores.at(it)) * 4;
+			// - If there are active writes, they must be for different regions
+			bool activeWritesDoNotOverlap = true;
+			if(writeActive) {
+				for(auto &it : activeWrites) {
+					uint64_t otherBase = std::get<0>(burstedStores.at(it));
+					// XXX: Once again, considering 32-bit
+					uint64_t otherEnd = otherBase + std::get<1>(burstedStores.at(it)) * 4;
 
-				if(otherEnd >= readBase && readEnd >= otherBase)
-					activeWritesDoNotOverlap = false;
+					if(otherEnd >= readBase && readEnd >= otherBase)
+						activeWritesDoNotOverlap = false;
+				}
 			}
-		}
 
-		bool finalCond = (!readActive && !writeActive) || (activeReadsDoNotOverlap && activeWritesDoNotOverlap);
+			finalCond = (!readActive && !writeActive) || (allActiveReadsAreUnbursted && activeWritesDoNotOverlap);
+		}
+		else if(ArgPack::DDR_POLICY_CAN_OVERLAP == args.ddrSched) {
+			// Read requests are issued when:
+
+			// - No active transactions;
+			// XXX: readActive and writeActive already handle this
+
+			// - If there are active reads, they must be for different regions
+			bool activeReadsDoNotOverlap = true;
+			if(readActive) {
+				for(auto &it : activeReads) {
+					uint64_t otherBase = std::get<0>(burstedLoads.at(it));
+					// XXX: Once again, considering 32-bit
+					uint64_t otherEnd = otherBase + std::get<1>(burstedLoads.at(it)) * 4;
+
+					if(otherEnd >= readBase && readEnd >= otherBase)
+						activeReadsDoNotOverlap = false;
+				}
+			}
+
+			// - If there are active writes, they must be for different regions
+			bool activeWritesDoNotOverlap = true;
+			if(writeActive) {
+				for(auto &it : activeWrites) {
+					uint64_t otherBase = std::get<0>(burstedStores.at(it));
+					// XXX: Once again, considering 32-bit
+					uint64_t otherEnd = otherBase + std::get<1>(burstedStores.at(it)) * 4;
+
+					if(otherEnd >= readBase && readEnd >= otherBase)
+						activeWritesDoNotOverlap = false;
+				}
+			}
+
+			finalCond = (!readActive && !writeActive) || (activeReadsDoNotOverlap && activeWritesDoNotOverlap);
+		}
+		else {
+			assert(false && "Invalid DDR scheduling policy selected (this assert should never execute)");
+		}
 
 		if(finalCond) {
 			if(commit) {
@@ -542,38 +649,47 @@ bool XilinxZCUMemoryModel::tryAllocate(unsigned node, int opcode, bool commit) {
 		// XXX: Once again, considering 32-bit
 		uint64_t writeEnd = writeBase + std::get<1>(burstedStores.at(nodeToRootLS)) * 4;
 
-		// Write requests are issued when:
+		bool finalCond;
+		if(ArgPack::DDR_POLICY_CANNOT_OVERLAP == args.ddrSched) {
+			// Write requests are issued when:
 
-		// - No active transactions;
-		// XXX: readActive and writeActive already handle this
-
-		// - If there are active reads, they must be for different regions
-		bool activeReadsDoNotOverlap = true;
-		if(readActive) {
-			for(auto &it : activeReads) {
-				uint64_t otherBase = std::get<0>(burstedLoads.at(it));
-				// XXX: Once again, considering 32-bit
-				uint64_t otherEnd = otherBase + std::get<1>(burstedLoads.at(it)) * 4;
-
-				if(otherEnd >= writeBase && writeEnd >= otherBase)
-					activeReadsDoNotOverlap = false;
-			}
+			// - No other active write.
+			finalCond = !writeActive;
 		}
+		else if(ArgPack::DDR_POLICY_CAN_OVERLAP == args.ddrSched) {
+			// Write requests are issued when:
 
-		// - If there are active writes, they must be for different regions
-		bool activeWritesDoNotOverlap = true;
-		if(writeActive) {
-			for(auto &it : activeWrites) {
-				uint64_t otherBase = std::get<0>(burstedStores.at(it));
-				// XXX: Once again, considering 32-bit
-				uint64_t otherEnd = otherBase + std::get<1>(burstedStores.at(it)) * 4;
+			// - No active transactions;
+			// XXX: readActive and writeActive already handle this
 
-				if(otherEnd >= writeBase && writeEnd >= otherBase)
-					activeWritesDoNotOverlap = false;
+			// - If there are active reads, they must be for different regions
+			bool activeReadsDoNotOverlap = true;
+			if(readActive) {
+				for(auto &it : activeReads) {
+					uint64_t otherBase = std::get<0>(burstedLoads.at(it));
+					// XXX: Once again, considering 32-bit
+					uint64_t otherEnd = otherBase + std::get<1>(burstedLoads.at(it)) * 4;
+
+					if(otherEnd >= writeBase && writeEnd >= otherBase)
+						activeReadsDoNotOverlap = false;
+				}
 			}
-		}
 
-		bool finalCond = (!readActive && !writeActive) || (activeReadsDoNotOverlap && activeWritesDoNotOverlap);
+			// - If there are active writes, they must be for different regions
+			bool activeWritesDoNotOverlap = true;
+			if(writeActive) {
+				for(auto &it : activeWrites) {
+					uint64_t otherBase = std::get<0>(burstedStores.at(it));
+					// XXX: Once again, considering 32-bit
+					uint64_t otherEnd = otherBase + std::get<1>(burstedStores.at(it)) * 4;
+
+					if(otherEnd >= writeBase && writeEnd >= otherBase)
+						activeWritesDoNotOverlap = false;
+				}
+			}
+
+			finalCond = (!readActive && !writeActive) || (activeReadsDoNotOverlap && activeWritesDoNotOverlap);
+		}
 
 		if(finalCond) {
 			if(commit) {
@@ -589,9 +705,40 @@ bool XilinxZCUMemoryModel::tryAllocate(unsigned node, int opcode, bool commit) {
 		return true;
 	}
 	else if(LLVM_IR_DDRWriteResp == opcode || LLVM_IR_DDRSilentWriteResp == opcode) {
-		// Write responses can always be issued, because their issuing is conditional to WriteReq
-		// XXX: Should the overlap check logic from LLVM_IR_DDRWriteReq be here as well, or only here?
-		return true;
+		unsigned nodeToRootLS = ddrNodesToRootLS.at(node);
+		uint64_t writeBase = std::get<0>(burstedStores.at(nodeToRootLS));
+		// XXX: Once again, considering 32-bit
+		uint64_t writeEnd = writeBase + std::get<1>(burstedStores.at(nodeToRootLS)) * 4;
+
+		bool finalCond;
+		if(ArgPack::DDR_POLICY_CANNOT_OVERLAP == args.ddrSched) {
+			// Write responses (when the data is actually sent to DDR) are issued when:
+
+			// - No active read
+			// XXX: readActive already handles this
+
+			// - If there are active reads, they must be for different regions
+			bool activeReadsDoNotOverlap = true;
+			if(readActive) {
+				for(auto &it : activeReads) {
+					uint64_t otherBase = std::get<0>(burstedLoads.at(it));
+					// XXX: Once again, considering 32-bit
+					uint64_t otherEnd = otherBase + std::get<1>(burstedLoads.at(it)) * 4;
+
+					if(otherEnd >= writeBase && writeEnd >= otherBase)
+						activeReadsDoNotOverlap = false;
+				}
+			}
+
+			finalCond = !readActive || activeReadsDoNotOverlap;
+		}
+		else if(ArgPack::DDR_POLICY_CAN_OVERLAP == args.ddrSched) {
+			// Write responses can always be issued, because their issuing is conditional to WriteReq
+			// XXX: Should the overlap check logic from LLVM_IR_DDRWriteReq be here as well, or only here?
+			finalCond = true;
+		}
+
+		return finalCond;
 	}
 	else {
 		return true;

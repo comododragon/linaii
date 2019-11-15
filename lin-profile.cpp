@@ -59,6 +59,13 @@ const std::string helpMessage =
 	"        -u UNCTY , --uncertainty=UNCTY: specify the clock uncertainty (in %)\n"
 	"        -l LOOPS , --loops=LOOPS      : specify loops to be analysed comma-separated (e.g.\n"
 	"                                        --loops=2,3 only analyse loops 2 and 3)\n"
+	"        -d LEVEL , --ddrsched=LEVEL   : specify the DDR scheduling policy:\n"
+	"                                            0: DDR transactions of same type (read/write) cannot\n"
+	"                                               overlap (i.e. once a transaction starts, it must end\n"
+	"                                               before others of same type can start, DEFAULT)\n"
+	"                                            1: DDR transactions can overlap if their memory spaces\n"
+	"                                               are disjoint\n"
+	"                                        NOTE: this argument has no effect if \"--fno-mma\" is active\n"
 	"                   --mem-trace        : obtain memory trace for access pattern analysis.\n"
 	"                                        Ignored if -m estimation | --mode=estimation is\n"
 	"                                        set.\n"
@@ -193,6 +200,7 @@ void parseInputArguments(int argc, char **argv) {
 	args.frequency = 100.0;
 	args.uncertainty = 27;
 	args.verbose = false;
+	args.ddrSched = args.DDR_POLICY_CANNOT_OVERLAP;
 	args.memTrace = false;
 	args.showCFG = false;
 	args.showCFGDetailed = false;
@@ -234,6 +242,7 @@ void parseInputArguments(int argc, char **argv) {
 			{"frequency", required_argument, 0, 'f'},
 			{"uncertainty", required_argument, 0, 'u'},
 			{"loops", required_argument, 0, 'l'},
+			{"ddrsched", required_argument, 0, 'd'},
 			{"mem-trace", no_argument, 0, 0xF00},
 			{"show-cfg", no_argument, 0, 0xF01},
 			{"show-detail-cfg", no_argument, 0, 0xF02},
@@ -259,9 +268,9 @@ void parseInputArguments(int argc, char **argv) {
 		int optionIndex = 0;
 
 #ifdef PROGRESSIVE_TRACE_CURSOR
-		c = getopt_long(argc, argv, "+hi:o:c:m:t:vxpf:u:l:", longOptions, &optionIndex);
+		c = getopt_long(argc, argv, "+hi:o:c:m:t:vxpf:u:l:d:", longOptions, &optionIndex);
 #else
-		c = getopt_long(argc, argv, "+hi:o:c:m:t:vxf:u:l:", longOptions, &optionIndex);
+		c = getopt_long(argc, argv, "+hi:o:c:m:t:vxf:u:l:d:", longOptions, &optionIndex);
 #endif
 		if(-1 == c)
 			break;
@@ -330,6 +339,11 @@ void parseInputArguments(int argc, char **argv) {
 					if(optargStr != "")
 						args.targetLoops.push_back(optargStr);
 				}
+				break;
+			case 'd':
+				optargStr = optarg;
+				if(!optargStr.compare("1"))
+					args.ddrSched = args.DDR_POLICY_CAN_OVERLAP;
 				break;
 			case 0xF00:
 				args.memTrace = true;
@@ -492,6 +506,18 @@ void parseInputArguments(int argc, char **argv) {
 		for(unsigned int i = 1; i < args.targetLoops.size(); i++)
 			errs() << ", " << args.targetLoops[i];
 		errs() << "\n";
+		errs() << "Memory model analysis for offchip transactions? " << (args.fNoMMA? "(no)" : "(yes)") << "\n";
+		if(!(args.fNoMMA) && args.fNoMMABurst)
+			errs() << "Memory model iteration burst analysis is disabled!\n";
+		errs() << "DDR scheduling policy: ";
+		switch(args.ddrSched) {
+			case ArgPack::DDR_POLICY_CANNOT_OVERLAP:
+				errs() << "conservative\n";
+				break;
+			case ArgPack::DDR_POLICY_CAN_OVERLAP:
+				errs() << "relaxed\n";
+				break;
+		}
 	);
 
 	// Loading kernel names into kernel_names vector

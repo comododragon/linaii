@@ -888,6 +888,9 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 
 		unsigned unrollFactor = (targetLoopBound < targetUnrollFactor && targetLoopBound)? targetLoopBound : targetUnrollFactor;
 
+		// Reset flag for detection of DDR transactions
+		anyDDRTransactionFound = false;
+
 		if(args.fNPLA && firstNonPerfectLoopLevel != -1) {
 			VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Non-perfect loop analysis triggered: building multipaths\n");
 

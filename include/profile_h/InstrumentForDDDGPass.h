@@ -40,6 +40,8 @@
 #define RESULT_LINE 19134
 #define FORWARD_LINE 24601
 
+extern bool anyDDRTransactionFound;
+
 namespace llvm {
 
 typedef struct {

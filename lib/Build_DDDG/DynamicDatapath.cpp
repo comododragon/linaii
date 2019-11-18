@@ -47,35 +47,23 @@ DynamicDatapath::DynamicDatapath(
 	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
 	unsigned datapathType
 ) : BaseDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, datapathType) {
-	_DynamicDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, nullptr, nullptr, datapathType);
+	_DynamicDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, nullptr, datapathType);
 }
 
-// Constructor with nodes to import as a before/after DDDG (if it is before or after is decided by datapathType)
+// Constructor with nodes to import
 DynamicDatapath::DynamicDatapath(
 	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
 	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
-	std::vector<nodeExportTy> &nodesToImport,
-	unsigned datapathType
+	std::vector<nodeExportTy> &nodesToImport, unsigned datapathType
 ) : BaseDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, datapathType) {
-	_DynamicDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, &nodesToImport, nullptr, datapathType);
-}
-
-// Constructor with nodes to import as a between DDDG
-DynamicDatapath::DynamicDatapath(
-	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
-	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
-	std::vector<nodeExportTy> &nodesToImportToBeforeDDDG, std::vector<nodeExportTy> &nodesToImportToAfterDDDG,
-	unsigned datapathType
-) : BaseDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, datapathType) {
-	_DynamicDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, &nodesToImportToBeforeDDDG, &nodesToImportToAfterDDDG, datapathType);
+	_DynamicDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, &nodesToImport, datapathType);
 }
 
 // Inner logic for non-perfect loop nest constructor
 void DynamicDatapath::_DynamicDatapath(
 	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
 	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
-	std::vector<nodeExportTy> *nodesToImportToBeforeDDDG, std::vector<nodeExportTy> *nodesToImportToAfterDDDG,
-	unsigned datapathType
+	std::vector<nodeExportTy> *nodesToImport, unsigned datapathType
 ) {
 	VERBOSE_PRINT(errs() << "\tBuild initial DDDG\n");
 
@@ -100,7 +88,8 @@ void DynamicDatapath::_DynamicDatapath(
 	delete builder;
 	builder = nullptr;
 
-	importNodes(nodesToImportToBeforeDDDG, nodesToImportToAfterDDDG);
+	if(nodesToImport)
+		importNodes(*nodesToImport);
 
 	postDDDGBuild();
 

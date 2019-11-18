@@ -11,7 +11,7 @@ class DynamicDatapath : public BaseDatapath {
 	void _DynamicDatapath(
 		std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
 		std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
-		std::vector<nodeExportTy> *nodesToImportToBeforeDDDG, std::vector<nodeExportTy> *nodesToImportToAfterDDDG,
+		std::vector<nodeExportTy> *nodesToImport,
 		unsigned datapathType
 	);
 
@@ -36,15 +36,7 @@ public:
 	DynamicDatapath(
 		std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
 		std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
-		std::vector<nodeExportTy> &nodesToImport,
-		unsigned datapathType
-	);
-
-	DynamicDatapath(
-		std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
-		std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
-		std::vector<nodeExportTy> &nodesToImportToBeforeDDDG, std::vector<nodeExportTy> &nodesToImportToAfterDDDG,
-		unsigned datapathType
+		std::vector<nodeExportTy> &nodesToImport, unsigned datapathType
 	);
 
 	~DynamicDatapath();

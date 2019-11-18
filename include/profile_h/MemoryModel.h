@@ -53,9 +53,9 @@ class XilinxZCUMemoryModel : public MemoryModel {
 	//unsigned activeWrite;
 	//unsigned completedTransactions;
 	bool readReqImported, writeReqImported, writeRespImported;
+	unsigned importedWriteReq, importedWriteResp;
 	std::unordered_map<unsigned, std::tuple<uint64_t, uint64_t, std::vector<unsigned>>> importedLoads;
 	std::unordered_map<unsigned, std::tuple<uint64_t, uint64_t, std::vector<unsigned>>> importedStores;
-	//unsigned importedReadReq, importedWriteReq, importedWriteResp;
 	//bool allUnimportedComplete, importedWriteRespComplete;
 
 	void findInBursts(

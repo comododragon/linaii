@@ -280,8 +280,12 @@ void Multipath::recursiveLookup(unsigned currLoopLevel, unsigned finalLoopLevel)
 
 			// Unroll detected. Since the code is statically replicated, we also calculate the inter-iteration scheduling to improve acurracy
 			if(targetUnrollFactor > 1) {
+				std::vector<nodeExportTy> nodesToImport;
+				nodesToImport.insert(nodesToImport.end(), nodesToBeforeDDDG.begin(), nodesToBeforeDDDG.end());
+				nodesToImport.insert(nodesToImport.end(), nodesToAfterDDDG.begin(), nodesToAfterDDDG.end());
+
 				VERBOSE_PRINT(errs() << "[][][][multipath][" << std::to_string(currLoopLevel) << "] Building dynamic datapath for the region between the unrolled nested loops\n");
-				DynamicDatapath DD3(kernelName, CM, summaryFile, loopName, currLoopLevel, targetUnrollFactor, nodesToBeforeDDDG, nodesToAfterDDDG, BaseDatapath::NON_PERFECT_BETWEEN);
+				DynamicDatapath DD3(kernelName, CM, summaryFile, loopName, currLoopLevel, targetUnrollFactor, nodesToImport, BaseDatapath::NON_PERFECT_BETWEEN);
 				latencies.push_back(std::make_tuple(currLoopLevel, BaseDatapath::NON_PERFECT_BETWEEN, DD3.getRCIL(), 0));
 				P.merge(DD3.getPack());
 			}

@@ -422,8 +422,14 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 	// Add the relevant DDDG nodes for imported offchip store
 	for(auto &burst : importedStores) {
 		// DDRWriteReq is positioned before the burst
-		artificialNodeTy newNode = datapath->createArtificialNode(burst.first, writeRespImported? LLVM_IR_DDRSilentWriteReq : LLVM_IR_DDRWriteReq);
-
+		artificialNodeTy newNode;
+		if(writeReqImported && burst.first == importedWriteReq)
+			newNode = datapath->createArtificialNode(burst.first, LLVM_IR_DDRWriteReq);
+		else if(writeRespImported && burst.first == importedWriteResp)
+			newNode = datapath->createArtificialNode(burst.first, LLVM_IR_DDRSilentWriteReq);
+		else
+			assert(false && "There is an artificially-generated store for imported write transactions, but no imported write node found");
+		
 		// Add this new node to the mapping map (lol)
 		ddrNodesToRootLSTmp[newNode.ID] = burst.first;
 
@@ -436,7 +442,7 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 		// all DDR transactions from this DDDG
 		if(ArgPack::DDR_POLICY_CANNOT_OVERLAP == args.ddrSched) {
 			// Connect imported LLVM_IR_DDRWriteReq to all last DDR transactions (LLVM_IR_DDRRead's and LLVM_IR_DDRWriteResp)
-			if(writeReqImported) {
+			if(writeReqImported && burst.first == importedWriteReq) {
 				// Find for LLVM_IR_DDRWriteResp
 				for(auto &it : ddrNodesToRootLS) {
 					int opcode = microops.at(it.first);
@@ -458,7 +464,12 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 
 		// DDRWriteResp is positioned after the last burst beat
 		unsigned lastStore = std::get<2>(burst.second).back();
-		newNode = datapath->createArtificialNode(lastStore, writeReqImported? LLVM_IR_DDRSilentWriteResp : LLVM_IR_DDRWriteResp);
+		if(writeRespImported && burst.first == importedWriteResp)
+			newNode = datapath->createArtificialNode(lastStore, LLVM_IR_DDRWriteResp);
+		else if(writeReqImported && burst.first == importedWriteReq)
+			newNode = datapath->createArtificialNode(lastStore, LLVM_IR_DDRSilentWriteResp);
+		else
+			assert(false && "There is an artificially-generated store for imported write transactions, but no imported write node found");
 
 		// Add this new node to the mapping map (lol)
 		ddrNodesToRootLSTmp[newNode.ID] = burst.first;
@@ -472,7 +483,7 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 		// all DDR transactions from this DDDG
 		if(ArgPack::DDR_POLICY_CANNOT_OVERLAP == args.ddrSched) {
 			// Connect imported LLVM_IR_DDRWriteResp to all root DDR transactions (LLVM_IR_DDRReadReq's and LLVM_IR_DDRWriteReq's)
-			if(writeRespImported) {
+			if(writeRespImported && burst.first == importedWriteResp) {
 				// Find for LLVM_IR_DDRReadReq and LLVM_IR_DDRWriteReq
 				for(auto &it : ddrNodesToRootLS) {
 					int opcode = microops.at(it.first);
@@ -776,9 +787,10 @@ void XilinxZCUMemoryModel::importNode(nodeExportTy &exportedNode) {
 	uint64_t offset = std::get<2>(exportedNode);
 
 	if(LLVM_IR_DDRSilentReadReq == node.opcode) {
-		readReqImported = true;
-
 		artificialNodeTy newNode = datapath->createArtificialNode(node, LLVM_IR_DDRSilentRead);
+
+		readReqImported = true;
+		//importedReadReq = newNode.ID;
 
 		std::vector<unsigned> nodes;
 		nodes.push_back(newNode.ID);
@@ -787,9 +799,10 @@ void XilinxZCUMemoryModel::importNode(nodeExportTy &exportedNode) {
 		//importedReadReq = newNode.ID;
 	}
 	else if(LLVM_IR_DDRSilentWriteReq == node.opcode) {
-		writeReqImported = true;
-
 		artificialNodeTy newNode = datapath->createArtificialNode(node, LLVM_IR_DDRSilentWrite);
+
+		writeReqImported = true;
+		importedWriteReq = newNode.ID;
 
 		std::vector<unsigned> nodes;
 		nodes.push_back(newNode.ID);
@@ -798,9 +811,10 @@ void XilinxZCUMemoryModel::importNode(nodeExportTy &exportedNode) {
 		//importedWriteReq = newNode.ID;
 	}
 	else if(LLVM_IR_DDRSilentWriteResp == node.opcode) {
-		writeRespImported = true;
-
 		artificialNodeTy newNode = datapath->createArtificialNode(node, LLVM_IR_DDRSilentWrite);
+
+		writeRespImported = true;
+		importedWriteResp = newNode.ID;
 
 		std::vector<unsigned> nodes;
 		nodes.push_back(newNode.ID);

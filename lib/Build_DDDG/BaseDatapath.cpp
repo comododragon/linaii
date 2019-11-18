@@ -163,28 +163,12 @@ const std::vector<nodeExportTy> &BaseDatapath::getExportedNodesToAfterDDDG() {
 	return memmodel->getNodesToAfterDDDG();
 }
 
-void BaseDatapath::importNodes(std::vector<nodeExportTy> *nodesToImport1, std::vector<nodeExportTy> *nodesToImport2) {
-	// nodesToImport1 can be the nodes to import for a "before DDDG" or "after DDDG"
-	// nodesToImport2 can be the nodes to import for an "after DDDG". In this case nodesToImport1 will be for a "before DDDG"
-	// nodesToImport2 is only used when the "between DDDG" is being constructed
+void BaseDatapath::importNodes(std::vector<nodeExportTy> nodesToImport) {
+	std::vector<edgeTy> edgesToAdd;
 
-	if(nodesToImport1) {
-		std::vector<edgeTy> edgesToAdd;
-
-		// Create the imported nodes
-		for(auto &it : *nodesToImport1) {
-			memmodel->importNode(it);
-		}
-	}
-
-	if(nodesToImport2) {
-		// TODO: lógica para between
-		std::vector<edgeTy> edgesToAdd;
-
-		// Create the imported nodes
-		for(auto &it : *nodesToImport2) {
-			memmodel->importNode(it);
-		}
+	// Create the imported nodes
+	for(auto &it : nodesToImport) {
+		memmodel->importNode(it);
 	}
 
 	refreshDDDG();
@@ -541,8 +525,7 @@ uint64_t BaseDatapath::fpgaEstimation() {
 	// TODO ARRUMAR
 	// TODO ARRUMAR
 	// TODO ARRUMAR
-	//std::tuple<std::string, uint64_t> resIIMem = calculateResIIMem();
-	std::tuple<std::string, uint64_t> resIIMem = std::make_tuple("none", 1);
+	std::tuple<std::string, uint64_t> resIIMem = calculateResIIMem();
 
 	VERBOSE_PRINT(errs() << "\tGetting hardware-constrained II\n");
 	std::tuple<std::string, uint64_t> resIIOp = profile->calculateResIIOp();

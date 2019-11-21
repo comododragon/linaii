@@ -75,10 +75,23 @@ const std::string helpMessage =
 	"                   --show-pre-dddg    : dump DDDG before optimisation\n"
 	"                   --show-post-dddg   : dump DDDG after optimisation\n"
 	"                   --show-scheduling  : dump constrained-scheduling\n"
+	"\n"
+	"Analysis enable/disable flags:\n"
 	"                   --f-npla           : enable non-perfect loop analysis\n"
 	"                   --fno-tcs          : disable timing-constrained scheduling\n"
 	"                   --fno-mma          : disable memory model analysis\n"
+	"\n"
+	"Memory model tuning flags:\n"
 	"                   --fno-mmaburst     : disable memory model iteration burst analysis\n"
+	"                                        option ignored if \"--fno-mma\" is active\n"
+	"                   --f-burstmix       : if enabled, burst transfers can mix variables\n"
+	"                                        option ignored if \"--fno-mma\" is active\n"
+	"                                        or if global parameter \"ddrbanking\" is enabled\n"
+	"                   --fno-burstpack    : disable burst packing, i.e. burst transactions will\n"
+	"                                        not be packed together for better use of the DDR\n"
+	"                                        data bus\n"
+	"\n"
+	"Lin-Analyzer flags:\n"
 	"                   --fno-sb           : disable store-buffer optimisation\n"
 	"                   --f-slr            : enable shared-load-removal optimisation\n"
 	"                   --fno-slr          : disable shared-load-removal optimisation. If\n"
@@ -211,6 +224,8 @@ void parseInputArguments(int argc, char **argv) {
 	args.fNoTCS = false;
 	args.fNoMMA = false;
 	args.fNoMMABurst = false;
+	args.fBurstMix = false;
+	args.fNoBurstPack = false;
 	args.fSBOpt = true;
 	args.fSLROpt = false;
 	args.fNoSLROpt = false;
@@ -252,17 +267,19 @@ void parseInputArguments(int argc, char **argv) {
 			{"f-npla", no_argument, 0, 0xF06},
 			{"fno-tcs", no_argument, 0, 0xF07},
 			{"fno-mma", no_argument, 0, 0xF08},
-			{"fno-mmaburst", no_argument, 0, 0xF08},
-			{"fno-sb", no_argument, 0, 0xF0A},
-			{"f-slr", no_argument, 0, 0xF0B},
-			{"fno-slr", no_argument, 0, 0xF0C},
-			{"fno-rsr", no_argument, 0, 0xF0D},
-			{"f-thr-float", no_argument, 0, 0xF0E},
-			{"f-thr-int", no_argument, 0, 0xF0F},
-			{"f-md", no_argument, 0, 0xF10},
-			{"fno-ft", no_argument, 0, 0xF11},
-			{"f-es", no_argument, 0, 0xF12},
-			{"f-rwrwm", no_argument, 0, 0xF13},
+			{"fno-mmaburst", no_argument, 0, 0xF09},
+			{"f-burstmix", no_argument, 0, 0xF0A},
+			{"fno-burstpack", no_argument, 0, 0xF0B},
+			{"fno-sb", no_argument, 0, 0xF0C},
+			{"f-slr", no_argument, 0, 0xF0D},
+			{"fno-slr", no_argument, 0, 0xF0E},
+			{"fno-rsr", no_argument, 0, 0xF0F},
+			{"f-thr-float", no_argument, 0, 0xF10},
+			{"f-thr-int", no_argument, 0, 0xF11},
+			{"f-md", no_argument, 0, 0xF12},
+			{"fno-ft", no_argument, 0, 0xF13},
+			{"f-es", no_argument, 0, 0xF14},
+			{"f-rwrwm", no_argument, 0, 0xF15},
 			{0, 0, 0, 0}
 		};
 		int optionIndex = 0;
@@ -376,33 +393,39 @@ void parseInputArguments(int argc, char **argv) {
 				args.fNoMMABurst = true;
 				break;
 			case 0xF0A:
-				args.fSBOpt = false;
+				args.fBurstMix = true;
 				break;
 			case 0xF0B:
-				args.fSLROpt = true;
+				args.fNoBurstPack = true;
 				break;
 			case 0xF0C:
-				args.fNoSLROpt = true;
+				args.fSBOpt = false;
 				break;
 			case 0xF0D:
-				args.fRSROpt = false;
+				args.fSLROpt = true;
 				break;
 			case 0xF0E:
-				args.fTHRFloatOpt = true;
+				args.fNoSLROpt = true;
 				break;
 			case 0xF0F:
-				args.fTHRIntOpt = true;
+				args.fRSROpt = false;
 				break;
 			case 0xF10:
-				args.fMemDisambuigOpt = true;
+				args.fTHRFloatOpt = true;
 				break;
 			case 0xF11:
-				args.fNoFPUThresOpt = true;
+				args.fTHRIntOpt = true;
 				break;
 			case 0xF12:
-				args.fExtraScalar = true;
+				args.fMemDisambuigOpt = true;
 				break;
 			case 0xF13:
+				args.fNoFPUThresOpt = true;
+				break;
+			case 0xF14:
+				args.fExtraScalar = true;
+				break;
+			case 0xF15:
 				args.fRWRWMem = true;
 				break;
 		}
@@ -506,9 +529,15 @@ void parseInputArguments(int argc, char **argv) {
 		for(unsigned int i = 1; i < args.targetLoops.size(); i++)
 			errs() << ", " << args.targetLoops[i];
 		errs() << "\n";
-		errs() << "Memory model analysis for offchip transactions? " << (args.fNoMMA? "(no)" : "(yes)") << "\n";
-		if(!(args.fNoMMA) && args.fNoMMABurst)
-			errs() << "Memory model iteration burst analysis is disabled!\n";
+		errs() << "Memory model analysis for offchip transactions: " << (args.fNoMMA? "disabled" : "enabled") << "\n";
+		if(!(args.fNoMMA)) {
+			if(args.fNoMMABurst)
+				errs() << "Memory model iteration burst analysis is disabled!\n";
+			if(args.fBurstMix)
+				errs() << "Burst mix is active: burst transaction boundaries may contain more than one array!\n";
+			if(args.fNoBurstPack)
+				errs() << "Burst packing is disabled: burst transactions will not be packed together to maximise data bus usage!\n";
+		}
 		errs() << "DDR scheduling policy: ";
 		switch(args.ddrSched) {
 			case ArgPack::DDR_POLICY_CANNOT_OVERLAP:

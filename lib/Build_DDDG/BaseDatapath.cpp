@@ -155,15 +155,15 @@ Pack &BaseDatapath::getPack() {
 	return P;
 }
 
-const std::vector<nodeExportTy> &BaseDatapath::getExportedNodesToBeforeDDDG() {
+const std::vector<MemoryModel::nodeExportTy> &BaseDatapath::getExportedNodesToBeforeDDDG() {
 	return memmodel->getNodesToBeforeDDDG();
 }
 
-const std::vector<nodeExportTy> &BaseDatapath::getExportedNodesToAfterDDDG() {
+const std::vector<MemoryModel::nodeExportTy> &BaseDatapath::getExportedNodesToAfterDDDG() {
 	return memmodel->getNodesToAfterDDDG();
 }
 
-void BaseDatapath::importNodes(std::vector<nodeExportTy> nodesToImport) {
+void BaseDatapath::importNodes(std::vector<MemoryModel::nodeExportTy> nodesToImport) {
 	std::vector<edgeTy> edgesToAdd;
 
 	// Create the imported nodes
@@ -1636,7 +1636,7 @@ uint64_t BaseDatapath::getLoopTotalLatency(uint64_t maxII) {
 			// We don't use profile->getLatency() here because the opcode might be silent
 			// and here we want the non-silent case. We could call getNonSilentOpcode(),
 			// but since we already have this calculated, why not use it?
-			unsigned latency = std::get<0>(it).nonSilentLatency;
+			unsigned latency = it.node.nonSilentLatency;
 			if(latency >= extraEnter)
 				extraEnter = latency;
 
@@ -1645,7 +1645,7 @@ uint64_t BaseDatapath::getLoopTotalLatency(uint64_t maxII) {
 		// If there are out-burst nodes to allocate after DDDG, we add on the extra cycles
 		for(auto &it : memmodel->getNodesToAfterDDDG()) {
 			// Look explanation on the previous loop
-			unsigned latency = std::get<0>(it).nonSilentLatency;
+			unsigned latency = it.node.nonSilentLatency;
 			if(latency >= extraExit)
 				extraExit = latency;
 

@@ -136,19 +136,19 @@ typedef struct {
 
 class ConfigurationManager {
 public:
-	typedef struct {
+	struct pipeliningCfgTy {
 		std::string funcName;
 		unsigned loopNo;
 		unsigned loopLevel;
-	} pipeliningCfgTy;
-	typedef struct {
+	};
+	struct unrollingCfgTy {
 		std::string funcName;
 		unsigned loopNo;
 		unsigned loopLevel;
 		int lineNo;
 		uint64_t unrollFactor;
-	} unrollingCfgTy;
-	typedef struct {
+	};
+	struct partitionCfgTy {
 		enum {
 			PARTITION_TYPE_BLOCK,
 			PARTITION_TYPE_CYCLIC,
@@ -159,9 +159,9 @@ public:
 		uint64_t size;
 		size_t wordSize;
 		uint64_t pFactor;
-	} partitionCfgTy;
+	};
 	typedef std::unordered_map<std::string, partitionCfgTy> partitionCfgMapTy;
-	typedef struct {
+	struct arrayInfoCfgTy {
 		enum {
 			ARRAY_TYPE_ONCHIP,
 			ARRAY_TYPE_OFFCHIP
@@ -169,8 +169,29 @@ public:
 		uint64_t totalSize;
 		size_t wordSize;
 		unsigned type;
-	} arrayInfoCfgTy;
+	};
 	typedef std::map<std::string, arrayInfoCfgTy> arrayInfoCfgMapTy;
+
+	struct globalCfgTy {
+		enum {
+			GLOBAL_DDRBANKING
+		};
+		enum {
+			GLOBAL_TYPE_STRING,
+			GLOBAL_TYPE_INT,
+			GLOBAL_TYPE_FLOAT,
+			GLOBAL_TYPE_BOOL
+		};
+		// XXX: You can find the definitions at lib/Aux/globalCfgParams.cpp
+		static const std::unordered_map<unsigned, unsigned> globalCfgTypeMap;
+		static const std::unordered_map<std::string, unsigned> globalCfgRenamerMap;
+
+		std::string asString;
+		int64_t asInt;
+		float asFloat;
+		bool asBool;
+	};
+	typedef std::map<unsigned, globalCfgTy> globalCfgMapTy;
 
 private:
 	std::string kernelName;
@@ -184,11 +205,16 @@ private:
 	partitionCfgMapTy completePartitionCfgMap;
 	arrayInfoCfgMapTy arrayInfoCfgMap;
 
+	globalCfgMapTy globalCfgMap;
+
 	void appendToPipeliningCfg(std::string funcName, unsigned loopNo, unsigned loopLevel);
 	void appendToUnrollingCfg(std::string funcName, unsigned loopNo, unsigned loopLevel, int lineNo, uint64_t unrollFactor);
 	void appendToPartitionCfg(unsigned type, std::string baseAddr, uint64_t size, size_t wordSize, uint64_t pFactor);
 	void appendToCompletePartitionCfg(std::string baseAddr, uint64_t size);
 	void appendToArrayInfoCfg(std::string arrayName, uint64_t totalSize, size_t wordSize, unsigned type = arrayInfoCfgTy::ARRAY_TYPE_ONCHIP);
+
+	template <class T>
+	void appendToGlobalCfg(unsigned name, T value);
 
 public:
 	ConfigurationManager(std::string kernelName);
@@ -206,6 +232,9 @@ public:
 	const partitionCfgMapTy &getPartitionCfgMap() const { return partitionCfgMap; }
 	const partitionCfgMapTy &getCompletePartitionCfgMap() const { return completePartitionCfgMap; }
 	const arrayInfoCfgMapTy &getArrayInfoCfgMap() const { return arrayInfoCfgMap; }
+
+	template <class T>
+	T getGlobalCfg(unsigned name);
 };
 
 class LimitedQueue {

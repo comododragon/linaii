@@ -139,12 +139,12 @@ void Multipath::_Multipath() {
 	uint64_t extraEnter = 0;
 	uint64_t extraExit = 0;
 	for(auto &it : nodesToBeforeDDDG) {
-		unsigned latency = std::get<0>(it).nonSilentLatency;
+		unsigned latency = it.node.nonSilentLatency;
 		if(latency >= extraEnter)
 			extraEnter = latency;
 	}
 	for(auto &it : nodesToAfterDDDG) {
-		unsigned latency = std::get<0>(it).nonSilentLatency;
+		unsigned latency = it.node.nonSilentLatency;
 		if(latency >= extraExit)
 			extraExit = latency;
 	}
@@ -234,8 +234,8 @@ void Multipath::recursiveLookup(unsigned currLoopLevel, unsigned finalLoopLevel)
 		latencies.push_back(std::make_tuple(finalLoopLevel, BaseDatapath::NORMAL_LOOP, DD.getRCIL(), DD.getMaxII()));
 		P.merge(DD.getPack());
 		// If there are out-bursts, save them as they will be useful later
-		nodesToBeforeDDDG = std::vector<nodeExportTy>(DD.getExportedNodesToBeforeDDDG());
-		nodesToAfterDDDG = std::vector<nodeExportTy>(DD.getExportedNodesToAfterDDDG());
+		nodesToBeforeDDDG = std::vector<MemoryModel::nodeExportTy>(DD.getExportedNodesToBeforeDDDG());
+		nodesToAfterDDDG = std::vector<MemoryModel::nodeExportTy>(DD.getExportedNodesToAfterDDDG());
 
 		return;
 	}
@@ -280,7 +280,7 @@ void Multipath::recursiveLookup(unsigned currLoopLevel, unsigned finalLoopLevel)
 
 			// Unroll detected. Since the code is statically replicated, we also calculate the inter-iteration scheduling to improve acurracy
 			if(targetUnrollFactor > 1) {
-				std::vector<nodeExportTy> nodesToImport;
+				std::vector<MemoryModel::nodeExportTy> nodesToImport;
 				nodesToImport.insert(nodesToImport.end(), nodesToBeforeDDDG.begin(), nodesToBeforeDDDG.end());
 				nodesToImport.insert(nodesToImport.end(), nodesToAfterDDDG.begin(), nodesToAfterDDDG.end());
 
@@ -293,9 +293,9 @@ void Multipath::recursiveLookup(unsigned currLoopLevel, unsigned finalLoopLevel)
 			// TODO: I'm just adding the detected out-bursts to the vectors, without properly checking
 			// overlappingness. Maybe we should think better about that
 			// If there are out-bursts, save them as they will be useful later
-			nodesToBeforeDDDG = std::vector<nodeExportTy>(DD.getExportedNodesToBeforeDDDG());
+			nodesToBeforeDDDG = std::vector<MemoryModel::nodeExportTy>(DD.getExportedNodesToBeforeDDDG());
 			nodesToBeforeDDDG.insert(nodesToBeforeDDDG.end(), DD2.getExportedNodesToBeforeDDDG().begin(), DD2.getExportedNodesToBeforeDDDG().end());
-			nodesToAfterDDDG = std::vector<nodeExportTy>(DD2.getExportedNodesToAfterDDDG());
+			nodesToAfterDDDG = std::vector<MemoryModel::nodeExportTy>(DD2.getExportedNodesToAfterDDDG());
 			nodesToAfterDDDG.insert(nodesToAfterDDDG.end(), DD.getExportedNodesToAfterDDDG().begin(), DD.getExportedNodesToAfterDDDG().end());
 
 			VERBOSE_PRINT(errs() << "[][][][multipath][" << std::to_string(currLoopLevel) << "] Finished\n");

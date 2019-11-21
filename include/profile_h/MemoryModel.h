@@ -5,8 +5,6 @@
 #include "profile_h/boostincls.h"
 #include "profile_h/DDDGBuilder.h"
 
-typedef std::tuple<artificialNodeTy, uint64_t, uint64_t> nodeExportTy;
-
 class BaseDatapath;
 
 class MemoryModel {
@@ -21,7 +19,48 @@ protected:
 	ConfigurationManager &CM;
 	ParsedTraceContainer &PC;
 
+	bool ddrBanking;
+
 public:
+	struct nodeExportTy {
+		artificialNodeTy node;
+		std::string arrayName;
+		uint64_t baseAddress;
+		uint64_t offset;
+#ifdef VAR_WSIZE
+		uint64_t wordSize;
+#endif
+
+		nodeExportTy() { }
+#ifdef VAR_WSIZE
+		nodeExportTy(artificialNodeTy node, std::string arrayName, uint64_t baseAddress, uint64_t offset, uint64_t wordSize) :
+			node(node), arrayName(arrayName), baseAddress(baseAddress), offset(offset), wordSize(wordSize) { }
+#else
+		nodeExportTy(artificialNodeTy node, std::string arrayName, uint64_t baseAddress, uint64_t offset) :
+			node(node), arrayName(arrayName), baseAddress(baseAddress), offset(offset) { }
+#endif
+	};
+
+	struct burstInfoTy {
+		uint64_t baseAddress;
+		// burst size - 1
+		uint64_t offset;
+#ifdef VAR_WSIZE
+		// in bytes
+		uint64_t wordSize;
+#endif
+		std::vector<unsigned> participants;
+
+		burstInfoTy() { }
+#ifdef VAR_WSIZE
+		burstInfoTy(uint64_t baseAddress, uint64_t offset, uint64_t wordSize, std::vector<unsigned> participants) :
+			baseAddress(baseAddress), offset(offset), wordSize(wordSize), participants(participants) { }
+#else
+		burstInfoTy(uint64_t baseAddress, uint64_t offset, std::vector<unsigned> participants) :
+			baseAddress(baseAddress), offset(offset), participants(participants) { }
+#endif
+	};
+
 	MemoryModel(BaseDatapath *datapath);
 	virtual ~MemoryModel() { }
 	static MemoryModel *createInstance(BaseDatapath *datapath);
@@ -38,39 +77,50 @@ public:
 };
 
 class XilinxZCUMemoryModel : public MemoryModel {
-	std::unordered_map<unsigned, uint64_t> loadNodes;
-	std::unordered_map<unsigned, uint64_t> storeNodes;
-	std::unordered_map<unsigned, std::tuple<uint64_t, uint64_t, std::vector<unsigned>>> burstedLoads;
-	std::unordered_map<unsigned, std::tuple<uint64_t, uint64_t, std::vector<unsigned>>> burstedStores;
+	std::unordered_map<unsigned, std::pair<std::string, uint64_t>> loadNodes;
+	std::unordered_map<unsigned, std::pair<std::string, uint64_t>> storeNodes;
+	std::unordered_map<unsigned, burstInfoTy> burstedLoads;
+	std::unordered_map<unsigned, burstInfoTy> burstedStores;
 	std::vector<nodeExportTy> nodesToBeforeDDDG;
 	std::vector<nodeExportTy> nodesToAfterDDDG;
 	bool loadOutBurstFound, storeOutBurstFound;
 	// This map relates DDR nodes (e.g. ReadReq, WriteReq, WriteResp) to the node ID used in burstedLoad/burstedStores
 	std::unordered_map<unsigned, unsigned> ddrNodesToRootLS;
-	bool readActive, writeActive;
-	std::set<unsigned> activeReads;
-	std::set<unsigned> activeWrites;
+	std::unordered_map<std::string, bool> readActive, writeActive;
+	std::unordered_map<std::string, std::set<unsigned>> activeReads;
+	std::unordered_map<std::string, std::set<unsigned>> activeWrites;
 	//unsigned activeWrite;
 	//unsigned completedTransactions;
 	bool readReqImported, writeReqImported, writeRespImported;
 	unsigned importedWriteReq, importedWriteResp;
-	std::unordered_map<unsigned, std::tuple<uint64_t, uint64_t, std::vector<unsigned>>> importedLoads;
-	std::unordered_map<unsigned, std::tuple<uint64_t, uint64_t, std::vector<unsigned>>> importedStores;
+	std::unordered_map<unsigned, burstInfoTy> importedLoads;
+	std::unordered_map<unsigned, burstInfoTy> importedStores;
+	std::unordered_map<unsigned, std::pair<std::string, uint64_t>> genFromImpLoadNodes;
+	std::unordered_map<unsigned, std::pair<std::string, uint64_t>> genFromImpStoreNodes;
 	//bool allUnimportedComplete, importedWriteRespComplete;
 
 	void findInBursts(
-		std::unordered_map<unsigned, uint64_t> &foundNodes,
+		std::unordered_map<unsigned, std::pair<std::string, uint64_t>> &foundNodes,
 		std::vector<unsigned> &behavedNodes,
-		std::unordered_map<unsigned, std::tuple<uint64_t, uint64_t, std::vector<unsigned>>> &burstedNodes,
+		std::unordered_map<unsigned, burstInfoTy> &burstedNodes,
 		std::function<bool(unsigned, unsigned)> comparator
 	);
 	bool findOutBursts(
-		std::unordered_map<unsigned, std::tuple<uint64_t, uint64_t, std::vector<unsigned>>> &burstedNodes,
+		std::unordered_map<unsigned, burstInfoTy> &burstedNodes,
 		std::string &wholeLoopName,
 		const std::vector<std::string> &instIDList
 	);
+	void packBursts(
+		std::unordered_map<unsigned, burstInfoTy> &burstedNodes,
+		std::unordered_map<unsigned, std::pair<std::string, uint64_t>> &nodes,
+		int silentOpcode
+	);
 
 public:
+	enum {
+		DDR_DATA_BUS_WIDTH = 16
+	};
+
 	XilinxZCUMemoryModel(BaseDatapath *datapath);
 
 	void analyseAndTransform();
@@ -80,8 +130,8 @@ public:
 	bool outBurstsOverlap();
 
 	void importNode(nodeExportTy &exportedNode);
-	std::vector<nodeExportTy> &getNodesToBeforeDDDG();
-	std::vector<nodeExportTy> &getNodesToAfterDDDG();
+	std::vector<MemoryModel::nodeExportTy> &getNodesToBeforeDDDG();
+	std::vector<MemoryModel::nodeExportTy> &getNodesToAfterDDDG();
 
 // TODO TODO TODO TODO
 // TODO TODO TODO TODO

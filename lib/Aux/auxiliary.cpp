@@ -200,6 +200,42 @@ void ConfigurationManager::appendToArrayInfoCfg(std::string arrayName, uint64_t 
 	arrayInfoCfgMap.insert(std::make_pair(arrayName, elem));
 }
 
+template <>
+void ConfigurationManager::appendToGlobalCfg<std::string>(unsigned name, std::string value) {
+	assert((globalCfgTy::GLOBAL_TYPE_STRING == globalCfgTy::globalCfgTypeMap.at(name)) && "Wrong type (string) for provided global parameter");
+
+	globalCfgTy elem;
+	elem.asString = value;
+	globalCfgMap.insert(std::make_pair(name, elem));
+}
+
+template <>
+void ConfigurationManager::appendToGlobalCfg<int>(unsigned name, int value) {
+	assert((globalCfgTy::GLOBAL_TYPE_INT == globalCfgTy::globalCfgTypeMap.at(name)) && "Wrong type (int) for provided global parameter");
+
+	globalCfgTy elem;
+	elem.asInt = value;
+	globalCfgMap.insert(std::make_pair(name, elem));
+}
+
+template <>
+void ConfigurationManager::appendToGlobalCfg<float>(unsigned name, float value) {
+	assert((globalCfgTy::GLOBAL_TYPE_FLOAT == globalCfgTy::globalCfgTypeMap.at(name)) && "Wrong type (float) for provided global parameter");
+
+	globalCfgTy elem;
+	elem.asFloat = value;
+	globalCfgMap.insert(std::make_pair(name, elem));
+}
+
+template <>
+void ConfigurationManager::appendToGlobalCfg<bool>(unsigned name, bool value) {
+	assert((globalCfgTy::GLOBAL_TYPE_BOOL == globalCfgTy::globalCfgTypeMap.at(name)) && "Wrong type (bool) for provided global parameter");
+
+	globalCfgTy elem;
+	elem.asBool = value;
+	globalCfgMap.insert(std::make_pair(name, elem));
+}
+
 void ConfigurationManager::clear() {
 	pipeliningCfg.clear();
 	unrollingCfg.clear();
@@ -222,6 +258,7 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 	std::vector<std::string> partitionCfgStr;
 	std::vector<std::string> completePartitionCfgStr;
 	std::vector<std::string> arrayInfoCfgStr;
+	std::vector<std::string> globalCfgStr;
 
 	pipelineLoopLevelVec.clear();
 
@@ -261,6 +298,9 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 				completePartitionCfgStr.push_back(line);
 			else
 				partitionCfgStr.push_back(line);
+		}
+		else if(!type.compare("global")) {
+			globalCfgStr.push_back(line);
 		}
 	}
 
@@ -408,6 +448,42 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 		}
 	}
 
+	if(globalCfgStr.size()) {
+		for(std::string i : globalCfgStr) {
+			char buff[BUFF_STR_SZ];
+			char buff2[BUFF_STR_SZ];
+			sscanf(i.c_str(), "%*[^,],%[^,],%[^,]\n", buff, buff2);
+
+			std::string cfgName(buff);
+			std::unordered_map<std::string, unsigned>::const_iterator found = globalCfgTy::globalCfgRenamerMap.find(cfgName);
+			assert(found != globalCfgTy::globalCfgRenamerMap.end() && "Invalid global parameter supplied");
+			unsigned cfgRename = found->second;
+
+			if(globalCfgTy::GLOBAL_TYPE_STRING == globalCfgTy::globalCfgTypeMap.at(cfgRename)) {
+				std::string value(buff2);
+				appendToGlobalCfg<std::string>(cfgRename, value);
+			}
+			else if(globalCfgTy::GLOBAL_TYPE_INT == globalCfgTy::globalCfgTypeMap.at(cfgRename)) {
+				int value;
+				sscanf(buff2, "%d", &value);
+				appendToGlobalCfg<int>(cfgRename, value);
+			}
+			else if(globalCfgTy::GLOBAL_TYPE_FLOAT == globalCfgTy::globalCfgTypeMap.at(cfgRename)) {
+				float value;
+				sscanf(buff2, "%f", &value);
+				appendToGlobalCfg<float>(cfgRename, value);
+			}
+			else if(globalCfgTy::GLOBAL_TYPE_BOOL == globalCfgTy::globalCfgTypeMap.at(cfgRename)) {
+				int value;
+				sscanf(buff2, "%d", &value);
+				appendToGlobalCfg<bool>(cfgRename, (bool) value);
+			}
+			else {
+				assert(false && "Global parameter has invalid type in its definition");
+			}
+		}
+	}
+
 	// Activate load latency increase if pipelining and partitioning was enabled
 	if(!pipeliningCfgStr.size()) {
 		for(partitionCfgTy i : partitionCfg) {
@@ -425,6 +501,7 @@ void ConfigurationManager::parseToFiles() {
 	std::string arrayInfoFileName = args.outWorkDir + kernelName + "_arrayinfo.cfg";
 	std::string partitionFileName = args.outWorkDir + kernelName + "_partition.cfg";
 	std::string completePartitionFileName = args.outWorkDir + kernelName + "_completepartition.cfg";
+	std::string globalFileName = args.outWorkDir + kernelName + "_global.cfg";
 	std::ofstream outFile;
 
 	outFile.open(pipeliningFileName);
@@ -456,6 +533,61 @@ void ConfigurationManager::parseToFiles() {
 	for(auto &it : arrayInfoCfgMap)
 		outFile << "array," << it.first << "," << std::to_string(it.second.totalSize) << "," << std::to_string(it.second.wordSize) << "," << it.second.type << "\n";
 	outFile.close();
+
+	outFile.open(globalFileName);
+	for(auto &it : globalCfgMap) {
+		unsigned inName = it.first;
+		std::string humanReadableName = "unknown";
+		for(auto &it2 : globalCfgTy::globalCfgRenamerMap) {
+			if(it2.second == inName)
+				humanReadableName = it2.first;
+		}
+		assert(humanReadableName != "unknown" && "Unknown global parameter found");
+
+		if(globalCfgTy::GLOBAL_TYPE_STRING == globalCfgTy::globalCfgTypeMap.at(inName))
+			outFile << "global," << humanReadableName << "," << it.second.asString << "\n";
+		else if(globalCfgTy::GLOBAL_TYPE_INT == globalCfgTy::globalCfgTypeMap.at(inName))
+			outFile << "global," << humanReadableName << "," << std::to_string(it.second.asInt) << "\n";
+		else if(globalCfgTy::GLOBAL_TYPE_FLOAT == globalCfgTy::globalCfgTypeMap.at(inName))
+			outFile << "global," << humanReadableName << "," << std::to_string(it.second.asFloat) << "\n";
+		else if(globalCfgTy::GLOBAL_TYPE_BOOL == globalCfgTy::globalCfgTypeMap.at(inName))
+			outFile << "global," << humanReadableName << "," << std::to_string(it.second.asBool) << "\n";
+		else
+			assert(false && "Global parameter with unknown type found");
+	}
+	outFile.close();
+}
+
+template <>
+std::string ConfigurationManager::getGlobalCfg<std::string>(unsigned name) {
+	assert((globalCfgTy::GLOBAL_TYPE_STRING == globalCfgTy::globalCfgTypeMap.at(name)) && "Requested global parameter is not of type string");
+
+	globalCfgMapTy::const_iterator found = globalCfgMap.find(name);
+	return (found != globalCfgMap.end())? found->second.asString : "";
+}
+
+template <>
+int ConfigurationManager::getGlobalCfg<int>(unsigned name) {
+	assert((globalCfgTy::GLOBAL_TYPE_INT == globalCfgTy::globalCfgTypeMap.at(name)) && "Requested global parameter is not of type int");
+
+	globalCfgMapTy::const_iterator found = globalCfgMap.find(name);
+	return (found != globalCfgMap.end())? found->second.asInt : 0;
+}
+
+template <>
+float ConfigurationManager::getGlobalCfg<float>(unsigned name) {
+	assert((globalCfgTy::GLOBAL_TYPE_FLOAT == globalCfgTy::globalCfgTypeMap.at(name)) && "Requested global parameter is not of type float");
+
+	globalCfgMapTy::const_iterator found = globalCfgMap.find(name);
+	return (found != globalCfgMap.end())? found->second.asFloat : 0.0;
+}
+
+template <>
+bool ConfigurationManager::getGlobalCfg<bool>(unsigned name) {
+	assert((globalCfgTy::GLOBAL_TYPE_BOOL == globalCfgTy::globalCfgTypeMap.at(name)) && "Requested global parameter is not of type bool");
+
+	globalCfgMapTy::const_iterator found = globalCfgMap.find(name);
+	return (found != globalCfgMap.end())? found->second.asBool : false;
 }
 
 LimitedQueue::LimitedQueue(size_t size) : size(size) { }

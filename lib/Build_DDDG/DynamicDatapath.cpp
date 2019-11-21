@@ -54,7 +54,7 @@ DynamicDatapath::DynamicDatapath(
 DynamicDatapath::DynamicDatapath(
 	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
 	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
-	std::vector<nodeExportTy> &nodesToImport, unsigned datapathType
+	std::vector<MemoryModel::nodeExportTy> &nodesToImport, unsigned datapathType
 ) : BaseDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, datapathType) {
 	_DynamicDatapath(kernelName, CM, summaryFile, loopName, loopLevel, loopUnrollFactor, &nodesToImport, datapathType);
 }
@@ -63,7 +63,7 @@ DynamicDatapath::DynamicDatapath(
 void DynamicDatapath::_DynamicDatapath(
 	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
 	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
-	std::vector<nodeExportTy> *nodesToImport, unsigned datapathType
+	std::vector<MemoryModel::nodeExportTy> *nodesToImport, unsigned datapathType
 ) {
 	VERBOSE_PRINT(errs() << "\tBuild initial DDDG\n");
 

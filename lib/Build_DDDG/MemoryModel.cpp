@@ -189,20 +189,23 @@ void XilinxZCUMemoryModel::packBursts(
 ) {
 	// XXX: Should we also remove the edges from the silenced nodes (i.e. getelementptr usw?)
 
-	int busBudget = DDR_DATA_BUS_WIDTH;
+	int busBudget = 0;
 	uint64_t lastVisitedBaseAddress;
 
 	for(auto &burst : burstedNodes) {
+		std::vector<unsigned> participants = burst.second.participants;
+		unsigned participantsSz = participants.size();
+
 		// Iterate through the bursted nodes, pack until the bus budget is zero'd
-		for(auto &it : burst.second.participants) {
+		for(unsigned int i = 0; i < participantsSz; i++) {
+			unsigned participant = participants[i];
+
 			// Remember that bursted nodes may include repeated nodes (that are treated as redundant transactions)
 			// if we face one of those, we don't change the budget, but we silence the node
-			// (and if the budget was never spent, there is no possibility for this to happen)
-			if((busBudget != DDR_DATA_BUS_WIDTH) && lastVisitedBaseAddress == nodes.at(it).second) {
-				microops.at(it) = silentOpcode;
+			if(i && lastVisitedBaseAddress == nodes.at(participant).second) {
+				microops.at(participant) = silentOpcode;
 			}
 			else {
-				// Deduce budget
 				busBudget -= 4;
 
 				// If bus budget is over, we start a new read transaction and reset
@@ -210,10 +213,10 @@ void XilinxZCUMemoryModel::packBursts(
 					busBudget = DDR_DATA_BUS_WIDTH - 4;
 				// Else, we "silence" this node
 				else
-					microops.at(it) = silentOpcode;
+					microops.at(participant) = silentOpcode;
 			}
 
-			lastVisitedBaseAddress = nodes.at(it).second;
+			lastVisitedBaseAddress = nodes.at(participant).second;
 		}
 	}
 }

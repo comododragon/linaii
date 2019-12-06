@@ -1,3 +1,5 @@
+***NOTE: This is a development branch of Lina and should not be used! For the working version, please refer to https://github.com/comododragon/lina***
+
 # Lina
 
 (yet another) High Level Analysis Tool for FPGA Accelerators

@@ -511,12 +511,12 @@ unsigned XilinxHardwareProfile::getLatency(unsigned opcode) {
 		case LLVM_IR_Or:
 		case LLVM_IR_Xor:
 		case LLVM_IR_ICmp:
-			return 1;
+			return 0;
 		case LLVM_IR_Br:
 			return 0;
 		case LLVM_IR_IndexAdd:
 		case LLVM_IR_IndexSub:
-			return 1;
+			return 0;
 		case LLVM_IR_Add:
 			return LATENCY_ADD;
 		case LLVM_IR_Sub: 
@@ -1127,13 +1127,13 @@ unsigned XilinxZCUHardwareProfile::getLatency(unsigned opcode) {
 		case LLVM_IR_Or:
 		case LLVM_IR_Xor:
 		case LLVM_IR_ICmp:
-			return 1;
+			return 0;
 		case LLVM_IR_Br:
 			return 0;
 		case LLVM_IR_IndexAdd:
-			return 1;
+			return 0;
 		case LLVM_IR_IndexSub:
-			return 1;
+			return 0;
 		case LLVM_IR_Add:
 			return effectiveLatencies[LATENCY_ADD].first;
 		case LLVM_IR_Sub: 

@@ -17,14 +17,7 @@ const std::string assignLoadStoreIDMDKindName = "lia.loadstoreid";
 const std::string extractLoopInfoMDKindName = "lia.kernelloopinfo";
 
 bool isFunctionOfInterest(std::string key, bool isMangled) {
-	std::vector<std::string>::iterator it;
-	if(isMangled) {
-		std::map<std::string, std::string>::iterator found = mangledName2FunctionNameMap.find(key);
-		it = std::find(args.kernelNames.begin(), args.kernelNames.end(), (mangledName2FunctionNameMap.end() == found)? key : found->second);
-	}
-	else {
-		it = std::find(args.kernelNames.begin(), args.kernelNames.end(), key);
-	}
+	std::vector<std::string>::iterator it = std::find(args.kernelNames.begin(), args.kernelNames.end(), isMangled? demangleFunctionName(key) : key);
 	return (it != args.kernelNames.end());
 }
 
@@ -100,6 +93,26 @@ std::tuple<std::string, unsigned, unsigned> parseWholeLoopName(std::string whole
 	unsigned loopLevel = std::stoi(rest.substr(tagPos + depthTagSize));
 
 	return std::make_tuple(funcName, loopNo, loopLevel);
+}
+
+std::string mangleFunctionName(std::string functionName) {
+	std::map<std::string, std::string>::iterator mangledFound = functionName2MangledNameMap.find(functionName);
+	return (functionName2MangledNameMap.end() == mangledFound)? functionName : mangledFound->second;
+}
+
+std::string demangleFunctionName(std::string mangledName) {
+	std::map<std::string, std::string>::iterator functionFound = mangledName2FunctionNameMap.find(mangledName);
+	return (mangledName2FunctionNameMap.end() == functionFound)? mangledName : functionFound->second;
+}
+
+std::string mangleArrayName(std::string arrayName) {
+	std::map<std::string, std::string>::iterator mangledFound = arrayName2MangledNameMap.find(arrayName);
+	return (arrayName2MangledNameMap.end() == mangledFound)? arrayName : mangledFound->second;
+}
+
+std::string demangleArrayName(std::string mangledName) {
+	std::map<std::string, std::string>::iterator arrayFound = mangledName2ArrayNameMap.find(mangledName);
+	return (mangledName2ArrayNameMap.end() == arrayFound)? mangledName : arrayFound->second;
 }
 
 std::string generateInstID(unsigned opcode, std::vector<std::string> instIDList) {
@@ -315,8 +328,7 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 			sscanf(i.c_str(), "%*[^,],%[^,],%u,%u\n", buff, &loopNo, &loopLevel);
 
 			std::string funcName(buff);
-			std::map<std::string, std::string>::iterator mangledFound = functionName2MangledNameMap.find(funcName);
-			std::string mangledFuncName = (functionName2MangledNameMap.end() == mangledFound)? funcName : mangledFound->second;
+			std::string mangledFuncName = mangleFunctionName(funcName);
 			std::string loopName = constructLoopName(mangledFuncName, loopNo);
 
 			appendToPipeliningCfg(mangledFuncName, loopNo, loopLevel);
@@ -363,8 +375,7 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 			sscanf(i.c_str(), "%*[^,],%[^,],%u,%u,%d,%lu\n", buff, &loopNo, &loopLevel, &lineNo, &unrollFactor);
 
 			std::string funcName(buff);
-			std::map<std::string, std::string>::iterator mangledFound = functionName2MangledNameMap.find(funcName);
-			std::string mangledFuncName = (functionName2MangledNameMap.end() == mangledFound)? funcName : mangledFound->second;
+			std::string mangledFuncName = mangleFunctionName(funcName);
 			std::string wholeLoopName = constructLoopName(mangledFuncName, loopNo, loopLevel);
 			unrollWholeLoopNameStr.push_back(wholeLoopName);
 
@@ -414,7 +425,7 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 						type = arrayInfoCfgTy::ARRAY_TYPE_OFFCHIP;
 				}
 			}
-			appendToArrayInfoCfg(arrayName2MangledNameMap.at(arrayName), totalSize, wordSize, type);
+			appendToArrayInfoCfg(mangleArrayName(arrayName), totalSize, wordSize, type);
 		}
 	}
 	else {
@@ -433,7 +444,7 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 			std::string typeStr(buff);
 			unsigned type = (typeStr.compare("cyclic"))? partitionCfgTy::PARTITION_TYPE_BLOCK : partitionCfgTy::PARTITION_TYPE_CYCLIC;
 			std::string baseAddr(buff2);
-			appendToPartitionCfg(type, arrayName2MangledNameMap.at(baseAddr), size, wordSize, pFactor);
+			appendToPartitionCfg(type, mangleArrayName(baseAddr), size, wordSize, pFactor);
 		}
 	}
 
@@ -444,7 +455,7 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 			sscanf(i.c_str(), "%*[^,],%*[^,],%[^,],%lu\n", buff, &size);
 
 			std::string baseAddr(buff);
-			appendToCompletePartitionCfg(arrayName2MangledNameMap.at(baseAddr), size);
+			appendToCompletePartitionCfg(mangleArrayName(baseAddr), size);
 		}
 	}
 

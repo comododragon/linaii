@@ -35,7 +35,6 @@ extern std::ofstream debugFile;
 // If enabled, sanity checks are performed in the multipath vector
 #define CHECK_MULTIPATH_STATE
 
-#include <cxxabi.h>
 #include <fstream>
 #include <list>
 #include <map>
@@ -60,7 +59,7 @@ extern std::ofstream debugFile;
 
 // XXX: Some codes (mainly codes that does not use FP units and has too many simple OPs) can explode the amount of paths to be explored.
 // To avoid this problem, we set an amount for maximum simultaneous paths.
-#define MAX_SIMULTANEOUS_TIMING_PATHS 500
+#define MAX_SIMULTANEOUS_TIMING_PATHS 10000
 
 extern ArgPack args;
 #ifdef PROGRESSIVE_TRACE_CURSOR
@@ -80,6 +79,10 @@ std::string constructLoopName(std::string funcName, unsigned loopNo, unsigned de
 std::string appendDepthToLoopName(std::string loopName, unsigned depth);
 std::tuple<std::string, unsigned> parseLoopName(std::string loopName);
 std::tuple<std::string, unsigned, unsigned> parseWholeLoopName(std::string wholeLoopName);
+std::string mangleFunctionName(std::string functionName);
+std::string demangleFunctionName(std::string mangledName);
+std::string mangleArrayName(std::string arrayName);
+std::string demangleArrayName(std::string mangledName);
 std::string generateInstID(unsigned opcode, std::vector<std::string> instIDList);
 
 unsigned nextPowerOf2(unsigned x);

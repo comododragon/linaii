@@ -486,7 +486,7 @@ bool InstrumentForDDDG::runOnModule(Module &M) {
 	bool result = false;
 	for(Module::iterator FI = M.begin(); FI != M.end(); FI++) {
 		if(isFunctionOfInterest(FI->getName())) {
-			VERBOSE_PRINT(errs() << "[instrumentForDDDG] Injecting trace code in \"" + mangledName2FunctionNameMap.at(FI->getName()) + "\"\n");
+			VERBOSE_PRINT(errs() << "[instrumentForDDDG] Injecting trace code in \"" + demangleFunctionName(FI->getName()) + "\"\n");
 			for(Function::iterator BI = FI->begin(); BI != FI->end(); BI++)
 				result += performOnBasicBlock(*BI);
 		}
@@ -811,8 +811,7 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 	VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Loop-based trace analysis started\n");
 
 	std::string traceFileName = args.workDir + FILE_DYNAMIC_TRACE;
-	std::map<std::string, std::string>::iterator found = functionName2MangledNameMap.find(args.kernelNames.at(0));
-	std::string kernelName = (functionName2MangledNameMap.end() == found)? args.kernelNames.at(0) : found->second;
+	std::string kernelName = mangleFunctionName(args.kernelNames.at(0));
 
 	VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Writing header of summary file\n");
 	openSummaryFile(kernelName); 
@@ -937,7 +936,7 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 }
 
 void InstrumentForDDDG::openSummaryFile(std::string kernelName) {
-	std::string fileName(args.outWorkDir + mangledName2FunctionNameMap.at(kernelName) + FILE_SUMMARY_SUFFIX);
+	std::string fileName(args.outWorkDir + demangleFunctionName(kernelName) + FILE_SUMMARY_SUFFIX);
 	if(summaryFile.is_open())
 		summaryFile.close();
 	summaryFile.open(fileName);
@@ -947,7 +946,7 @@ void InstrumentForDDDG::openSummaryFile(std::string kernelName) {
 	summaryFile << "================================================\n";
 	summaryFile << "Lina summary\n";
 	summaryFile << "================================================\n";
-	summaryFile << "Function name: " << mangledName2FunctionNameMap.at(kernelName) << "\n";
+	summaryFile << "Function name: " << demangleFunctionName(kernelName) << "\n";
 }
 
 void InstrumentForDDDG::closeSummaryFile() {

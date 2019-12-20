@@ -62,7 +62,7 @@ bool LoopNumber::runOnLoop(Loop *L, LPPassManager &LPM) {
 
 	if(firstRun) {
 		errs() << "========================================================\n";
-		errs() << "Counting number of top-level loops in \"" << mangledName2FunctionNameMap.at(F->getName()) << "\"\n";
+		errs() << "Counting number of top-level loops in \"" << demangleFunctionName(F->getName()) << "\"\n";
 		firstRun = false;
 	}
 

@@ -159,12 +159,12 @@ void HardwareProfile::fillPack(Pack &P) {
 	P.addElement<uint64_t>("fDiv units", fDivGetAmount());
 
 	for(auto &it : arrayGetNumOfPartitions()) {
-		P.addDescriptor("Number of partitions for array \"" + mangledName2ArrayNameMap.at(it.first) + "\"", Pack::MERGE_EQUAL, Pack::TYPE_UNSIGNED);
-		P.addElement<uint64_t>("Number of partitions for array \"" + mangledName2ArrayNameMap.at(it.first) + "\"", it.second);
+		P.addDescriptor("Number of partitions for array \"" + demangleArrayName(it.first) + "\"", Pack::MERGE_EQUAL, Pack::TYPE_UNSIGNED);
+		P.addElement<uint64_t>("Number of partitions for array \"" + demangleArrayName(it.first) + "\"", it.second);
 	}
 	for(auto &it : arrayGetEfficiency()) {
-		P.addDescriptor("Memory efficiency for array \"" + mangledName2ArrayNameMap.at(it.first) + "\"", Pack::MERGE_EQUAL, Pack::TYPE_FLOAT);
-		P.addElement<float>("Memory efficiency for array \"" + mangledName2ArrayNameMap.at(it.first) + "\"", it.second);
+		P.addDescriptor("Memory efficiency for array \"" + demangleArrayName(it.first) + "\"", Pack::MERGE_EQUAL, Pack::TYPE_FLOAT);
+		P.addElement<float>("Memory efficiency for array \"" + demangleArrayName(it.first) + "\"", it.second);
 	}
 }
 
@@ -909,8 +909,8 @@ void XilinxHardwareProfile::fillPack(Pack &P) {
 	HardwareProfile::fillPack(P);
 
 	for(auto &it : arrayGetUsedBRAM18k()) {
-		P.addDescriptor("Used BRAM18k for array \"" + mangledName2ArrayNameMap.at(it.first) + "\"", Pack::MERGE_EQUAL, Pack::TYPE_UNSIGNED);
-		P.addElement<uint64_t>("Used BRAM18k for array \"" + mangledName2ArrayNameMap.at(it.first) + "\"", it.second);
+		P.addDescriptor("Used BRAM18k for array \"" + demangleArrayName(it.first) + "\"", Pack::MERGE_EQUAL, Pack::TYPE_UNSIGNED);
+		P.addElement<uint64_t>("Used BRAM18k for array \"" + demangleArrayName(it.first) + "\"", it.second);
 	}
 }
 

@@ -46,8 +46,8 @@ mv cfe-3.5.0.src llvm/tools/clang
 rm cfe-3.5.0.src.tar.xz
 
 echo -e "\u001b[1m\u001b[92m--> Cloning LINA...\u001b[0m"
-git clone https://github.com/comododragon/lina.git
-mv lina llvm/tools/lina
+git clone https://github.com/comododragon/linaii.git
+mv linaii llvm/tools/lina
 
 echo -e "\u001b[1m\u001b[92m--> Adapting CMAKE files...\u001b[0m"
 sed -i "s/add_llvm_tool_subdirectory(opt)/add_llvm_tool_subdirectory(lina)\nadd_llvm_tool_subdirectory(opt)/g" llvm/tools/CMakeLists.txt

@@ -20,6 +20,8 @@ extern std::ofstream debugFile;
 	do {\
 		debugFile << X << std::flush;\
 	} while(false)
+#else
+#define DBG_DUMP(X)
 #endif
 
 // XXX: According to https://github.com/llvm-mirror/llvm/blob/6b547686c5410b7528212e898fe30fc7ee7a70a3/lib/Analysis/LoopPass.cpp,

@@ -501,6 +501,8 @@ void XilinxHardwareProfile::clear() {
 }
 
 unsigned XilinxHardwareProfile::getLatency(unsigned opcode) {
+	// XXX: Please check XilinxZCUHardwareProfile::getLatency() for more info about
+	// why some opcodes have latency 0 and other 1
 	switch(opcode) {
 		case LLVM_IR_Shl:
 		case LLVM_IR_LShr:
@@ -509,10 +511,12 @@ unsigned XilinxHardwareProfile::getLatency(unsigned opcode) {
 		case LLVM_IR_Or:
 		case LLVM_IR_Xor:
 		case LLVM_IR_ICmp:
+			return 1;
 		case LLVM_IR_Br:
+			return 0;
 		case LLVM_IR_IndexAdd:
 		case LLVM_IR_IndexSub:
-			return 0;
+			return 1;
 		case LLVM_IR_Add:
 			return LATENCY_ADD;
 		case LLVM_IR_Sub: 
@@ -567,8 +571,14 @@ unsigned XilinxHardwareProfile::getLatency(unsigned opcode) {
 			return LATENCY_FDIV32;
 		case LLVM_IR_FCmp:
 			return LATENCY_FCMP;
-		default: 
+		case LLVM_IR_Trunc:
+		case LLVM_IR_SExt:
+		case LLVM_IR_ZExt:
+		case LLVM_IR_GetElementPtr:
 			return 0;
+		default:
+			DBG_DUMP("Detected opcode (" << opcode << ", " << reverseOpcodeMap.at(opcode) << ") with unknown latency. Setting to default of 1\n");
+			return 1;
 	}
 }
 

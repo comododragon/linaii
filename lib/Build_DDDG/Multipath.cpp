@@ -193,6 +193,8 @@ void Multipath::_Multipath() {
 		}
 	}
 
+	dumpSummary(numCycles);
+
 	VERBOSE_PRINT(errs() << "[][][][multipath] Finished\n");
 
 #ifdef DBG_PRINT_ALL
@@ -335,6 +337,54 @@ Multipath::~Multipath() {}
 
 uint64_t Multipath::getCycles() const {
 	return numCycles;
+}
+
+void Multipath::dumpSummary(uint64_t numCycles) {
+	*summaryFile << "=======================================================================\n";
+	*summaryFile << "Non-perfect loop analysis results\n";
+
+	*summaryFile << "Total cycles: " << std::to_string(numCycles) << "\n";
+	*summaryFile << "------------------------------------------------\n";
+
+	for(auto &it : P.getStructure()) {
+		std::string name = std::get<0>(it);
+		unsigned mergeType = std::get<1>(it);
+		unsigned type = std::get<2>(it);
+
+		if(Pack::MERGE_EQUAL == mergeType) {
+			if(Pack::TYPE_UNSIGNED == type) {
+				assert("true" == P.mergeElements<uint64_t>(name) && "Merged values from datapaths differ where it should not differ");
+				*summaryFile << name << ": " << std::to_string(P.getElements<uint64_t>(name)[0]) << "\n";
+			}
+			else if(Pack::TYPE_SIGNED == type) {
+				assert("true" == P.mergeElements<int64_t>(name) && "Merged values from datapaths differ where it should not differ");
+				*summaryFile << name << ": " << std::to_string(P.getElements<int64_t>(name)[0]) << "\n";
+			}
+			else if(Pack::TYPE_FLOAT == type) {
+				assert("true" == P.mergeElements<float>(name) && "Merged values from datapaths differ where it should not differ");
+				*summaryFile << name << ": " << std::to_string(P.getElements<float>(name)[0]) << "\n";
+			}
+			else if(Pack::TYPE_STRING == type) {
+				assert("true" == P.mergeElements<std::string>(name) && "Merged values from datapaths differ where it should not differ");
+				*summaryFile << name << ": " << P.getElements<std::string>(name)[0] << "\n";
+			}
+		}
+		else {
+			if(Pack::TYPE_UNSIGNED == type) {
+				*summaryFile << name << ": " << P.mergeElements<uint64_t>(name) << "\n";
+			}
+			else if(Pack::TYPE_SIGNED == type) {
+				*summaryFile << name << ": " << P.mergeElements<int64_t>(name) << "\n";
+			}
+			else if(Pack::TYPE_FLOAT == type) {
+				*summaryFile << name << ": " << P.mergeElements<float>(name) << "\n";
+			}
+			else if(Pack::TYPE_STRING == type) {
+				std::string mergeResult = P.mergeElements<std::string>(name);
+				*summaryFile << name << ": " << (("" == mergeResult)? "none" : mergeResult) << "\n";
+			}
+		}
+	}
 }
 
 #ifdef DBG_PRINT_ALL

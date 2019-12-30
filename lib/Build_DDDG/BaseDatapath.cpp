@@ -1708,7 +1708,7 @@ void BaseDatapath::dumpSummary(
 	uint64_t numCycles, uint64_t asapII, double achievedPeriod,
 	uint64_t maxII, std::tuple<std::string, uint64_t> resIIMem, std::tuple<std::string, uint64_t> resIIOp, uint64_t recII
 ) {
-	*summaryFile << "================================================\n";
+	*summaryFile << "=======================================================================\n";
 	if(args.fNoTCS)
 		*summaryFile << "Time-constrained scheduling disabled\n";
 	*summaryFile << "Target clock: " << std::to_string(args.frequency) << " MHz\n";
@@ -1719,6 +1719,7 @@ void BaseDatapath::dumpSummary(
 	*summaryFile << "Loop name: " << loopName << "\n";
 	*summaryFile << "Loop level: " << std::to_string(loopLevel) << "\n";
 
+	bool isFullBody = false;
 	*summaryFile << "DDDG type: ";
 	switch(datapathType) {
 		case NON_PERFECT_BEFORE:
@@ -1731,20 +1732,27 @@ void BaseDatapath::dumpSummary(
 			*summaryFile << "posterior + anterior (between unrolled iterations)\n";
 			break;
 		default:
+			isFullBody = true;
 			*summaryFile << "full loop body\n";
 	}
 
 	*summaryFile << "Loop unrolling factor: " << std::to_string(loopUnrollFactor) << "\n";
 	*summaryFile << "Loop pipelining enabled? " << (enablePipelining? "yes" : "no") << "\n";
 	*summaryFile << "Total cycles: " << std::to_string(numCycles) << "\n";
-	*summaryFile << "------------------------------------------------\n";
+	if(args.fNPLA && isFullBody) {
+		*summaryFile << "NOTE: the cycle count above does not consider non-perfect loop nests!\n";
+		*summaryFile << "      If applicable (e.g. the loop is non-perfect), please see section\n";
+		*summaryFile << "      \"Non-perfect loop analysis results\" at the end of this file\n";
+		*summaryFile << "      for correct cycle count.\n";
+	}
+	*summaryFile << "-----------------------------------------------------------------------\n";
 
 	if(sharedLoadsRemoved)
 		*summaryFile << "Number of shared loads detected: " << std::to_string(sharedLoadsRemoved) << "\n";
 	if(repeatedStoresRemoved)
 		*summaryFile << "Number of repeated stores detected: " << std::to_string(repeatedStoresRemoved) << "\n";
 	if(sharedLoadsRemoved || repeatedStoresRemoved)
-		*summaryFile << "------------------------------------------------\n";
+		*summaryFile << "-----------------------------------------------------------------------\n";
 
 	*summaryFile << "Ideal iteration latency (ASAP): " << std::to_string(asapII) << "\n";
 	*summaryFile << "Constrained iteration latency: " << std::to_string(rcIL) << "\n";
@@ -1762,7 +1770,7 @@ void BaseDatapath::dumpSummary(
 		*summaryFile << "loop-carried dependency\n";
 	else
 		*summaryFile << "none\n";
-	*summaryFile << "------------------------------------------------\n";
+	*summaryFile << "-----------------------------------------------------------------------\n";
 
 	if(!(args.fNoFPUThresOpt)) {
 		*summaryFile << "Units limited by DSP usage: ";
@@ -1797,7 +1805,7 @@ void BaseDatapath::dumpSummary(
 			*summaryFile << "none";
 
 		*summaryFile << "\n";
-		*summaryFile << "------------------------------------------------\n";
+		*summaryFile << "-----------------------------------------------------------------------\n";
 	}
 
 	for(auto &it : P.getStructure()) {
@@ -1936,7 +1944,7 @@ BaseDatapath::RCScheduler::RCScheduler(
 		);
 		dumpFile.open(args.outWorkDir + appendDepthToLoopName(loopName, loopLevel) + datapathTypeStr + ".sched.rpt");
 
-		dumpFile << "================================================\n";
+		dumpFile << "=======================================================================\n";
 		dumpFile << "Lina scheduling report file\n";
 		dumpFile << "Loop name: " << loopName << "\n";
 		if(args.fNoTCS)
@@ -1945,7 +1953,7 @@ BaseDatapath::RCScheduler::RCScheduler(
 		dumpFile << "Clock uncertainty: " << std::to_string(args.uncertainty) << " %\n";
 		dumpFile << "Target clock period: " << std::to_string(1000 / args.frequency) << " ns\n";
 		dumpFile << "Effective clock period: " << std::to_string((1000 / args.frequency) - (10 * args.uncertainty / args.frequency)) << " ns\n";
-		dumpFile << "------------------------------------------------\n";
+		dumpFile << "-----------------------------------------------------------------------\n";
 	}
 }
 
@@ -2062,7 +2070,7 @@ std::pair<uint64_t, double> BaseDatapath::RCScheduler::schedule() {
 	}
 
 	if(args.showScheduling) {
-		dumpFile << "================================================\n";
+		dumpFile << "=======================================================================\n";
 		dumpFile.close();
 	}
 

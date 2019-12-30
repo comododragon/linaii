@@ -189,10 +189,9 @@ void XilinxZCUMemoryModel::packBursts(
 ) {
 	// XXX: Should we also remove the edges from the silenced nodes (i.e. getelementptr usw?)
 
-	int busBudget = 0;
-	uint64_t lastVisitedBaseAddress;
-
 	for(auto &burst : burstedNodes) {
+		int busBudget = 0;
+		uint64_t lastVisitedBaseAddress;
 		std::vector<unsigned> participants = burst.second.participants;
 		unsigned participantsSz = participants.size();
 

@@ -943,14 +943,14 @@ void InstrumentForDDDG::openSummaryFile(std::string kernelName) {
 
 	assert(summaryFile.is_open() && "Could not open summary output file");
 
-	summaryFile << "================================================\n";
+	summaryFile << "=======================================================================\n";
 	summaryFile << "Lina summary\n";
-	summaryFile << "================================================\n";
+	summaryFile << "=======================================================================\n";
 	summaryFile << "Function name: " << demangleFunctionName(kernelName) << "\n";
 }
 
 void InstrumentForDDDG::closeSummaryFile() {
-	summaryFile << "================================================\n";
+	summaryFile << "=======================================================================\n";
 	summaryFile.close();
 }
 

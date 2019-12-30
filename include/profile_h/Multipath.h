@@ -45,6 +45,8 @@ public:
 
 	uint64_t getCycles() const;
 
+	void dumpSummary(uint64_t numCycles);
+
 #ifdef DBG_PRINT_ALL
 	void printDatabase();
 #endif

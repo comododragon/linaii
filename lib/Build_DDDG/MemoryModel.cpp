@@ -146,6 +146,11 @@ bool XilinxZCUMemoryModel::findOutBursts(
 #endif
 			std::vector<unsigned> burstedNodesVec = burstedNode.participants;
 
+			// If this loop level was unrolled, the memoryTraceMap will contain entangled nodes that
+			// should not be considered (as successive loop iterations were "merged" by unroll).
+			// Therefore we adjust the loop increment accordingly
+			unsigned loopIncrement = loopName2levelUnrollVecMap.at(datapath->getTargetLoopName())[datapath->getTargetLoopLevel() - 1];
+
 			for(auto &it : burstedNodesVec) {
 				std::pair<std::string, std::string> wholeLoopNameInstNamePair = std::make_pair(wholeLoopName, instIDList[it]);
 
@@ -158,7 +163,7 @@ bool XilinxZCUMemoryModel::findOutBursts(
 				// XXX: As always, assuming 32-bit
 				uint64_t nextAddress = addresses[0] + 4 * offset;
 #endif
-				for(unsigned i = 1; i < addresses.size(); i++) {
+				for(unsigned i = loopIncrement; i < addresses.size(); i += loopIncrement) {
 					if(nextAddress != addresses[i]) {
 						outBurstFound = false;
 						break;
@@ -263,7 +268,7 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 	}
 
 	const ConfigurationManager::arrayInfoCfgMapTy arrayInfoCfgMap = CM.getArrayInfoCfgMap();
-	//const std::unordered_map<int, std::pair<int64_t, unsigned>> &memoryTraceList = PC.getMemoryTraceList();
+	const std::unordered_map<int, std::pair<int64_t, unsigned>> &memoryTraceList = PC.getMemoryTraceList();
 
 	// Change all load/stores marked as offchip to DDR read/writes (and mark their locations)
 	VertexIterator vi, viEnd;
@@ -281,14 +286,14 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 
 		if(isLoadOp(nodeMicroop)) {
 			microops.at(nodeID) = LLVM_IR_DDRRead;
-			//loadNodes[nodeID] = memoryTraceList.at(nodeID).first;
-			loadNodes[nodeID] = baseAddress.at(nodeID);
+			loadNodes[nodeID] = std::make_pair(baseAddress.at(nodeID).first, memoryTraceList.at(nodeID).first);
+			//loadNodes[nodeID] = baseAddress.at(nodeID);
 		}
 
 		if(isStoreOp(nodeMicroop)) {
 			microops.at(nodeID) = LLVM_IR_DDRWrite;
-			//storeNodes[nodeID] = memoryTraceList.at(nodeID).first;
-			storeNodes[nodeID] = baseAddress.at(nodeID);
+			storeNodes[nodeID] = std::make_pair(baseAddress.at(nodeID).first, memoryTraceList.at(nodeID).first);
+			//storeNodes[nodeID] = baseAddress.at(nodeID);
 		}
 	}
 

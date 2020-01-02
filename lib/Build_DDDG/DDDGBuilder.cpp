@@ -601,9 +601,13 @@ intervalTy DDDGBuilder::getTraceLineFromToBeforeNestedLoop(gzFile &traceFile) {
 
 	// Iterate through dynamic trace
 #ifdef PROGRESSIVE_TRACE_CURSOR
-	if(args.progressive)
+	if(args.progressive) {
 		VERBOSE_PRINT(errs() << "\t\tUsing progressive trace cursor, skipping " << std::to_string(progressiveTraceCursor) << " bytes from trace\n");
-	gzseek(traceFile, progressiveTraceCursor, SEEK_SET);
+		gzseek(traceFile, progressiveTraceCursor, SEEK_SET);
+	}
+	else {
+		gzrewind(traceFile);
+	}
 #else
 	gzrewind(traceFile);
 #endif
@@ -704,13 +708,14 @@ intervalTy DDDGBuilder::getTraceLineFromToBeforeNestedLoop(gzFile &traceFile) {
 		}
 	}
 
+	DBG_DUMP("getTraceLineFromToBeforeNestedLoop(): " << byteFrom << " " << to << "\n");
 	return std::make_tuple(byteFrom, to, instCount);
 }
 
 intervalTy DDDGBuilder::getTraceLineFromToAfterNestedLoop(gzFile &traceFile) {
 	std::string loopName = datapath->getTargetLoopName();
-	unsigned loopLevel = datapath->getTargetLoopLevel();
-	unsigned prevLoopLevel = 0, currLoopLevel = 0;
+	int loopLevel = datapath->getTargetLoopLevel();
+	int prevLoopLevel = 0, currLoopLevel = 0;
 	std::string functionName = std::get<0>(parseLoopName(loopName));
 	lpNameLevelStrPairTy lpNameLevelPair = std::make_pair(loopName, std::to_string(loopLevel));
 
@@ -736,9 +741,13 @@ intervalTy DDDGBuilder::getTraceLineFromToAfterNestedLoop(gzFile &traceFile) {
 
 	// Iterate through dynamic trace
 #ifdef PROGRESSIVE_TRACE_CURSOR
-	if(args.progressive)
+	if(args.progressive) {
 		VERBOSE_PRINT(errs() << "\t\tUsing progressive trace cursor, skipping " << std::to_string(progressiveTraceCursor) << " bytes from trace\n");
-	gzseek(traceFile, progressiveTraceCursor, SEEK_SET);
+		gzseek(traceFile, progressiveTraceCursor, SEEK_SET);
+	}
+	else {
+		gzrewind(traceFile);
+	}
 #else
 	gzrewind(traceFile);
 #endif
@@ -766,7 +775,9 @@ intervalTy DDDGBuilder::getTraceLineFromToAfterNestedLoop(gzFile &traceFile) {
 			std::string instName(buffer4);
 
 			prevLoopLevel = currLoopLevel;
-			currLoopLevel = bbFuncNamePair2lpNameLevelPairMap.at(std::make_pair(bbName, funcName)).second;
+			bbFuncNamePair2lpNameLevelPairMapTy::iterator found5 = bbFuncNamePair2lpNameLevelPairMap.find(std::make_pair(bbName, funcName));
+			// If element was not found, this instruction is out of loop (header/footer of kernel function), not interesting for us
+			currLoopLevel = (bbFuncNamePair2lpNameLevelPairMap.end() == found5)? -1 : found5->second.second;
 
 			// Mark the first line of the first iteration of this loop after the nested loop
 			if(firstTraverse) {
@@ -798,13 +809,14 @@ intervalTy DDDGBuilder::getTraceLineFromToAfterNestedLoop(gzFile &traceFile) {
 		}
 	}
 
+	DBG_DUMP("getTraceLineFromToAfterNestedLoop(): " << byteFrom << " " << to << "\n");
 	return std::make_tuple(byteFrom, to, instCount);
 }
 
 intervalTy DDDGBuilder::getTraceLineFromToBetweenAfterAndBefore(gzFile &traceFile) {
 	std::string loopName = datapath->getTargetLoopName();
-	unsigned loopLevel = datapath->getTargetLoopLevel();
-	unsigned prevLoopLevel = 0, currLoopLevel = 0;
+	int loopLevel = datapath->getTargetLoopLevel();
+	int prevLoopLevel = 0, currLoopLevel = 0;
 	std::string functionName = std::get<0>(parseLoopName(loopName));
 	lpNameLevelStrPairTy lpNameLevelPair = std::make_pair(loopName, std::to_string(loopLevel));
 
@@ -819,9 +831,13 @@ intervalTy DDDGBuilder::getTraceLineFromToBetweenAfterAndBefore(gzFile &traceFil
 
 	// Iterate through dynamic trace
 #ifdef PROGRESSIVE_TRACE_CURSOR
-	if(args.progressive)
+	if(args.progressive) {
 		VERBOSE_PRINT(errs() << "\t\tUsing progressive trace cursor, skipping " << std::to_string(progressiveTraceCursor) << " bytes from trace\n");
-	gzseek(traceFile, progressiveTraceCursor, SEEK_SET);
+		gzseek(traceFile, progressiveTraceCursor, SEEK_SET);
+	}
+	else {
+		gzrewind(traceFile);
+	}
 #else
 	gzrewind(traceFile);
 #endif
@@ -849,7 +865,9 @@ intervalTy DDDGBuilder::getTraceLineFromToBetweenAfterAndBefore(gzFile &traceFil
 			std::string instName(buffer4);
 
 			prevLoopLevel = currLoopLevel;
-			currLoopLevel = bbFuncNamePair2lpNameLevelPairMap.at(std::make_pair(bbName, funcName)).second;
+			bbFuncNamePair2lpNameLevelPairMapTy::iterator found = bbFuncNamePair2lpNameLevelPairMap.find(std::make_pair(bbName, funcName));
+			// If element was not found, this instruction is out of loop (header/footer of kernel function), not interesting for us
+			currLoopLevel = (bbFuncNamePair2lpNameLevelPairMap.end() == found)? -1 : found->second.second;
 
 			// Mark the first line of the first iteration of this loop after the nested loop
 			if(firstTraverse) {
@@ -874,6 +892,7 @@ intervalTy DDDGBuilder::getTraceLineFromToBetweenAfterAndBefore(gzFile &traceFil
 		}
 	}
 
+	DBG_DUMP("getTraceLineFromToBetweenAfterAndBefore(): " << byteFrom << " " << to << "\n");
 	return std::make_tuple(byteFrom, to, instCount);
 }
 
@@ -999,9 +1018,13 @@ intervalTy DDDGBuilder::getTraceLineFromTo(gzFile &traceFile) {
 
 	// Iterate through dynamic trace
 #ifdef PROGRESSIVE_TRACE_CURSOR
-	if(args.progressive)
+	if(args.progressive) {
 		VERBOSE_PRINT(errs() << "\t\tUsing progressive trace cursor, skipping " << std::to_string(progressiveTraceCursor) << " bytes from trace\n");
-	gzseek(traceFile, progressiveTraceCursor, SEEK_SET);
+		gzseek(traceFile, progressiveTraceCursor, SEEK_SET);
+	}
+	else {
+		gzrewind(traceFile);
+	}
 #else
 	gzrewind(traceFile);
 #endif
@@ -1106,6 +1129,7 @@ intervalTy DDDGBuilder::getTraceLineFromTo(gzFile &traceFile) {
 		}
 	}
 
+	DBG_DUMP("getTraceLineFromTo(): " << byteFrom << " " << to << "\n");
 	return std::make_tuple(byteFrom, to, instCount);
 }
 

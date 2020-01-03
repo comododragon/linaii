@@ -521,7 +521,7 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 
 				if(LLVM_IR_DDRWriteResp == opcode) {
 					// If DDR banking is active, we only create the edge if this node shares the same memory port as the imported one
-					if(ddrBanking && (storeNodes.at(it.second).first != genFromImpStoreNodes.at(burst.first).first))
+					if(ddrBanking && (storeNodes.at(it.second).first != genFromImpLoadNodes.at(burst.first).first))
 						continue;
 
 					// XXX: Does the edge weight matter here?
@@ -586,7 +586,7 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 				// Also, connect to the last node of DDR read transactions
 				for(auto &it : burstedLoads) {
 					// If DDR banking is active, we only create the edge if this node shares the same memory port as the imported one
-					if(ddrBanking && (loadNodes.at(it.first).first != genFromImpLoadNodes.at(burst.first).first))
+					if(ddrBanking && (loadNodes.at(it.first).first != genFromImpStoreNodes.at(burst.first).first))
 						continue;
 
 					unsigned lastLoad = it.second.participants.back();
@@ -626,7 +626,7 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 
 					if(LLVM_IR_DDRReadReq == opcode) {
 						// If DDR banking is active, we only create the edge if this node shares the same memory port as the imported one
-						if(ddrBanking && (loadNodes.at(it.second).first != genFromImpLoadNodes.at(burst.first).first))
+						if(ddrBanking && (loadNodes.at(it.second).first != genFromImpStoreNodes.at(burst.first).first))
 							continue;
 
 						// XXX: Does the edge weight matter here?

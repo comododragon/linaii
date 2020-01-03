@@ -190,19 +190,20 @@ bool XilinxZCUMemoryModel::findOutBursts(
 void XilinxZCUMemoryModel::packBursts(
 	std::unordered_map<unsigned, burstInfoTy> &burstedNodes,
 	std::unordered_map<unsigned, std::pair<std::string, uint64_t>> &nodes,
-	int silentOpcode
+	int silentOpcode, bool nonSilentLast
 ) {
-	// XXX: Should we also remove the edges from the silenced nodes (i.e. getelementptr usw?)
-
 	for(auto &burst : burstedNodes) {
-		int busBudget = 0;
+		// If nonSilentLast is true, this will pack as SOp>SOp>SOp>Op>...
+		// otherwise: Op>SOp>SOp>SOp>...0
+		int busBudget = nonSilentLast? DDR_DATA_BUS_WIDTH - 4 : 0;
 		uint64_t lastVisitedBaseAddress;
 		std::vector<unsigned> participants = burst.second.participants;
 		unsigned participantsSz = participants.size();
 
 		// Iterate through the bursted nodes, pack until the bus budget is zero'd
+		unsigned participant = -1;
 		for(unsigned int i = 0; i < participantsSz; i++) {
-			unsigned participant = participants[i];
+			participant = participants[i];
 
 			// Remember that bursted nodes may include repeated nodes (that are treated as redundant transactions)
 			// if we face one of those, we don't change the budget, but we silence the node
@@ -221,6 +222,11 @@ void XilinxZCUMemoryModel::packBursts(
 			}
 
 			lastVisitedBaseAddress = nodes.at(participant).second;
+		}
+
+		// If last should be non-silent, we make sure of that
+		if(nonSilentLast) {
+			microops.at(participant) = getNonSilentOpcode(silentOpcode);
 		}
 	}
 }
@@ -354,7 +360,7 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 	// XXX: Please note that, as always, we are considering 32-bit words here coming from the code
 	if(!(args.fNoBurstPack)) {
 		packBursts(burstedLoads, loadNodes, LLVM_IR_DDRSilentRead);
-		packBursts(burstedStores, storeNodes, LLVM_IR_DDRSilentWrite);
+		packBursts(burstedStores, storeNodes, LLVM_IR_DDRSilentWrite, true);
 
 		// XXX: If we start removing edges when packing, should we request DDDG update here?
 	}

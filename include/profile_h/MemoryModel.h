@@ -113,7 +113,7 @@ class XilinxZCUMemoryModel : public MemoryModel {
 	void packBursts(
 		std::unordered_map<unsigned, burstInfoTy> &burstedNodes,
 		std::unordered_map<unsigned, std::pair<std::string, uint64_t>> &nodes,
-		int silentOpcode
+		int silentOpcode, bool nonSilentLast = false
 	);
 
 public:

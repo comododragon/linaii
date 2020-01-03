@@ -406,8 +406,16 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 
 		// Now, chain the loads to create the burst effect
 		std::vector<unsigned> burstChain = burst.second.participants;
-		for(unsigned i = 1; i < burstChain.size(); i++)
+		for(unsigned i = 1; i < burstChain.size(); i++) {
 			edgesToAdd.push_back({burstChain[i - 1], burstChain[i], 0});
+
+			// Also disconnect getelementptr edges (as their index is implicitly calculated by burst logic)
+			InEdgeIterator inEdgei, inEdgeEnd;
+			for(std::tie(inEdgei, inEdgeEnd) = boost::in_edges(nameToVertex[burstChain[i]], graph); inEdgei != inEdgeEnd; inEdgei++) {
+				if(LLVM_IR_GetElementPtr == microops.at(vertexToName[boost::source(*inEdgei, graph)]))
+					edgesToRemove.insert(*inEdgei);
+			}
+		}
 
 		// Update DDDG
 		datapath->updateRemoveDDDGEdges(edgesToRemove);
@@ -458,8 +466,16 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 
 		// Now, chain the stores to create the burst effect
 		std::vector<unsigned> burstChain = burst.second.participants;
-		for(unsigned i = 1; i < burstChain.size(); i++)
+		for(unsigned i = 1; i < burstChain.size(); i++) {
 			edgesToAdd.push_back({burstChain[i - 1], burstChain[i], 0});
+
+			// Also disconnect getelementptr edges (as their index is implicitly calculated by burst logic)
+			InEdgeIterator inEdgei, inEdgeEnd;
+			for(std::tie(inEdgei, inEdgeEnd) = boost::in_edges(nameToVertex[burstChain[i]], graph); inEdgei != inEdgeEnd; inEdgei++) {
+				if(LLVM_IR_GetElementPtr == microops.at(vertexToName[boost::source(*inEdgei, graph)]))
+					edgesToRemove.insert(*inEdgei);
+			}
+		}
 
 		// Update DDDG
 		datapath->updateRemoveDDDGEdges(edgesToRemove);

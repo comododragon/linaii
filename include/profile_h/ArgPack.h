@@ -29,6 +29,13 @@ typedef struct {
 		DDR_POLICY_CAN_OVERLAP = 1
 	};
 
+	int mmaMode;
+	enum {
+		MMA_MODE_OFF = 0,
+		MMA_MODE_GEN = 1,
+		MMA_MODE_USE = 2
+	};
+
 	bool verbose;
 	bool compressed;
 #ifdef PROGRESSIVE_TRACE_CURSOR

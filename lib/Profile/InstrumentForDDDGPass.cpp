@@ -492,15 +492,15 @@ bool InstrumentForDDDG::runOnModule(Module &M) {
 		}
 	}
 
-	if(args.MODE_TRACE_AND_ESTIMATE == args.mode || args.MODE_TRACE_ONLY == args.mode) {
-		VERBOSE_PRINT(errs() << "[instrumentForDDDG] Starting profiling engine\n");
+	if((args.MODE_TRACE_AND_ESTIMATE == args.mode || args.MODE_TRACE_ONLY == args.mode) && (args.fNoMMA || args.mmaMode != ArgPack::MMA_MODE_USE)) {
+			VERBOSE_PRINT(errs() << "[instrumentForDDDG] Starting profiling engine\n");
 
-		/// Integrate JIT profiling engine and run the embedded profiler
-		ProfilingEngine P(M, TL);
-		P.runOnProfiler();
+			/// Integrate JIT profiling engine and run the embedded profiler
+			ProfilingEngine P(M, TL);
+			P.runOnProfiler();
 
-		/// Finished Profiling
-		VERBOSE_PRINT(errs() << "[instrumentForDDDG] Profiling finished\n");
+			/// Finished Profiling
+			VERBOSE_PRINT(errs() << "[instrumentForDDDG] Profiling finished\n");
 
 		if(args.memTrace) {
 			errs() << "========================================================\n";
@@ -821,6 +821,22 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 	CM.parseAndPopulate(pipelineLoopLevelVec);
 	updateUnrollingDatabase(CM.getUnrollingCfg());
 
+	ContextManager CtxM;
+	if(!(args.fNoMMA)) {
+		if(ArgPack::MMA_MODE_GEN == args.mmaMode) {
+			CtxM.openForWrite();
+		}
+		else if(ArgPack::MMA_MODE_USE == args.mmaMode) {
+			CtxM.openForRead();
+
+			VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Recovering context from previous execution\n");
+			CtxM.getLoopBoundInfo(&wholeloopName2loopBoundMap);
+
+			for(auto const &x : wholeloopName2loopBoundMap)
+				DBG_DUMP("-- " << x.first << ": " << x.second << "\n");
+		}
+	}
+
 	for(auto &it : loopName2levelUnrollVecMap) {
 		std::string loopName = it.first;
 		std::string loopIndex = std::to_string(std::get<1>(parseLoopName(loopName)));
@@ -896,12 +912,14 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 			if(enablePipelining) {
 				unsigned actualUnrollFactor = (targetLoopBound < (targetUnrollFactor << 1) && targetLoopBound)? targetLoopBound : (targetUnrollFactor << 1);
 
-				Multipath MD(kernelName, CM, &summaryFile, loopName, targetLoopLevel, firstNonPerfectLoopLevel, unrollFactor, levelUnrollVec, actualUnrollFactor);
-				errs() << "[][][" << targetWholeLoopName << "] Estimated cycles: " << std::to_string(MD.getCycles()) << "\n";
+				Multipath MD(kernelName, CM, CtxM, &summaryFile, loopName, targetLoopLevel, firstNonPerfectLoopLevel, unrollFactor, levelUnrollVec, actualUnrollFactor);
+				if(args.fNoMMA || ArgPack::MMA_MODE_GEN != args.mmaMode)
+					errs() << "[][][" << targetWholeLoopName << "] Estimated cycles: " << std::to_string(MD.getCycles()) << "\n";
 			}
 			else {
-				Multipath MD(kernelName, CM, &summaryFile, loopName, targetLoopLevel, firstNonPerfectLoopLevel, unrollFactor, levelUnrollVec);
-				errs() << "[][][" << targetWholeLoopName << "] Estimated cycles: " << std::to_string(MD.getCycles()) << "\n";
+				Multipath MD(kernelName, CM, CtxM, &summaryFile, loopName, targetLoopLevel, firstNonPerfectLoopLevel, unrollFactor, levelUnrollVec);
+				if(args.fNoMMA || ArgPack::MMA_MODE_GEN != args.mmaMode)
+					errs() << "[][][" << targetWholeLoopName << "] Estimated cycles: " << std::to_string(MD.getCycles()) << "\n";
 			}
 		}
 		else {
@@ -912,17 +930,31 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 				VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Building dynamic datapath for recurrence-constrained II calculation\n");
 
 				unsigned actualUnrollFactor = (targetLoopBound < (targetUnrollFactor << 1) && targetLoopBound)? targetLoopBound : (targetUnrollFactor << 1);
-				DynamicDatapath DD(kernelName, CM, &summaryFile, loopName, targetLoopLevel, actualUnrollFactor);
+				DynamicDatapath DD(kernelName, CM, CtxM, &summaryFile, loopName, targetLoopLevel, actualUnrollFactor);
 				recII = DD.getASAPII();
 
-				VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Recurrence-constrained II: " << recII << "\n");
+				if(args.fNoMMA || ArgPack::MMA_MODE_GEN != args.mmaMode)
+					VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Recurrence-constrained II: " << recII << "\n");
 			}
 
 			VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Building dynamic datapath\n");
-			DynamicDatapath DD(kernelName, CM, &summaryFile, loopName, targetLoopLevel, unrollFactor, enablePipelining, recII);
+			DynamicDatapath DD(kernelName, CM, CtxM, &summaryFile, loopName, targetLoopLevel, unrollFactor, enablePipelining, recII);
 
-			errs() << "[][][" << targetWholeLoopName << "] Estimated cycles: " << std::to_string(DD.getCycles()) << "\n";
+			if(args.fNoMMA || ArgPack::MMA_MODE_GEN != args.mmaMode)
+				errs() << "[][][" << targetWholeLoopName << "] Estimated cycles: " << std::to_string(DD.getCycles()) << "\n";
 		}
+	}
+
+	if(!(args.fNoMMA)) {
+		for(auto const &x : wholeloopName2loopBoundMap)
+			DBG_DUMP("-- " << x.first << ": " << x.second << "\n");
+
+		if(ArgPack::MMA_MODE_GEN == args.mmaMode) {
+			VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Saving context for later use\n");
+			CtxM.saveLoopBoundInfo(wholeloopName2loopBoundMap);
+		}
+
+		CtxM.close();
 	}
 
 	closeSummaryFile();

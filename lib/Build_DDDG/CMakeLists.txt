@@ -1,6 +1,7 @@
 include_directories( ${ZLIB_INCLUDE_DIRS} )
 
 add_llvm_library(BuildDDDGlib
+	ContextManager.cpp
 	HardwareProfile.cpp
 	HardwareProfileParams.cpp
 	MemoryModel.cpp

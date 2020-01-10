@@ -9,7 +9,7 @@ using namespace llvm;
 
 class DynamicDatapath : public BaseDatapath {
 	void _DynamicDatapath(
-		std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
+		std::string kernelName, ConfigurationManager &CM, ContextManager &CtxM, std::ofstream *summaryFile,
 		std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
 		std::vector<MemoryModel::nodeExportTy> *nodesToImport,
 		unsigned datapathType
@@ -17,24 +17,24 @@ class DynamicDatapath : public BaseDatapath {
 
 public:
 	DynamicDatapath(
-		std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
+		std::string kernelName, ConfigurationManager &CM, ContextManager &CtxM, std::ofstream *summaryFile,
 		std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor
 	);
 
 	DynamicDatapath(
-		std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
+		std::string kernelName, ConfigurationManager &CM, ContextManager &CtxM, std::ofstream *summaryFile,
 		std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
 		bool enablePipelining, uint64_t asapII
 	);
 
 	DynamicDatapath(
-		std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
+		std::string kernelName, ConfigurationManager &CM, ContextManager &CtxM, std::ofstream *summaryFile,
 		std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
 		unsigned datapathType
 	);
 
 	DynamicDatapath(
-		std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
+		std::string kernelName, ConfigurationManager &CM, ContextManager &CtxM, std::ofstream *summaryFile,
 		std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
 		std::vector<MemoryModel::nodeExportTy> &nodesToImport, unsigned datapathType
 	);

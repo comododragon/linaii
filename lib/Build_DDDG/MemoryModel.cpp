@@ -127,60 +127,61 @@ bool XilinxZCUMemoryModel::findOutBursts(
 
 	// If DDR scheduling policy is conservative, we only proceed if no DDR transaction was found yet.
 	// With other policies, we proceed anyway
-	if(!(ArgPack::DDR_POLICY_CANNOT_OVERLAP == args.ddrSched && anyDDRTransactionFound)) {
-		// Our current assumption for inter-iteration bursting is very restrictive. It should happen only when
-		// there is one (and one only) load/store transaction (which may be bursted) inside a loop iteration,
-		// excluding imported out-bursted nodes from inner loops
-		if(1 == burstedNodes.size()) {
-			// We are optimistic at first
-			outBurstFound = true;
+	if(ArgPack::DDR_POLICY_CANNOT_OVERLAP == args.ddrSched && anyDDRTransactionFound)
+		return false;
 
-			// In this case, all transactions between iterations must be contiguous with no overlap
-			// This means that all entangled nodes (i.e. DDDG nodes that represent the same instruction but
-			// different instances) must continuously increase their address by the burst size (offset)
-			// If any fails, we assume that inter-iteration bursting is not possible.
-			burstInfoTy &burstedNode = burstedNodes.begin()->second;
-			uint64_t offset = burstedNode.offset + 1;
+	// Our current assumption for inter-iteration bursting is very restrictive. It should happen only when
+	// there is one (and one only) load/store transaction (which may be bursted) inside a loop iteration,
+	// excluding imported out-bursted nodes from inner loops
+	if(1 == burstedNodes.size()) {
+		// We are optimistic at first
+		outBurstFound = true;
+
+		// In this case, all transactions between iterations must be contiguous with no overlap
+		// This means that all entangled nodes (i.e. DDDG nodes that represent the same instruction but
+		// different instances) must continuously increase their address by the burst size (offset)
+		// If any fails, we assume that inter-iteration bursting is not possible.
+		burstInfoTy &burstedNode = burstedNodes.begin()->second;
+		uint64_t offset = burstedNode.offset + 1;
 #ifdef VAR_WSIZE
-			uint64_t wordSize = burstedNode.wordSize;
+		uint64_t wordSize = burstedNode.wordSize;
 #endif
-			std::vector<unsigned> burstedNodesVec = burstedNode.participants;
+		std::vector<unsigned> burstedNodesVec = burstedNode.participants;
 
-			// If this loop level was unrolled, the memoryTraceMap will contain entangled nodes that
-			// should not be considered (as successive loop iterations were "merged" by unroll).
-			// Therefore we adjust the loop increment accordingly
-			unsigned loopIncrement = loopName2levelUnrollVecMap.at(datapath->getTargetLoopName())[datapath->getTargetLoopLevel() - 1];
+		// If this loop level was unrolled, the memoryTraceMap will contain entangled nodes that
+		// should not be considered (as successive loop iterations were "merged" by unroll).
+		// Therefore we adjust the loop increment accordingly
+		unsigned loopIncrement = loopName2levelUnrollVecMap.at(datapath->getTargetLoopName())[datapath->getTargetLoopLevel() - 1];
 
-			for(auto &it : burstedNodesVec) {
-				std::pair<std::string, std::string> wholeLoopNameInstNamePair = std::make_pair(wholeLoopName, instIDList[it]);
+		for(auto &it : burstedNodesVec) {
+			std::pair<std::string, std::string> wholeLoopNameInstNamePair = std::make_pair(wholeLoopName, instIDList[it]);
 
-				// Check if all instances of this instruction are well behaved in the memory trace
-				// XXX: We do not sort the list here like when searching for inner bursts, since we do not support loop reordering (for now)
-				std::vector<uint64_t> addresses = memoryTraceMap.at(wholeLoopNameInstNamePair);
+			// Check if all instances of this instruction are well behaved in the memory trace
+			// XXX: We do not sort the list here like when searching for inner bursts, since we do not support loop reordering (for now)
+			std::vector<uint64_t> addresses = memoryTraceMap.at(wholeLoopNameInstNamePair);
 #ifdef VAR_WSIZE
-				uint64_t nextAddress = addresses[0] + wordSize * offset;
+			uint64_t nextAddress = addresses[0] + wordSize * offset;
 #else
-				// XXX: As always, assuming 32-bit
-				uint64_t nextAddress = addresses[0] + 4 * offset;
+			// XXX: As always, assuming 32-bit
+			uint64_t nextAddress = addresses[0] + 4 * offset;
 #endif
-				for(unsigned i = loopIncrement; i < addresses.size(); i += loopIncrement) {
-					if(nextAddress != addresses[i]) {
-						outBurstFound = false;
-						break;
-					}
-					else {
-#ifdef VAR_WSIZE
-						nextAddress += wordSize * offset;
-#else
-						// XXX: As always, assuming 32-bit
-						nextAddress += 4 * offset;
-#endif
-					}
-				}
-
-				if(!outBurstFound)
+			for(unsigned i = loopIncrement; i < addresses.size(); i += loopIncrement) {
+				if(nextAddress != addresses[i]) {
+					outBurstFound = false;
 					break;
+				}
+				else {
+#ifdef VAR_WSIZE
+					nextAddress += wordSize * offset;
+#else
+					// XXX: As always, assuming 32-bit
+					nextAddress += 4 * offset;
+#endif
+				}
 			}
+
+			if(!outBurstFound)
+				break;
 		}
 	}
 
@@ -257,8 +258,10 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 			traceFile.open(traceFileName);
 			assert(traceFile.is_open() && "No memory trace found. Please run Lina with \"--mem-trace\" flag (leave it enabled) and any mode other than \"--mode=estimation\" (only once is needed) to generate it or deactivate inter-iteration burst analysis with \"--fno-mmaburst\"");
 
-			while(!traceFile.eof()) {
+			while(true) {
 				std::getline(traceFile, line);
+				if(traceFile.eof())
+					break;
 
 				char buffer[BUFF_STR_SZ];
 				char buffer2[BUFF_STR_SZ];
@@ -352,6 +355,16 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 
 		// TODO: Perhaps if loadOutBurstFound and storeOutBurstFound are true, we should check if
 		// the spaces do not overlap before outbursting both
+
+		// If MMA mode is set to GEN, we do not out-burst, since the context-import file is actually
+		// used to better analyse out-bursts, at least for now. However, we do analyse here whether
+		// should we out-burst or not, we just don't actually out-burst.
+		if(ArgPack::MMA_MODE_GEN == args.mmaMode) {
+			// TODO: save to context here?
+
+			loadOutBurstFound = false;
+			storeOutBurstFound = false;
+		}
 	}
 
 	// If DDR burst packing is enabled, we analyse the burst transactions and merge contiguous
@@ -380,10 +393,11 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 		ddrNodesToRootLS[newNode.ID] = burst.first;
 
 		// If this is an out-bursted load, we must export the LLVM_IR_DDRReadReq node to be allocated to the DDDG before the current
-		if(loadOutBurstFound)
 #ifdef VAR_WSIZE
+		if(loadOutBurstFound)
 			nodesToBeforeDDDG.push_back(nodeExportTy(newNode, loadNodes.at(burst.first).first, burst.second.baseAddress, burst.second.offset, burst.second.wordSize));
 #else
+		if(loadOutBurstFound)
 			nodesToBeforeDDDG.push_back(nodeExportTy(newNode, loadNodes.at(burst.first).first, burst.second.baseAddress, burst.second.offset));
 #endif
 
@@ -1134,5 +1148,13 @@ void XilinxZCUMemoryModel::printDatabase() {
 		errs() << "-- >\n";
 	}
 	errs() << "-- -------------\n";
+
+	errs() << "-- memoryTraceMap\n";
+	for(auto const &x : memoryTraceMap) {
+		errs() << "-- <" << x.first.first << ", " << x.first.second << ">\n";
+		for(auto const &y : x.second)
+			errs() << "---- " << y << "\n";
+	}
+	errs() << "-----------------\n";
 }
 #endif

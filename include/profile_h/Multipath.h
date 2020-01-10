@@ -9,6 +9,7 @@ class Multipath {
 	uint64_t numCycles;
 	std::string kernelName;
 	ConfigurationManager &CM;
+	ContextManager &CtxM;
 	std::ofstream *summaryFile;
 	std::string loopName;
 	unsigned loopLevel;
@@ -30,13 +31,13 @@ class Multipath {
 
 public:
 	Multipath(
-		std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
+		std::string kernelName, ConfigurationManager &CM, ContextManager &CtxM, std::ofstream *summaryFile,
 		std::string loopName, unsigned loopLevel, unsigned firstNonPerfectLoopLevel,
 		uint64_t loopUnrollFactor, std::vector<unsigned> &unrolls, uint64_t actualLoopUnrollFactor
 	);
 
 	Multipath(
-		std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
+		std::string kernelName, ConfigurationManager &CM, ContextManager &CtxM, std::ofstream *summaryFile,
 		std::string loopName, unsigned loopLevel, unsigned firstNonPerfectLoopLevel,
 		uint64_t loopUnrollFactor, std::vector<unsigned> &unrolls
 	);

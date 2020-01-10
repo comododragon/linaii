@@ -30,11 +30,11 @@ void BaseDatapath::findMinimumRankPair(std::pair<unsigned, unsigned> &pair, std:
 }
 
 BaseDatapath::BaseDatapath(
-	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
+	std::string kernelName, ConfigurationManager &CM, ContextManager &CtxM, std::ofstream *summaryFile,
 	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
 	bool enablePipelining, uint64_t asapII
 ) :
-	kernelName(kernelName), CM(CM), summaryFile(summaryFile),
+	kernelName(kernelName), CM(CM), CtxM(CtxM), summaryFile(summaryFile),
 	loopName(loopName), loopLevel(loopLevel), loopUnrollFactor(loopUnrollFactor), datapathType(NORMAL_LOOP),
 	enablePipelining(enablePipelining), asapII(asapII), PC(kernelName)
 {
@@ -49,12 +49,29 @@ BaseDatapath::BaseDatapath(
 	memmodel = MemoryModel::createInstance(this);
 	profile->setMemoryModel(memmodel);
 
-	VERBOSE_PRINT(errs() << "\tBuild initial DDDG\n");
+	if(args.fNoMMA || args.mmaMode != ArgPack::MMA_MODE_USE) {
+		VERBOSE_PRINT(errs() << "\tBuild initial DDDG\n");
 
-	builder = new DDDGBuilder(this, PC);
-	builder->buildInitialDDDG();
-	delete builder;
-	builder = nullptr;
+		builder = new DDDGBuilder(this, PC);
+		builder->buildInitialDDDG();
+
+		if(ArgPack::MMA_MODE_GEN == args.mmaMode) {
+			VERBOSE_PRINT(errs() << "\tSaving context for later use\n");
+			std::string wholeLoopName = appendDepthToLoopName(loopName, loopLevel);
+			CtxM.saveParsedTraceContainer(wholeLoopName, PC);
+			CtxM.saveDDDG(wholeLoopName, datapathType, *builder, microops);
+		}
+
+		delete builder;
+		builder = nullptr;
+	}
+	else {
+		VERBOSE_PRINT(errs() << "\t\"--mma-mode\" is set to \"use\", skiping DDDG build\n");
+		VERBOSE_PRINT(errs() << "\tRecovering context from previous execution\n");
+		std::string wholeLoopName = appendDepthToLoopName(loopName, loopLevel);
+		CtxM.getParsedTraceContainer(wholeLoopName, &PC);
+		CtxM.getDDDG(wholeLoopName, datapathType, *this);
+	}
 
 	postDDDGBuild();
 
@@ -80,10 +97,10 @@ BaseDatapath::BaseDatapath(
 // This constructor does not perform DDDG generation. It should be generated externally via
 // child classes (e.g. DynamicDatapath)
 BaseDatapath::BaseDatapath(
-	std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
+	std::string kernelName, ConfigurationManager &CM, ContextManager &CtxM, std::ofstream *summaryFile,
 	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor, unsigned datapathType
 ) :
-	kernelName(kernelName), CM(CM), summaryFile(summaryFile),
+	kernelName(kernelName), CM(CM), CtxM(CtxM), summaryFile(summaryFile),
 	loopName(loopName), loopLevel(loopLevel), loopUnrollFactor(loopUnrollFactor), datapathType(datapathType),
 	enablePipelining(false), asapII(0), PC(kernelName)
 {
@@ -198,6 +215,11 @@ void BaseDatapath::refreshDDDG() {
 	vertexToName = boost::get(boost::vertex_index, graph);
 
 	edgeToWeight = boost::get(boost::edge_weight, graph);
+}
+
+void BaseDatapath::setForDDDGImport() {
+	graph.clear();
+	microops.clear();
 }
 
 void BaseDatapath::insertMicroop(int microop) {
@@ -415,6 +437,11 @@ uint64_t BaseDatapath::fpgaEstimationOneMoreSubtraceForRecIICalculation() {
 	if(!(args.fNoMMA)) {
 		VERBOSE_PRINT(errs() << "\tPerforming DDDG memory model-based analysis and transform\n");
 		profile->performMemoryModelAnalysis();
+
+		if(ArgPack::MMA_MODE_GEN == args.mmaMode) {
+			VERBOSE_PRINT(errs() <<"\t\"--mma-mode\" is set to \"gen\", halting now\n");
+			return 0;
+		}
 	}
 
 	// Put the node latency using selected architecture as edge weights in the graph
@@ -467,8 +494,10 @@ uint64_t BaseDatapath::fpgaEstimation() {
 		VERBOSE_PRINT(errs() << "\tPerforming DDDG memory model-based analysis and transform\n");
 		profile->performMemoryModelAnalysis();
 
-		// TODO: ta aqui só pra debug
-		//dumpGraph();
+		if(ArgPack::MMA_MODE_GEN == args.mmaMode) {
+			VERBOSE_PRINT(errs() <<"\t\"--mma-mode\" is set to \"gen\", halting now\n");
+			return 0;
+		}
 	}
 
 	// Put the node latency using selected architecture as edge weights in the graph

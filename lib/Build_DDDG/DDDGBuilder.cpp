@@ -2,7 +2,7 @@
 
 #include "profile_h/BaseDatapath.h"
 
-ParsedTraceContainer::ParsedTraceContainer(std::string kernelName) {
+ParsedTraceContainer::ParsedTraceContainer(std::string kernelName) : kernelName(kernelName) {
 	funcFileName = args.outWorkDir + kernelName + "_dynamicfuncid.gz";
 	instIDFileName = args.outWorkDir + kernelName + "_instid.gz";
 	lineNoFileName = args.outWorkDir + kernelName + "_linenum.gz";
@@ -950,6 +950,10 @@ unsigned DDDGBuilder::getNumOfRegisterDependencies() {
 
 unsigned DDDGBuilder::getNumOfMemoryDependencies() {
 	return numOfMemDeps;
+}
+
+std::pair<const u2eMMap, const u2eMMap> DDDGBuilder::getEdgeTables() {
+	return std::make_pair(registerEdgeTable, memoryEdgeTable);
 }
 
 intervalTy DDDGBuilder::getTraceLineFromTo(gzFile &traceFile) {

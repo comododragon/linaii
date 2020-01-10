@@ -13,6 +13,7 @@
 #include <stdint.h>
 
 #include "profile_h/auxiliary.h"
+#include "profile_h/ContextManager.h"
 #include "profile_h/DDDGBuilder.h"
 #include "profile_h/HardwareProfile.h"
 #include "profile_h/MemoryModel.h"
@@ -222,6 +223,7 @@ public:
 private:
 	std::string kernelName;
 	ConfigurationManager &CM;
+	ContextManager &CtxM;
 	std::ostream *summaryFile;
 	std::string loopName;
 	unsigned loopLevel;
@@ -234,13 +236,13 @@ private:
 
 public:
 	BaseDatapath(
-		std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
+		std::string kernelName, ConfigurationManager &CM, ContextManager &CtxM, std::ofstream *summaryFile,
 		std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
 		bool enablePipelining, uint64_t asapII
 	);
 
 	BaseDatapath(
-		std::string kernelName, ConfigurationManager &CM, std::ofstream *summaryFile,
+		std::string kernelName, ConfigurationManager &CM, ContextManager &CtxM, std::ofstream *summaryFile,
 		std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor, unsigned datapathType
 	);
 
@@ -260,6 +262,7 @@ public:
 	void importNodes(std::vector<MemoryModel::nodeExportTy> nodesToImport);
 	void postDDDGBuild();
 	void refreshDDDG();
+	void setForDDDGImport();
 	void insertMicroop(int microop);
 	void insertDDDGEdge(unsigned from, unsigned to, uint8_t paramID);
 	bool edgeExists(unsigned from, unsigned to);

@@ -59,7 +59,7 @@ typedef std::map<std::pair<std::string, std::string>, std::vector<uint64_t>> mem
 class BaseDatapath;
 
 class ParsedTraceContainer {
-	BaseDatapath *datapath;
+	std::string kernelName;
 
 	std::string funcFileName;
 	std::string instIDFileName;
@@ -100,6 +100,7 @@ public:
 	void closeAllFiles();
 	void lock();
 	void unlock();
+	std::string getKernelName() { return kernelName; }
 
 	void appendToFuncList(std::string elem);
 	void appendToInstIDList(std::string elem);
@@ -166,6 +167,7 @@ public:
 
 	unsigned getNumOfRegisterDependencies();
 	unsigned getNumOfMemoryDependencies();
+	std::pair<const u2eMMap, const u2eMMap> getEdgeTables();
 };
 
 #endif

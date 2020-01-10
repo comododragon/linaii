@@ -90,6 +90,24 @@ const std::string helpMessage =
 	"                                               before others of same type can start, DEFAULT)\n"
 	"                                            1: DDR transactions can overlap if their memory spaces\n"
 	"                                               are disjoint\n"
+	"                   --mma-mode=MODE    : select Lina execution model according to MMA mode. MODE may\n"
+	"                                        be:\n"
+	"                                            off: run Lina normally (DEFAULT)\n"
+	"                                            gen: perform memory model analysis, generate a context\n"
+	"                                                 import file and stop execution. This flag is\n"
+	"                                                 ignored if \"-m trace\" | \"--mode=trace\" is set\n"
+	"                                            use: skip profiling and DDDG generation, proceed\n"
+	"                                                 directly to memory model analysis. In this mode, a\n"
+	"                                                 context import file is used to generate the DDDG\n"
+	"                                                 and other data. The context-import should have been\n"
+	"                                                 generated with a previous execution of Lina with\n"
+	"                                                 \"--mma-mode=GEN\". Performing memory model analysis\n"
+	"                                                 based on a context-import opens the possibility for\n"
+	"                                                 improved memory optimisations. Please note that Lina\n"
+	"                                                 fails if this mode is set without a present context\n"
+	"                                                 import\n"
+	"                                        Please note that this argument is ignored if \"-m trace\" |\n"
+	"                                        \"--mode=trace\" is set\n"
 	"\n"
 	"Lin-Analyzer flags:\n"
 	"                   --fno-sb           : disable store-buffer optimisation\n"
@@ -107,7 +125,7 @@ const std::string helpMessage =
 	"                   --f-es             : enable extra-scalar\n"
 	"                   --f-rwrwm          : enable RWRW memory\n"
 	"\n"
-	"For bug reporting, please file a github issue at https://github.com/comododragon/lina\n";
+	"For bug reporting, please file a github issue at https://github.com/comododragon/linaii\n";
 
 ArgPack args;
 #ifdef PROGRESSIVE_TRACE_CURSOR
@@ -226,6 +244,7 @@ void parseInputArguments(int argc, char **argv) {
 	args.fNoMMABurst = false;
 	args.fBurstMix = false;
 	args.fNoBurstPack = false;
+	args.mmaMode = args.MMA_MODE_OFF;
 	args.fSBOpt = true;
 	args.fSLROpt = false;
 	args.fNoSLROpt = false;
@@ -270,16 +289,17 @@ void parseInputArguments(int argc, char **argv) {
 			{"fno-mmaburst", no_argument, 0, 0xF09},
 			{"f-burstmix", no_argument, 0, 0xF0A},
 			{"fno-burstpack", no_argument, 0, 0xF0B},
-			{"fno-sb", no_argument, 0, 0xF0C},
-			{"f-slr", no_argument, 0, 0xF0D},
-			{"fno-slr", no_argument, 0, 0xF0E},
-			{"fno-rsr", no_argument, 0, 0xF0F},
-			{"f-thr-float", no_argument, 0, 0xF10},
-			{"f-thr-int", no_argument, 0, 0xF11},
-			{"f-md", no_argument, 0, 0xF12},
-			{"fno-ft", no_argument, 0, 0xF13},
-			{"f-es", no_argument, 0, 0xF14},
-			{"f-rwrwm", no_argument, 0, 0xF15},
+			{"mma-mode", required_argument, 0, 0xF0C},
+			{"fno-sb", no_argument, 0, 0xF0D},
+			{"f-slr", no_argument, 0, 0xF0E},
+			{"fno-slr", no_argument, 0, 0xF0F},
+			{"fno-rsr", no_argument, 0, 0xF10},
+			{"f-thr-float", no_argument, 0, 0xF11},
+			{"f-thr-int", no_argument, 0, 0xF12},
+			{"f-md", no_argument, 0, 0xF13},
+			{"fno-ft", no_argument, 0, 0xF14},
+			{"f-es", no_argument, 0, 0xF15},
+			{"f-rwrwm", no_argument, 0, 0xF16},
 			{0, 0, 0, 0}
 		};
 		int optionIndex = 0;
@@ -399,33 +419,42 @@ void parseInputArguments(int argc, char **argv) {
 				args.fNoBurstPack = true;
 				break;
 			case 0xF0C:
-				args.fSBOpt = false;
+				optargStr = optarg;
+				if(!optargStr.compare("off"))
+					args.mmaMode = args.MMA_MODE_OFF;
+				else if(!optargStr.compare("gen"))
+					args.mmaMode = args.MMA_MODE_GEN;
+				else if(!optargStr.compare("use"))
+					args.mmaMode = args.MMA_MODE_USE;
 				break;
 			case 0xF0D:
-				args.fSLROpt = true;
+				args.fSBOpt = false;
 				break;
 			case 0xF0E:
-				args.fNoSLROpt = true;
+				args.fSLROpt = true;
 				break;
 			case 0xF0F:
-				args.fRSROpt = false;
+				args.fNoSLROpt = true;
 				break;
 			case 0xF10:
-				args.fTHRFloatOpt = true;
+				args.fRSROpt = false;
 				break;
 			case 0xF11:
-				args.fTHRIntOpt = true;
+				args.fTHRFloatOpt = true;
 				break;
 			case 0xF12:
-				args.fMemDisambuigOpt = true;
+				args.fTHRIntOpt = true;
 				break;
 			case 0xF13:
-				args.fNoFPUThresOpt = true;
+				args.fMemDisambuigOpt = true;
 				break;
 			case 0xF14:
-				args.fExtraScalar = true;
+				args.fNoFPUThresOpt = true;
 				break;
 			case 0xF15:
+				args.fExtraScalar = true;
+				break;
+			case 0xF16:
 				args.fRWRWMem = true;
 				break;
 		}
@@ -545,6 +574,18 @@ void parseInputArguments(int argc, char **argv) {
 				break;
 			case ArgPack::DDR_POLICY_CAN_OVERLAP:
 				errs() << "relaxed\n";
+				break;
+		}
+		errs() << "MMA mode: ";
+		switch(args.mmaMode) {
+			case ArgPack::MMA_MODE_OFF:
+				errs() << "normal Lina execution\n";
+				break;
+			case ArgPack::MMA_MODE_GEN:
+				errs() << "generate DDDG, run memory-model analysis and halt\n";
+				break;
+			case ArgPack::MMA_MODE_USE:
+				errs() << "import DDDG and other info. from context-import instead of generating\n";
 				break;
 		}
 	);

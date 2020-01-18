@@ -8,7 +8,12 @@ const std::unordered_map<int, ContextManager::cfd_t> ContextManager::typeMap = {
 	{ContextManager::TYPE_PROGRESSIVE_TRACE_INFO, cfd_t(sizeof(long int) + sizeof(uint64_t))},
 	{ContextManager::TYPE_LOOP_BOUND_INFO, cfd_t(-1)},
 	{ContextManager::TYPE_PARSED_TRACE_CONTAINER, cfd_t(-1)},
-	{ContextManager::TYPE_DDDG, cfd_t(-1)}
+	{ContextManager::TYPE_DDDG, cfd_t(-1)},
+	{ContextManager::TYPE_OUTBURSTS_INFO, cfd_t(-1)},
+	{ContextManager::TYPE_GLOBAL_DDR_MAP, cfd_t(-1)},
+#ifdef CROSS_DDDG_PACKING
+	{ContextManager::TYPE_REMAINING_BUDGET_INFO, cfd_t(-1)},
+#endif
 };
 
 // TODO
@@ -74,7 +79,6 @@ bool ContextManager::seekToIdentified(int type, std::string ID, unsigned ID2) {
 	bool foundTheRightOne = false;
 
 	while(!foundTheRightOne) {
-		DBG_DUMP(type << " " << ID << " " << foundTheRightOne << " " << readID << " " << readIDFirst << "\n");
 		if(seekTo(type)) {
 			size_t totalFieldSize;
 			contextFile.read((char *) &totalFieldSize, sizeof(size_t));
@@ -90,8 +94,6 @@ bool ContextManager::seekToIdentified(int type, std::string ID, unsigned ID2) {
 			readID.assign(buff);
 
 			contextFile.read((char *) &readID2, sizeof(unsigned));
-
-			DBG_DUMP(ID << " " << readID << "\n");
 
 			if(ID == readID && ID2 == readID2)
 				foundTheRightOne = true;
@@ -145,6 +147,44 @@ template<> size_t ContextManager::writeElement<edgeNodeInfo>(std::stringstream &
 	return writtenSize;
 }
 
+template<> size_t ContextManager::writeElement<ddrInfoTy>(std::stringstream &ss, ddrInfoTy &elem) {
+	size_t writtenSize = 0;
+
+	writtenSize += writeElement<unsigned>(ss, elem.loopLevel);
+	writtenSize += writeElement<unsigned>(ss, elem.datapathType);
+	writtenSize += writeElement<std::string>(ss, elem.arraysLoaded);
+	writtenSize += writeElement<std::string>(ss, elem.arraysStored);
+
+	return writtenSize;
+}
+
+template<> size_t ContextManager::writeElement<outBurstInfoTy>(std::stringstream &ss, outBurstInfoTy &elem) {
+	size_t writtenSize = 0;
+
+	writtenSize += writeElement<bool>(ss, elem.canOutBurst);
+	writtenSize += writeElement<bool>(ss, elem.isRegistered);
+	writtenSize += writeElement<uint64_t>(ss, elem.baseAddress);
+	writtenSize += writeElement<uint64_t>(ss, elem.offset);
+#ifdef VAR_WSIZE
+	writtenSize += writeElement<uint64_t>(ss, elem.wordSize);
+#endif
+
+	return writtenSize;
+}
+
+#ifdef CROSS_DDDG_PACKING
+template<> size_t ContextManager::writeElement<remainingBudgetTy>(std::stringstream &ss, remainingBudgetTy &elem) {
+	size_t writtenSize = 0;
+
+	writtenSize += writeElement<bool>(ss, elem.isValid);
+	writtenSize += writeElement<unsigned>(ss, elem.remainingBudget);
+	writtenSize += writeElement<uint64_t>(ss, elem.baseAddress);
+	writtenSize += writeElement<uint64_t>(ss, elem.offset);
+
+	return writtenSize;
+}
+#endif
+
 template<typename E> size_t ContextManager::writeElement(std::stringstream &ss, std::vector<E> &elem) {
 	size_t writtenSize = 0;
 	size_t elementSize = elem.size();
@@ -156,7 +196,44 @@ template<typename E> size_t ContextManager::writeElement(std::stringstream &ss, 
 	return writtenSize;
 }
 
+template<typename E> size_t ContextManager::writeElement(std::stringstream &ss, std::set<E> &elem) {
+	size_t writtenSize = 0;
+	size_t elementSize = elem.size();
+
+	writtenSize += writeElement<size_t>(ss, elementSize);
+	for(auto &it : elem)
+		writtenSize += writeElement<E>(ss, const_cast<E &>(it));
+
+	return writtenSize;
+}
+
 template<typename K, typename E> size_t ContextManager::writeElement(std::stringstream &ss, std::map<K, E> &elem) {
+	size_t writtenSize = 0;
+	size_t elementSize = elem.size();
+
+	writtenSize += writeElement<size_t>(ss, elementSize);
+	for(auto &it : elem) {
+		writtenSize += writeElement<K>(ss, const_cast<K &>(it.first));
+		writtenSize += writeElement<E>(ss, it.second);
+	}
+
+	return writtenSize;
+}
+
+template<typename K, typename E> size_t ContextManager::writeElement(std::stringstream &ss, std::unordered_map<K, E> &elem) {
+	size_t writtenSize = 0;
+	size_t elementSize = elem.size();
+
+	writtenSize += writeElement<size_t>(ss, elementSize);
+	for(auto &it : elem) {
+		writtenSize += writeElement<K>(ss, const_cast<K &>(it.first));
+		writtenSize += writeElement<E>(ss, it.second);
+	}
+
+	return writtenSize;
+}
+
+template<typename K, typename E> size_t ContextManager::writeElement(std::stringstream &ss, std::unordered_map<K, std::vector<E>> &elem) {
 	size_t writtenSize = 0;
 	size_t elementSize = elem.size();
 
@@ -199,6 +276,32 @@ template<typename K, typename E> size_t ContextManager::writeElement(std::string
 template<> size_t ContextManager::writeElement<ParsedTraceContainer>(std::stringstream &ss, ParsedTraceContainer &elem) {
 	size_t writtenSize = 0;
 
+// TODO TODO TODO
+#if 1//DBG_PRINT_ALL
+	DBG_DUMP("Dump of ParsedTraceContainer\n");
+	DBG_DUMP("-- funcList:\n");
+	for(auto const &x : elem.getFuncList())
+		DBG_DUMP("---- " << x << "\n");
+	DBG_DUMP("-- instIDList:\n");
+	for(auto const &x : elem.getInstIDList())
+		DBG_DUMP("---- " << x << "\n");
+	DBG_DUMP("-- lineNoList:\n");
+	for(auto const &x : elem.getLineNoList())
+		DBG_DUMP("---- " << x << "\n");
+	DBG_DUMP("-- memoryTraceList:\n");
+	for(auto const &x : elem.getMemoryTraceList())
+		DBG_DUMP("---- " << x.first << ": <" << x.second.first << ", " << x.second.second << ">\n");
+	DBG_DUMP("-- getElementPtrList:\n");
+	for(auto const &x : elem.getGetElementPtrList())
+		DBG_DUMP("---- " << x.first << ": <" << x.second.first << ", " << x.second.second << ">\n");
+	DBG_DUMP("-- prevBBList:\n");
+	for(auto const &x : elem.getPrevBBList())
+		DBG_DUMP("---- " << x << "\n");
+	DBG_DUMP("-- currBBList:\n");
+	for(auto const &x : elem.getCurrBBList())
+		DBG_DUMP("---- " << x << "\n");
+#endif
+
 	writtenSize += writeElement<std::string>(ss, const_cast<std::vector<std::string> &>(elem.getFuncList()));
 	writtenSize += writeElement<std::string>(ss, const_cast<std::vector<std::string> &>(elem.getInstIDList()));
 	writtenSize += writeElement<int>(ss, const_cast<std::vector<int> &>(elem.getLineNoList()));
@@ -231,6 +334,58 @@ template<> void ContextManager::readElement<edgeNodeInfo>(std::fstream &fs, edge
 	readElement<int>(fs, elem.paramID);
 }
 
+template<> void ContextManager::readElement<ddrInfoTy>(std::fstream &fs, ddrInfoTy &elem) {
+	readElement<unsigned>(fs, elem.loopLevel);
+	readElement<unsigned>(fs, elem.datapathType);
+	readElement<std::string>(fs, elem.arraysLoaded);
+	readElement<std::string>(fs, elem.arraysStored);
+}
+
+template<> void ContextManager::readElement<outBurstInfoTy>(std::fstream &fs, outBurstInfoTy &elem) {
+	readElement<bool>(fs, elem.canOutBurst);
+	readElement<bool>(fs, elem.isRegistered);
+	readElement<uint64_t>(fs, elem.baseAddress);
+	readElement<uint64_t>(fs, elem.offset);
+#ifdef VAR_WSIZE
+	readElement<uint64_t>(fs, elem.wordSize);
+#endif
+}
+
+#ifdef CROSS_DDDG_PACKING
+template<> void ContextManager::readElement<remainingBudgetTy>(std::fstream &fs, remainingBudgetTy &elem) {
+	readElement<bool>(fs, elem.isValid);
+	readElement<unsigned>(fs, elem.remainingBudget);
+	readElement<uint64_t>(fs, elem.baseAddress);
+	readElement<uint64_t>(fs, elem.offset);
+}
+#endif
+
+template<typename E> void ContextManager::readElement(std::fstream &fs, std::vector<E> &elem) {
+	size_t elemSize;
+	readElement<size_t>(fs, elemSize);
+
+	elem.clear();
+	for(size_t i = 0; i < elemSize; i++) {
+		E ee;
+		readElement<E>(fs, ee);
+
+		elem.push_back(ee);
+	}
+}
+
+template<typename E> void ContextManager::readElement(std::fstream &fs, std::set<E> &elem) {
+	size_t setSize;
+	readElement<size_t>(fs, setSize);
+
+	elem.clear();
+	for(size_t i = 0; i < setSize; i++) {
+		E ee;
+		readElement<E>(fs, ee);
+
+		elem.insert(ee);
+	}
+}
+
 template<typename K, typename E> void ContextManager::readElement(std::fstream &fs, std::map<K, E> &elem) {
 	size_t mapSize;
 	readElement<size_t>(fs, mapSize);
@@ -240,6 +395,36 @@ template<typename K, typename E> void ContextManager::readElement(std::fstream &
 		K kk;
 		readElement<K>(fs, kk);
 		E ee;
+		readElement<E>(fs, ee);
+
+		elem.insert(std::make_pair(kk, ee));
+	}
+}
+
+template<typename K, typename E> void ContextManager::readElement(std::fstream &fs, std::unordered_map<K, E> &elem) {
+	size_t mapSize;
+	readElement<size_t>(fs, mapSize);
+
+	elem.clear();
+	for(size_t i = 0; i < mapSize; i++) {
+		K kk;
+		readElement<K>(fs, kk);
+		E ee;
+		readElement<E>(fs, ee);
+
+		elem.insert(std::make_pair(kk, ee));
+	}
+}
+
+template<typename K, typename E> void ContextManager::readElement(std::fstream &fs, std::unordered_map<K, std::vector<E>> &elem) {
+	size_t mapSize;
+	readElement<size_t>(fs, mapSize);
+
+	elem.clear();
+	for(size_t i = 0; i < mapSize; i++) {
+		K kk;
+		readElement<K>(fs, kk);
+		std::vector<E> ee;
 		readElement<E>(fs, ee);
 
 		elem.insert(std::make_pair(kk, ee));
@@ -256,7 +441,6 @@ template<> void ContextManager::readElement<ParsedTraceContainer>(std::fstream &
 	for(size_t i = 0; i < funcListSize; i++) {
 		std::string ee;
 		readElement<std::string>(fs, ee);
-		DBG_DUMP(ee << "\n");
 
 		elem.appendToFuncList(ee);
 	}
@@ -322,11 +506,46 @@ template<> void ContextManager::readElement<ParsedTraceContainer>(std::fstream &
 
 		elem.appendToCurrBBList(ee);
 	}
+
+// TODO TODO TODO
+#if 1//DBG_PRINT_ALL
+	DBG_DUMP("Dump of ParsedTraceContainer\n");
+	DBG_DUMP("-- funcList:\n");
+	for(auto const &x : elem.getFuncList())
+		DBG_DUMP("---- " << x << "\n");
+	DBG_DUMP("-- instIDList:\n");
+	for(auto const &x : elem.getInstIDList())
+		DBG_DUMP("---- " << x << "\n");
+	DBG_DUMP("-- lineNoList:\n");
+	for(auto const &x : elem.getLineNoList())
+		DBG_DUMP("---- " << x << "\n");
+	DBG_DUMP("-- memoryTraceList:\n");
+	for(auto const &x : elem.getMemoryTraceList())
+		DBG_DUMP("---- " << x.first << ": <" << x.second.first << ", " << x.second.second << ">\n");
+	DBG_DUMP("-- getElementPtrList:\n");
+	for(auto const &x : elem.getGetElementPtrList())
+		DBG_DUMP("---- " << x.first << ": <" << x.second.first << ", " << x.second.second << ">\n");
+	DBG_DUMP("-- prevBBList:\n");
+	for(auto const &x : elem.getPrevBBList())
+		DBG_DUMP("---- " << x << "\n");
+	DBG_DUMP("-- currBBList:\n");
+	for(auto const &x : elem.getCurrBBList())
+		DBG_DUMP("---- " << x << "\n");
+#endif
 }
 
 template<> void ContextManager::readElement<BaseDatapath>(std::fstream &fs, BaseDatapath &elem) {
+// TODO TODO TODO
+#if 1//DBG_PRINT_ALL
+	DBG_DUMP("Dump of DDDG:\n");
+#endif
+
 	elem.setForDDDGImport();
 
+// TODO TODO TODO
+#if 1//DBG_PRINT_ALL
+	DBG_DUMP("-- edgeTables.first:\n");
+#endif
 	size_t edgeListFirstSize;
 	readElement<size_t>(fs, edgeListFirstSize);
 	for(size_t i = 0; i < edgeListFirstSize; i++) {
@@ -335,9 +554,17 @@ template<> void ContextManager::readElement<BaseDatapath>(std::fstream &fs, Base
 		edgeNodeInfo ee;
 		readElement<edgeNodeInfo>(fs, ee);
 
+// TODO TODO TODO
+#if 1//DBG_PRINT_ALL
+		DBG_DUMP("---- " << kk << ": <" << ee.sink << ", " << ee.paramID << ">\n");
+#endif
 		elem.insertDDDGEdge(kk, ee.sink, ee.paramID);
 	}
 
+// TODO TODO TODO
+#if 1//DBG_PRINT_ALL
+	DBG_DUMP("-- edgeTables.second:\n");
+#endif
 	size_t edgeListSecondSize;
 	readElement<size_t>(fs, edgeListSecondSize);
 	for(size_t i = 0; i < edgeListSecondSize; i++) {
@@ -346,15 +573,27 @@ template<> void ContextManager::readElement<BaseDatapath>(std::fstream &fs, Base
 		edgeNodeInfo ee;
 		readElement<edgeNodeInfo>(fs, ee);
 
+// TODO TODO TODO
+#if 1//DBG_PRINT_ALL
+		DBG_DUMP("---- " << kk << ": <" << ee.sink << ", " << ee.paramID << ">\n");
+#endif
 		elem.insertDDDGEdge(kk, ee.sink, ee.paramID);
 	}
 
+// TODO TODO TODO
+#if 1//DBG_PRINT_ALL
+	DBG_DUMP("-- microops:\n");
+#endif
 	size_t microopsSize;
 	readElement<size_t>(fs, microopsSize);
 	for(size_t i = 0; i < microopsSize; i++) {
 		int ee;
 		readElement<int>(fs, ee);
 
+// TODO TODO TODO
+#if 1//DBG_PRINT_ALL
+		DBG_DUMP("---- " << ee << "\n");
+#endif
 		elem.insertMicroop(ee);
 	}
 }
@@ -459,6 +698,13 @@ void ContextManager::getProgressiveTraceInfo(long int *cursor, uint64_t *instCou
 void ContextManager::saveLoopBoundInfo(wholeloopName2loopBoundMapTy &wholeloopName2loopBoundMap) {
 	assert(!readOnly && "Attempt to save loop bound info on a read-only context manager");
 
+// TODO TODO TODO
+#if 1//DBG_PRINT_ALL
+	DBG_DUMP("Dump of wholeloopName2loopBoundMap:\n");
+	for(auto const &x : wholeloopName2loopBoundMap)
+		DBG_DUMP("-- " << x.first << ": " << x.second << "\n");
+#endif
+
 	size_t totalFieldSize = 0;
 	std::stringstream ss;
 	totalFieldSize += writeElement<std::string, uint64_t>(ss, wholeloopName2loopBoundMap);
@@ -471,6 +717,13 @@ void ContextManager::getLoopBoundInfo(wholeloopName2loopBoundMapTy *wholeloopNam
 
 	skipElement<size_t>(contextFile);
 	readElement<std::string, uint64_t>(contextFile, *wholeloopName2loopBoundMap);
+
+// TODO TODO TODO
+#if 1//DBG_PRINT_ALL
+	DBG_DUMP("Dump of wholeloopName2loopBoundMap:\n");
+	for(auto const &x : *wholeloopName2loopBoundMap)
+		DBG_DUMP("-- " << x.first << ": " << x.second << "\n");
+#endif
 
 	assert(!(contextFile.eof()) && "Context file is incomplete or corrupt");
 }
@@ -496,6 +749,20 @@ void ContextManager::getParsedTraceContainer(std::string wholeLoopName, ParsedTr
 void ContextManager::saveDDDG(std::string wholeLoopName, unsigned datapathType, DDDGBuilder &builder, std::vector<int> &microops) {
 	assert(!readOnly && "Attempt to save DDDG on a read-only context manager");
 
+// TODO TODO TODO
+#if 1//DBG_PRINT_ALL
+	DBG_DUMP("Dump of DDDG:\n");
+	DBG_DUMP("-- edgeTables.first:\n");
+	for(auto const &x : builder.getEdgeTables().first)
+		DBG_DUMP("---- " << x.first << ": <" << x.second.sink << ", " << x.second.paramID << ">\n");
+	DBG_DUMP("-- edgeTables.second:\n");
+	for(auto const &x : builder.getEdgeTables().second)
+		DBG_DUMP("---- " << x.first << ": <" << x.second.sink << ", " << x.second.paramID << ">\n");
+	DBG_DUMP("-- microops:\n");
+	for(auto const &x : microops)
+		DBG_DUMP("---- " << x << "\n");
+#endif
+
 	size_t totalFieldSize = 0;
 	std::stringstream ss;
 	std::pair<const u2eMMap, const u2eMMap> edgeTables = builder.getEdgeTables();
@@ -505,243 +772,169 @@ void ContextManager::saveDDDG(std::string wholeLoopName, unsigned datapathType, 
 	commit(ContextManager::TYPE_DDDG, ss, totalFieldSize, wholeLoopName, datapathType);
 }
 
-void ContextManager::getDDDG(std::string wholeLoopName, unsigned datapathType, BaseDatapath &datapath) {
+void ContextManager::getDDDG(std::string wholeLoopName, unsigned datapathType, BaseDatapath *datapath) {
 	assert(readOnly && "Attempt to read DDDG from a write-only context manager");
 	assert(seekToIdentified(ContextManager::TYPE_DDDG, wholeLoopName, datapathType) && "Requested DDDG not found at the context manager");
 
-	readElement<BaseDatapath>(contextFile, datapath);
+	readElement<BaseDatapath>(contextFile, *datapath);
 
 	assert(!(contextFile.eof()) && "Context file is incomplete or corrupt");
 }
 
-// XXX LEgacy code
-#if 0
-	assert(!readOnly && "Attempt to save parsed trace container on a read-only context manager");
-
-	char elemType = ContextManager::TYPE_PARSED_TRACE_CONTAINER;
-	size_t totalFieldSize = 0;
-	std::stringstream ss;
-	size_t wholeLoopNameSize = wholeLoopName.size();
-
-	// Write whole loop name
-	ss.write((char *) &wholeLoopNameSize, sizeof(size_t));
-	totalFieldSize += sizeof(size_t);
-	ss.write(wholeLoopName.c_str(), wholeLoopNameSize);
-	totalFieldSize += wholeLoopNameSize;
-
-	// Now writing funcList
-
-	const std::vector<std::string> &funcList = PC.getFuncList();
-	size_t funcListSize = funcList.size();
-
-	ss.write((char *) &funcListSize, sizeof(size_t));
-	totalFieldSize += sizeof(size_t);
-
-	for(auto &it : funcList) {
-		size_t contentLength = it.length();
-
-		// Write the content length
-		ss.write((char *) &contentLength, sizeof(size_t));
-		totalFieldSize += sizeof(size_t);
-
-		// Write the content
-		ss.write(it.c_str(), contentLength);
-		totalFieldSize += contentLength;
-	}
-
-	// Now writing instIDList
-
-	const std::vector<std::string> &instIDList = PC.getInstIDList();
-	size_t instIDListSize = instIDList.size();
-
-	ss.write((char *) &instIDListSize, sizeof(size_t));
-	totalFieldSize += sizeof(size_t);
-
-	for(auto &it : instIDList) {
-		size_t contentLength = it.length();
-
-		// Write the content length
-		ss.write((char *) &contentLength, sizeof(size_t));
-		totalFieldSize += sizeof(size_t);
-
-		// Write the content
-		ss.write(it.c_str(), contentLength);
-		totalFieldSize += contentLength;
-	}
-
-	// Now writing lineNoList
-
-	const std::vector<int> &lineNoList = PC.getLineNoList();
-	size_t lineNoListSize = lineNoList.size();
-
-	ss.write((char *) &lineNoListSize, sizeof(size_t));
-	totalFieldSize += sizeof(size_t);
-
-	for(auto &it : lineNoList) {
-		// Write the content
-		ss.write((char *) &it, sizeof(int));
-		totalFieldSize += sizeof(int);
-	}
-
-	// Now writing memoryTraceList
-
-	const std::unordered_map<int, std::pair<int64_t, unsigned>> &memoryTraceList = PC.getMemoryTraceList();
-	size_t memoryTraceListSize = memoryTraceList.size();
-
-	ss.write((char *) &memoryTraceListSize, sizeof(size_t));
-	totalFieldSize += sizeof(size_t);
-
-	for(auto &it : memoryTraceList) {
-		// Write the key
-		ss.write((char *) &(it.first), sizeof(int));
-		totalFieldSize += sizeof(int);
-
-		// Write the content (first)
-		ss.write((char *) &(it.second.first), sizeof(int64_t));
-		totalFieldSize += sizeof(int64_t);
-
-		// Write the content (second)
-		ss.write((char *) &(it.second.second), sizeof(unsigned));
-		totalFieldSize += sizeof(unsigned);
-	}
-
-	// Now writing getElementPtrList
-
-	const std::unordered_map<int, std::pair<std::string, int64_t>> &getElementPtrList = PC.getGetElementPtrList();
-	size_t getElementPtrListSize = getElementPtrList.size();
-
-	ss.write((char *) &getElementPtrListSize, sizeof(size_t));
-	totalFieldSize += sizeof(size_t);
-
-	for(auto &it : getElementPtrList) {
-		size_t contentFirstLength = it.second.first.length();
-
-		// Write the key
-		ss.write((char *) &(it.first), sizeof(int));
-		totalFieldSize += sizeof(int);
-
-		// Write the content (first) length
-		ss.write((char *) &contentFirstLength, sizeof(size_t));
-		totalFieldSize += sizeof(size_t);
-		// Write the content (first)
-		ss.write(it.second.first.c_str(), contentFirstLength);
-		totalFieldSize += contentFirstLength;
-
-		// Write the content (second)
-		ss.write((char *) &(it.second.second), sizeof(int64_t));
-		totalFieldSize += sizeof(int64_t);
-	}
-
-	// Now writing prevBBList
-
-	const std::vector<std::string> &prevBBList = PC.getPrevBBList();
-	size_t prevBBListSize = prevBBList.size();
-
-	ss.write((char *) &prevBBListSize, sizeof(size_t));
-	totalFieldSize += sizeof(size_t);
-
-	for(auto &it : prevBBList) {
-		size_t contentLength = it.length();
-
-		// Write the content length
-		ss.write((char *) &contentLength, sizeof(size_t));
-		totalFieldSize += sizeof(size_t);
-
-		// Write the content
-		ss.write(it.c_str(), contentLength);
-		totalFieldSize += contentLength;
-	}
-
-	// Now writing currBBList
-
-	const std::vector<std::string> &currBBList = PC.getCurrBBList();
-	size_t currBBListSize = currBBList.size();
-
-	ss.write((char *) &currBBListSize, sizeof(size_t));
-	totalFieldSize += sizeof(size_t);
-
-	for(auto &it : currBBList) {
-		size_t contentLength = it.length();
-
-		// Write the content length
-		ss.write((char *) &contentLength, sizeof(size_t));
-		totalFieldSize += sizeof(size_t);
-
-		// Write the content
-		ss.write(it.c_str(), contentLength);
-		totalFieldSize += contentLength;
-	}
-
-	std::string toWrite(ss.str());
-	size_t toWriteLen = toWrite.length();
-
-	// Commit to file
-	contextFile.write(&elemType, 1);
-	contextFile.write((char *) &totalFieldSize, sizeof(size_t));
-	contextFile.write(toWrite.c_str(), toWriteLen);
-}
+void ContextManager::saveOutBurstsInfo(std::string wholeLoopName, unsigned datapathType,
+	std::unordered_map<std::string, outBurstInfoTy> &loadOutBurstsFound, std::unordered_map<std::string, outBurstInfoTy> &storeOutBurstsFound) {
+// TODO TODO TODO
+#if 1//DBG_PRINT_ALL
+	DBG_DUMP("Dump of loadOutBurstsFound:\n");
+#ifdef VAR_WSIZE
+	for(auto const &x : loadOutBurstsFound)
+		DBG_DUMP("-- " << x.first << ": <" << x.second.canOutBurst << ", " << x.second.isRegistered << ", " << x.second.baseAddress << ", " << x.second.offset << ", " << x.second.wordSize << ">\n");
+#else
+	for(auto const &x : loadOutBurstsFound)
+		DBG_DUMP("-- " << x.first << ": <" << x.second.canOutBurst << ", " << x.second.isRegistered << ", " << x.second.baseAddress << ", " << x.second.offset << ">\n");
+#endif
+	DBG_DUMP("Dump of storeOutBurstsFound:\n");
+#ifdef VAR_WSIZE
+	for(auto const &x : storeOutBurstsFound)
+		DBG_DUMP("-- " << x.first << ": <" << x.second.canOutBurst << ", " << x.second.isRegistered << ", " << x.second.baseAddress << ", " << x.second.offset << ", " << x.second.wordSize << ">\n");
+#else
+	for(auto const &x : storeOutBurstsFound)
+		DBG_DUMP("-- " << x.first << ": <" << x.second.canOutBurst << ", " << x.second.isRegistered << ", " << x.second.baseAddress << ", " << x.second.offset << ">\n");
+#endif
 #endif
 
-#if 0
-	assert(readOnly && "Attempt to read parsed trace container from a write-only context manager");
+	assert(!readOnly && "Attempt to save out-bursts info on a read-only context manager");
 
-	size_t totalFieldSize;
-	size_t readWholeLoopNameSize;
-	std::string readWholeLoopName = "";
-	std::string readWholeLoopNameFirst = "none";
-	bool foundTheRightOne = false;
+	size_t totalFieldSize = 0;
+	std::stringstream ss;
+	totalFieldSize += writeElement<std::string, outBurstInfoTy>(ss, loadOutBurstsFound);
+	totalFieldSize += writeElement<std::string, outBurstInfoTy>(ss, storeOutBurstsFound);
+	commit(ContextManager::TYPE_OUTBURSTS_INFO, ss, totalFieldSize, wholeLoopName, datapathType);
+}
 
-	// Find the right PC for the right whole loop name (if any)
-	while(!foundTheRightOne) {
-		if(seekTo(ContextManager::TYPE_PARSED_TRACE_CONTAINER)) {
-			contextFile.read((char *) &totalFieldSize, sizeof(size_t));
-			contextFile.read((char *) &readWholeLoopNameSize, sizeof(size_t));
+void ContextManager::getOutBurstsInfo(std::string wholeLoopName, unsigned datapathType,
+	std::unordered_map<std::string, outBurstInfoTy> *loadOutBurstsFound, std::unordered_map<std::string, outBurstInfoTy> *storeOutBurstsFound) {
+	assert(readOnly && "Attempt to read out-bursts info from a write-only context manager");
+	assert(seekToIdentified(ContextManager::TYPE_OUTBURSTS_INFO, wholeLoopName, datapathType) && "Requested out-bursts info not found at the context manager");
 
-			assert(readWholeLoopNameSize < BUFF_STR_SZ && "A read of more than BUFF_STR_SZ bytes was requested from context file and it was blocked. If you believe that this was not caused by a corrupt context file, increase BUFF_STR_SZ");
+	readElement<std::string, outBurstInfoTy>(contextFile, *loadOutBurstsFound);
+	readElement<std::string, outBurstInfoTy>(contextFile, *storeOutBurstsFound);
 
-			char buff[BUFF_STR_SZ];
-			contextFile.read(buff, readWholeLoopNameSize);
-			buff[readWholeLoopNameSize] = '\0';
-			readWholeLoopName.assign(buff);
+// TODO TODO TODO
+#if 1//DBG_PRINT_ALL
+	DBG_DUMP("Dump of loadOutBurstsFound:\n");
+#ifdef VAR_WSIZE
+	for(auto const &x : *loadOutBurstsFound)
+		DBG_DUMP("-- " << x.first << ": <" << x.second.canOutBurst << ", " << x.second.isRegistered << ", " << x.second.baseAddress << ", " << x.second.offset << ", " << x.second.wordSize << ">\n");
+#else
+	for(auto const &x : *loadOutBurstsFound)
+		DBG_DUMP("-- " << x.first << ": <" << x.second.canOutBurst << ", " << x.second.isRegistered << ", " << x.second.baseAddress << ", " << x.second.offset << ">\n");
+#endif
+	DBG_DUMP("Dump of storeOutBurstsFound:\n");
+#ifdef VAR_WSIZE
+	for(auto const &x : *storeOutBurstsFound)
+		DBG_DUMP("-- " << x.first << ": <" << x.second.canOutBurst << ", " << x.second.isRegistered << ", " << x.second.baseAddress << ", " << x.second.offset << ", " << x.second.wordSize << ">\n");
+#else
+	for(auto const &x : *storeOutBurstsFound)
+		DBG_DUMP("-- " << x.first << ": <" << x.second.canOutBurst << ", " << x.second.isRegistered << ", " << x.second.baseAddress << ", " << x.second.offset << ">\n");
+#endif
+#endif
 
-			if(wholeLoopName == readWholeLoopName)
-				foundTheRightOne = true;
-			else
-				contextFile.seekg(totalFieldSize - sizeof(size_t) - readWholeLoopNameSize, std::ios::cur);
+	assert(!(contextFile.eof()) && "Context file is incomplete or corrupt");
+}
 
-			if("none" == readWholeLoopNameFirst)
-				readWholeLoopNameFirst.assign(readWholeLoopName);
-			else if(readWholeLoopNameFirst == readWholeLoopName)
-				break;
-		}
-		else {
-			break;
+void ContextManager::saveGlobalDDRMap(std::unordered_map<std::string, std::vector<ddrInfoTy>> &globalDDRMap) {
+	assert(!readOnly && "Attempt to save global DDR map on a read-only context manager");
+
+// TODO TODO TODO
+#if 1//DBG_PRINT_ALL
+	DBG_DUMP("Dump of globalDDRMap:\n");
+	for(auto const &x : globalDDRMap) {
+		DBG_DUMP("-- " << x.first << "\n");
+		for(auto const &y : x.second) {
+			DBG_DUMP("---- " << y.loopLevel << " " << y.datapathType << "\n");
+			DBG_DUMP("---- arraysLoaded:\n");
+			for(auto const &z: y.arraysLoaded)
+				DBG_DUMP("------ " << z << "\n");
+			DBG_DUMP("---- arraysStored:\n");
+			for(auto const &z: y.arraysStored)
+				DBG_DUMP("------ " << z << "\n");
 		}
 	}
+#endif
 
-	assert(foundTheRightOne && "Requested progressive trace container not found at the context manager");
+	size_t totalFieldSize = 0;
+	std::stringstream ss;
+	totalFieldSize += writeElement<std::string, ddrInfoTy>(ss, globalDDRMap);
+	commit(ContextManager::TYPE_GLOBAL_DDR_MAP, ss, totalFieldSize);
+}
 
-	PC = ParsedTraceContainer();
-	PC->openAndClearAllFiles();
+void ContextManager::getGlobalDDRMap(std::unordered_map<std::string, std::vector<ddrInfoTy>> *globalDDRMap) {
+	assert(readOnly && "Attempt to read global DDR map from a write-only context manager");
+	assert(seekTo(ContextManager::TYPE_GLOBAL_DDR_MAP) && "Requested global DDR map not found at the context manager");
 
-	// Now reading funcList
+	skipElement<size_t>(contextFile);
+	readElement<std::string, ddrInfoTy>(contextFile, *globalDDRMap);
 
-	size_t funcListSize;
-	contextFile.read((char *) &funcListSize, sizeof(size_t));
-
-	for(size_t i = 0; i < funcListSize; i++) {
-		size_t contentLength = 0;
-		contextFile.read((char *) &contentLength, sizeof(size_t));
-
-		assert(contentLength < BUFF_STR_SZ && "A read of more than BUFF_STR_SZ bytes was requested from context file and it was blocked. If you believe that this was not caused by a corrupt context file, increase BUFF_STR_SZ");
-
-		char buff[BUFF_STR_SZ];
-		contextFile.read(buff, contentLength);
-		buff[contentLength] = '\0';
-		std::string content(buff);
-
-		PC->appendToFuncList(content);
+// TODO TODO TODO
+#if 1//DBG_PRINT_ALL
+	DBG_DUMP("Dump of globalDDRMap:\n");
+	for(auto const &x : *globalDDRMap) {
+		DBG_DUMP("-- " << x.first << "\n");
+		for(auto const &y : x.second) {
+			DBG_DUMP("---- " << y.loopLevel << " " << y.datapathType << "\n");
+			DBG_DUMP("---- arraysLoaded:\n");
+			for(auto const &z: y.arraysLoaded)
+				DBG_DUMP("------ " << z << "\n");
+			DBG_DUMP("---- arraysStored:\n");
+			for(auto const &z: y.arraysStored)
+				DBG_DUMP("------ " << z << "\n");
+		}
 	}
+#endif
+
+	assert(!(contextFile.eof()) && "Context file is incomplete or corrupt");
+}
+
+#ifdef CROSS_DDDG_PACKING
+void ContextManager::saveRemainingBudgetInfo(std::string wholeLoopName, unsigned datapathType,
+	std::unordered_map<std::string, remainingBudgetTy> &loadRemainingBudget, std::unordered_map<std::string, remainingBudgetTy> &storeRemainingBudget) {
+// TODO TODO TODO
+#if 1//DBG_PRINT_ALL
+	DBG_DUMP("Dump of loadRemainingBudget:\n");
+	for(auto const &x : loadRemainingBudget)
+		DBG_DUMP("-- " << x.first << ": <" << x.second.isValid << ", " << x.second.remainingBudget << ", " << x.second.baseAddress << ", " << x.second.offset << ">\n");
+	DBG_DUMP("Dump of storeRemainingBudget:\n");
+	for(auto const &x : storeRemainingBudget)
+		DBG_DUMP("-- " << x.first << ": <" << x.second.isValid << ", " << x.second.remainingBudget << ", " << x.second.baseAddress << ", " << x.second.offset << ">\n");
+#endif
+
+	assert(!readOnly && "Attempt to save remaining budget info on a read-only context manager");
+
+	size_t totalFieldSize = 0;
+	std::stringstream ss;
+	totalFieldSize += writeElement<std::string, remainingBudgetTy>(ss, loadRemainingBudget);
+	totalFieldSize += writeElement<std::string, remainingBudgetTy>(ss, storeRemainingBudget);
+	commit(ContextManager::TYPE_REMAINING_BUDGET_INFO, ss, totalFieldSize, wholeLoopName, datapathType);
+}
+
+void ContextManager::getRemainingBudgetInfo(std::string wholeLoopName, unsigned datapathType,
+	std::unordered_map<std::string, remainingBudgetTy> *loadRemainingBudget, std::unordered_map<std::string, remainingBudgetTy> *storeRemainingBudget) {
+	assert(readOnly && "Attempt to read remaining budget info from a write-only context manager");
+	assert(seekToIdentified(ContextManager::TYPE_REMAINING_BUDGET_INFO, wholeLoopName, datapathType) && "Requested remaining budget info not found at the context manager");
+
+	readElement<std::string, remainingBudgetTy>(contextFile, *loadRemainingBudget);
+	readElement<std::string, remainingBudgetTy>(contextFile, *storeRemainingBudget);
+
+// TODO TODO TODO
+#if 1//DBG_PRINT_ALL
+	DBG_DUMP("Dump of loadRemainingBudget:\n");
+	for(auto const &x : *loadRemainingBudget)
+		DBG_DUMP("-- " << x.first << ": <" << x.second.isValid << ", " << x.second.remainingBudget << ", " << x.second.baseAddress << ", " << x.second.offset << ">\n");
+	DBG_DUMP("Dump of storeRemainingBudget:\n");
+	for(auto const &x : *storeRemainingBudget)
+		DBG_DUMP("-- " << x.first << ": <" << x.second.isValid << ", " << x.second.remainingBudget << ", " << x.second.baseAddress << ", " << x.second.offset << ">\n");
+#endif
 
 	assert(!(contextFile.eof()) && "Context file is incomplete or corrupt");
 }

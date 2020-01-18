@@ -831,9 +831,7 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 
 			VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Recovering context from previous execution\n");
 			CtxM.getLoopBoundInfo(&wholeloopName2loopBoundMap);
-
-			for(auto const &x : wholeloopName2loopBoundMap)
-				DBG_DUMP("-- " << x.first << ": " << x.second << "\n");
+			CtxM.getGlobalDDRMap(&globalDDRMap);
 		}
 	}
 
@@ -903,9 +901,6 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 
 		unsigned unrollFactor = (targetLoopBound < targetUnrollFactor && targetLoopBound)? targetLoopBound : targetUnrollFactor;
 
-		// Reset flag for detection of DDR transactions
-		anyDDRTransactionFound = false;
-
 		if(args.fNPLA && firstNonPerfectLoopLevel != -1) {
 			VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Non-perfect loop analysis triggered: building multipaths\n");
 
@@ -946,12 +941,10 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 	}
 
 	if(!(args.fNoMMA)) {
-		for(auto const &x : wholeloopName2loopBoundMap)
-			DBG_DUMP("-- " << x.first << ": " << x.second << "\n");
-
 		if(ArgPack::MMA_MODE_GEN == args.mmaMode) {
 			VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Saving context for later use\n");
 			CtxM.saveLoopBoundInfo(wholeloopName2loopBoundMap);
+			CtxM.saveGlobalDDRMap(globalDDRMap);
 		}
 
 		CtxM.close();

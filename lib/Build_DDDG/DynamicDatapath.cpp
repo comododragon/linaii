@@ -104,7 +104,7 @@ void DynamicDatapath::_DynamicDatapath(
 		VERBOSE_PRINT(errs() << "\tRecovering context from previous execution\n");
 		std::string wholeLoopName = appendDepthToLoopName(loopName, loopLevel);
 		CtxM.getParsedTraceContainer(wholeLoopName, &PC);
-		CtxM.getDDDG(wholeLoopName, datapathType, *this);
+		CtxM.getDDDG(wholeLoopName, datapathType, this);
 	}
 
 	if(nodesToImport)

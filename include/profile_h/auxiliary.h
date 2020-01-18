@@ -126,7 +126,7 @@ extern std::map<std::string, std::string> functionName2MangledNameMap;
 extern std::map<std::string, std::string> mangledName2FunctionNameMap;
 
 // Datatype representing an artificial node (i.e. a node created after DDDG generation)
-typedef struct {
+struct artificialNodeTy {
 	unsigned ID;
 	int opcode;
 	// Non-silent latency
@@ -137,7 +137,7 @@ typedef struct {
 	int lineNo;
 	std::string prevBB;
 	std::string currBB;
-} artificialNodeTy;
+};
 
 class ConfigurationManager {
 public:

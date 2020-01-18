@@ -5,13 +5,15 @@
 extern memoryTraceMapTy memoryTraceMap;
 extern bool memoryTraceGenerated;
 
-bool anyDDRTransactionFound;
+std::unordered_map<std::string, std::vector<ddrInfoTy>> globalDDRMap;
 
 MemoryModel::MemoryModel(BaseDatapath *datapath) :
 	datapath(datapath), microops(datapath->getMicroops()), graph(datapath->getDDDG()),
 	nameToVertex(datapath->getNameToVertex()), vertexToName(datapath->getVertexToName()), edgeToWeight(datapath->getEdgeToWeight()),
 	baseAddress(datapath->getBaseAddress()), CM(datapath->getConfigurationManager()), PC(datapath->getParsedTraceContainer()) {
+	wholeLoopName = appendDepthToLoopName(datapath->getTargetLoopName(), datapath->getTargetLoopLevel());
 	ddrBanking = CM.getGlobalCfg<bool>(ConfigurationManager::globalCfgTy::GLOBAL_DDRBANKING);
+	importedFromContext = false;
 }
 
 MemoryModel *MemoryModel::createInstance(BaseDatapath *datapath) {
@@ -27,6 +29,98 @@ MemoryModel *MemoryModel::createInstance(BaseDatapath *datapath) {
 			assert(args.fNoMMA && "Memory model analysis is currently not supported with the selected platform. Please activate the \"--fno-mma\" flag");
 			return nullptr;
 	}
+}
+
+bool MemoryModel::canOutBurstsOverlap(std::vector<MemoryModel::nodeExportTy> toBefore, std::vector<MemoryModel::nodeExportTy> toAfter) {
+	// We follow here the policies as documented in tryAllocate()
+	for(auto &after : toAfter) {
+		for(auto &before : toBefore) {
+			// If DDR banking is active, only consider cases with the same arrayName
+			if(after.arrayName != before.arrayName)
+				continue;
+
+			// With current out-burst logic, here is simplified considering that:
+			// - "after" will always be bound to write transactions (LLVM_IR_DDRWriteResp)
+			// - "before" can be either read or write (LLVM_IR_DDRReadReq or LLVM_IR_DDRWriteReq)
+
+			uint64_t afterBase = after.baseAddress;
+			uint64_t beforeBase = before.baseAddress;
+#ifdef VAR_WSIZE
+			uint64_t afterEnd = afterBase + after.offset * after.wordSize;
+			uint64_t beforeEnd = beforeBase + before.offset * before.wordSize;
+#else
+			// XXX: As always, assuming 32-bit
+			uint64_t afterEnd = afterBase + after.offset * 4;
+			uint64_t beforeEnd = beforeBase + before.offset * 4;
+#endif
+
+			// Asserting just for security
+			assert(LLVM_IR_DDRWriteResp == getNonSilentOpcode(after.node.opcode) && "Out-bursted node to \"after\" DDDG is not LLVM_IR_DDRWriteResp, this is likely a bug");
+
+			if(ArgPack::DDR_POLICY_CANNOT_OVERLAP == args.ddrSched) {
+				switch(getNonSilentOpcode(before.node.opcode)) {
+					// If "before" is a write, we cannot overlap
+					case LLVM_IR_DDRWriteReq:
+						return false;
+					// If "before" is a read, we can overlap if the regions do not
+					case LLVM_IR_DDRReadReq:
+						if(beforeEnd >= afterBase && afterEnd >= beforeBase)
+							return false;
+						break;
+					default:
+						assert(false && "Out-bursted node to \"before\" DDDG is not of an expected type, this is likely a bug");
+				}
+			}
+			else if(ArgPack::DDR_POLICY_CAN_OVERLAP == args.ddrSched) {
+				// Any region can co-exist if their regions do not overlap
+				if(beforeEnd >= afterBase && afterEnd >= beforeBase)
+					return false;
+			}
+			else {
+				assert(false && "Invalid DDR scheduling policy selected (this assert should never execute)");
+			}
+		}
+	}
+
+	return true;
+ 
+#if 0
+	// XXX: This overlap analysis on out-bursts does not actually consider the whole space traversed through the loop
+	// Maybeb this information should be included in the exported node (we have this info when running findOutBursts!)
+	// It might be needed also to add this info to the context
+	//assert(false && "Re-check this function!");
+	// Check if the scheduled outbursts overlap
+	// Yes, this is a O(n^2) loop, but it will (hopefully) rarely run in total:
+	// - When banking is active, only cases where v1[i].arrayName == v2[j].arrayName will execute
+	// - Else, there should be at most 2 elements in v1 and v2
+	for(auto &it1 : v1) {
+		for(auto &it2 : v2) {
+			// If DDR banking is active, only consider cases with the same arrayName
+			if(it1.arrayName != it2.arrayName)
+				continue;
+
+			uint64_t base1 = it1.baseAddress;
+#ifdef VAR_WSIZE
+			uint64_t end1 = base1 + it1.offset * it1.wordSize;
+#else
+			// XXX: As always, assuming 32-bit
+			uint64_t end1 = base1 + it1.offset * 4;
+#endif
+			uint64_t base2 = it2.baseAddress;
+#ifdef VAR_WSIZE
+			uint64_t end2 = base2 + it2.offset * it2.wordSize;
+#else
+			// XXX: As always, assuming 32-bit
+			uint64_t end2 = base2 + it2.offset * 4;
+#endif
+
+			if(end1 >= base2 && end2 >= base1)
+				return true;
+		}
+	}
+
+	return false;
+#endif
 }
 
 void MemoryModel::analyseAndTransform() { }
@@ -118,30 +212,272 @@ void XilinxZCUMemoryModel::findInBursts(
 	}
 }
 
-bool XilinxZCUMemoryModel::findOutBursts(
+bool XilinxZCUMemoryModel::analyseLoadOutBurstFeasability(unsigned burstID, std::string arrayName) {
+	if(ArgPack::DDR_POLICY_CANNOT_OVERLAP == args.ddrSched) {
+		if(ddrBanking) {
+			// No reads for the same array
+			for(auto &it : burstedLoads) {
+				// Ignore if this is the burst under analysis
+				if(burstID != it.first) {
+					std::string otherArrayName = loadNodes.at(it.first).first;
+					if(otherArrayName == arrayName)
+						return false;
+				}
+			}
+		}
+		else {
+			// No reads from other bursts
+			if(burstedLoads.size() > 1)
+				return false;
+		}
+
+		// No writes for the same array
+		for(auto &it : burstedStores) {
+			std::string otherArrayName = storeNodes.at(it.first).first;
+			if(otherArrayName == arrayName)
+				return false;
+		}
+	}
+	else if(ArgPack::DDR_POLICY_CAN_OVERLAP == args.ddrSched) {
+		// No reads for the same array
+		for(auto &it : burstedLoads) {
+			// Ignore if this is the burst under analysis
+			if(burstID != it.first) {
+				std::string otherArrayName = loadNodes.at(it.first).first;
+				if(otherArrayName == arrayName)
+					return false;
+			}
+		}
+
+		// No writes for the same array
+		for(auto &it : burstedStores) {
+			std::string otherArrayName = storeNodes.at(it.first).first;
+			if(otherArrayName == arrayName)
+				return false;
+		}
+	}
+	else {
+		assert(false && "Invalid DDR scheduling policy selected (this assert should never execute)");
+	}
+
+	return true;
+}
+
+bool XilinxZCUMemoryModel::analyseStoreOutBurstFeasability(unsigned burstID, std::string arrayName) {
+	if(ArgPack::DDR_POLICY_CANNOT_OVERLAP == args.ddrSched) {
+		if(ddrBanking) {
+			// No writes for the same array
+			for(auto &it : burstedStores) {
+				// Ignore if this is the burst under analysis
+				if(burstID != it.first) {
+					std::string otherArrayName = storeNodes.at(it.first).first;
+					if(otherArrayName == arrayName)
+						return false;
+				}
+			}
+		}
+		else {
+			// No writes from other bursts
+			if(burstedStores.size() > 1)
+				return false;
+		}
+
+		// No reads for the same array
+		for(auto &it : burstedLoads) {
+			std::string otherArrayName = loadNodes.at(it.first).first;
+			if(otherArrayName == arrayName)
+				return false;
+		}
+	}
+	else if(ArgPack::DDR_POLICY_CAN_OVERLAP == args.ddrSched) {
+		// No writes for the same array
+		for(auto &it : burstedStores) {
+			// Ignore if this is the burst under analysis
+			if(burstID != it.first) {
+				std::string otherArrayName = storeNodes.at(it.first).first;
+				if(otherArrayName == arrayName)
+					return false;
+			}
+		}
+
+		// No reads for the same array
+		for(auto &it : burstedLoads) {
+			std::string otherArrayName = loadNodes.at(it.first).first;
+			if(otherArrayName == arrayName)
+				return false;
+		}
+	}
+	else {
+		assert(false && "Invalid DDR scheduling policy selected (this assert should never execute)");
+	}
+
+	return true;
+}
+
+std::unordered_map<std::string, outBurstInfoTy> XilinxZCUMemoryModel::findOutBursts(
 	std::unordered_map<unsigned, burstInfoTy> &burstedNodes,
-	std::string &wholeLoopName,
-	const std::vector<std::string> &instIDList
+	std::unordered_map<unsigned, std::pair<std::string, uint64_t>> &foundNodes,
+	const std::vector<std::string> &instIDList,
+	bool (XilinxZCUMemoryModel::*analyseOutBurstFeasability)(unsigned, std::string)
 ) {
-	bool outBurstFound = false;
+	std::unordered_map<std::string, outBurstInfoTy> canOutBurst;
 
-	// If DDR scheduling policy is conservative, we only proceed if no DDR transaction was found yet.
-	// With other policies, we proceed anyway
-	if(ArgPack::DDR_POLICY_CANNOT_OVERLAP == args.ddrSched && anyDDRTransactionFound)
-		return false;
+	// This is a local search. It will decide whether out-burst or not solely
+	// on information about this DDDG. This does not mean that the out-burst is
+	// actually possible if all DDDGS all considered. This deeper analysis only
+	// happens with the gen-use execution model, where blockInvalidOutBursts()
+	// is used.
 
-	// Our current assumption for inter-iteration bursting is very restrictive. It should happen only when
-	// there is one (and one only) load/store transaction (which may be bursted) inside a loop iteration,
-	// excluding imported out-bursted nodes from inner loops
-	if(1 == burstedNodes.size()) {
+	// Local search policies:
+	// Conservative:
+	// - Writes can only be out-bursted if:
+	//   - There is no read for the same array in this DDDG;
+	//   - There is no writes at all for the same memory space;
+	// - Reads can only be out-bursted if:
+	//   - There is no write for the same array in this DDDG;
+	//   - There is no reads at all for the same memory space;
+	// Overlapping:
+	// - Writes or reads can only be out-bursted if:
+	//   - There is no transactions for the same array in this DDDG;
+	// This logic is implemented at:
+	// - analyseLoadOutBurstFeasability()
+	// - analyseStoreOutBurstFeasability()
+
+	// Offset defines the burst size, excluding the first element. Unrolling a loop N times will make the offset grow N times,
+	// considering that the code execution will not vary through each iteration. memoryTraceMap has no knowledge about the
+	// unrolling performed by Lina, therefore the offset must be adjusted to properly seek through memoryTraceMap
+	// same instruction at the map. 
+	// NOTE: This is only applicable to DDDGs where unroll actually causes node replication (i.e. the innermost).
+	//       It is not the case for non-perfect DDDGs.
+	unsigned adjustFactor = (BaseDatapath::NORMAL_LOOP == datapath->getDatapathType())?
+		loopName2levelUnrollVecMap.at(datapath->getTargetLoopName())[datapath->getTargetLoopLevel() - 1] : 1;
+
+	for(auto &it : burstedNodes) {
+		std::string arrayName = foundNodes.at(it.first).first;
+		burstInfoTy &burstedNode = it.second;
+
+		// If canOutBurst already have the element for this array name,
+		// it means that there is more than one transaction of same type
+		// for the same array, already breaking the "no X for the same array"
+		// rule. We can stop here and already inform that this array is not
+		// out-burstable.
+		std::unordered_map<std::string, outBurstInfoTy>::iterator found = canOutBurst.find(arrayName);
+		if(found != canOutBurst.end()) {
+			// Even if it was out-burstable, it is not anymore
+			found->second.canOutBurst = false;
+			continue;
+		}
+
 		// We are optimistic at first
-		outBurstFound = true;
+		canOutBurst[arrayName] = outBurstInfoTy(true);
+
+		// If local analysis of out-burst fails, no need to continue also
+		if((this->*analyseOutBurstFeasability)(it.first, arrayName)) {
+			// In this case, all transactions between iterations must be contiguous with no overlap
+			// This means that all entangled nodes (i.e. DDDG nodes that represent the same instruction but
+			// different instances) must continuously increase their address by the burst size (offset)
+			// If any fails, we assume that inter-iteration bursting is not possible.
+			uint64_t offset = burstedNode.offset + 1;
+#ifdef VAR_WSIZE
+			uint64_t wordSize = burstedNode.wordSize;
+#endif
+			std::vector<unsigned> burstedNodesVec = burstedNode.participants;
+
+			for(auto &it2 : burstedNodesVec) {
+				std::pair<std::string, std::string> wholeLoopNameInstNamePair = std::make_pair(wholeLoopName, instIDList[it2]);
+
+				// Check if all instances of this instruction are well behaved in the memory trace
+				// XXX: We do not sort the list here like when searching for inner bursts, since we do not support loop reordering (for now)
+				std::vector<uint64_t> addresses = memoryTraceMap.at(wholeLoopNameInstNamePair);
+#ifdef VAR_WSIZE
+				uint64_t nextAddress = addresses[0] + wordSize * (offset / adjustFactor);
+#else
+				// XXX: As always, assuming 32-bit
+				uint64_t nextAddress = addresses[0] + 4 * (offset / adjustFactor);
+#endif
+				for(unsigned i = 1; i < addresses.size(); i++) {
+					if(nextAddress != addresses[i]) {
+						canOutBurst[arrayName].canOutBurst = false;
+						break;
+					}
+					else {
+#ifdef VAR_WSIZE
+						nextAddress += wordSize * (offset / adjustFactor);
+#else
+						// XXX: As always, assuming 32-bit
+						nextAddress += 4 * (offset / adjustFactor);
+#endif
+					}
+				}
+
+				// If out-burst is apparently possible, we save the expanded memory region (considering the entangled nodes)
+				// to be exported later with the nodes
+				if(canOutBurst.at(arrayName).canOutBurst) {
+					outBurstInfoTy &info = canOutBurst.at(arrayName);
+
+					// If the out-burst region information was already registered, we check if the region is the same
+					if(info.isRegistered) {
+						// If not, this is also an irregular out-burst
+#ifdef VAR_WSIZE
+						if((burstedNode.baseAddress != info.baseAddress) || ((addresses.size() - 1) != info.offset) || (wordSize != info.wordSize)) {
+#else
+						if((burstedNode.baseAddress != info.baseAddress) || ((addresses.size() - 1) != info.offset)) {
+#endif
+							canOutBurst[arrayName].canOutBurst = false;
+							break;
+						}
+					}
+					else {
+						info.baseAddress = burstedNode.baseAddress;
+						info.offset = addresses.size() - 1;
+#ifdef VAR_WIZE
+						info.wordSize = wordSize;
+#endif
+						info.isRegistered = true;
+					}
+				}
+				else {
+					break;
+				}
+			}
+		}
+		else {
+			canOutBurst[arrayName].canOutBurst = false;
+		}
+	}
+
+#if 0
+	// Our current assumption for inter-iteration bursting is very restrictive. It should happen only when
+	// there is one (and one only) load/store transaction (which may be bursted) inside a loop level for
+	// the same array. If banking is not active, it means only one transaction at all, regardless of array.
+	// We can already cancel if this is the case.
+	if(!ddrBanking && burstedNodes.size() > 1)
+		return canOutBurst;
+
+	for(auto &it : burstedNodes) {
+#if 0
+		std::string arrayName = ddrBanking? foundNodes.at(it.first).first : "";
+#else
+		std::string arrayName = foundNodes.at(it.first).first;
+#endif
+		burstInfoTy &burstedNode = it.second;
+
+		// If out-burst was already checked for this array (or "" if no banking)
+		// this means more than one transaction per array name, which is not allowed in our
+		// current out-burst logic
+		std::unordered_map<std::string, bool>::iterator found = canOutBurst.find(arrayName);
+		if(found != canOutBurst.end()) {
+			found->second = false;
+			continue;
+		}
+
+		// We are optimistic at first
+		canOutBurst[arrayName] = true;
 
 		// In this case, all transactions between iterations must be contiguous with no overlap
 		// This means that all entangled nodes (i.e. DDDG nodes that represent the same instruction but
 		// different instances) must continuously increase their address by the burst size (offset)
 		// If any fails, we assume that inter-iteration bursting is not possible.
-		burstInfoTy &burstedNode = burstedNodes.begin()->second;
 		uint64_t offset = burstedNode.offset + 1;
 #ifdef VAR_WSIZE
 		uint64_t wordSize = burstedNode.wordSize;
@@ -153,8 +489,8 @@ bool XilinxZCUMemoryModel::findOutBursts(
 		// Therefore we adjust the loop increment accordingly
 		unsigned loopIncrement = loopName2levelUnrollVecMap.at(datapath->getTargetLoopName())[datapath->getTargetLoopLevel() - 1];
 
-		for(auto &it : burstedNodesVec) {
-			std::pair<std::string, std::string> wholeLoopNameInstNamePair = std::make_pair(wholeLoopName, instIDList[it]);
+		for(auto &it2 : burstedNodesVec) {
+			std::pair<std::string, std::string> wholeLoopNameInstNamePair = std::make_pair(wholeLoopName, instIDList[it2]);
 
 			// Check if all instances of this instruction are well behaved in the memory trace
 			// XXX: We do not sort the list here like when searching for inner bursts, since we do not support loop reordering (for now)
@@ -167,7 +503,7 @@ bool XilinxZCUMemoryModel::findOutBursts(
 #endif
 			for(unsigned i = loopIncrement; i < addresses.size(); i += loopIncrement) {
 				if(nextAddress != addresses[i]) {
-					outBurstFound = false;
+					canOutBurst[arrayName] = false;
 					break;
 				}
 				else {
@@ -180,17 +516,21 @@ bool XilinxZCUMemoryModel::findOutBursts(
 				}
 			}
 
-			if(!outBurstFound)
+			if(!(canOutBurst[arrayName]))
 				break;
 		}
 	}
+#endif
 
-	return outBurstFound;
+	return canOutBurst;
 }
 
 void XilinxZCUMemoryModel::packBursts(
 	std::unordered_map<unsigned, burstInfoTy> &burstedNodes,
 	std::unordered_map<unsigned, std::pair<std::string, uint64_t>> &nodes,
+#ifdef CROSS_DDDG_PACKING
+	std::unordered_map<std::string, remainingBudgetTy> &remainingBudget,
+#endif
 	int silentOpcode, bool nonSilentLast
 ) {
 	for(auto &burst : burstedNodes) {
@@ -229,21 +569,198 @@ void XilinxZCUMemoryModel::packBursts(
 		if(nonSilentLast) {
 			microops.at(participant) = getNonSilentOpcode(silentOpcode);
 		}
+
+#ifdef CROSS_DDDG_PACKING
+		// Save the remaining budget, it can be used by other DDDGs in the same loop level (conditions apply)
+		std::string arrayName = nodes.at(burst.first).first;
+		std::unordered_map<std::string, remainingBudgetTy>::iterator found = remainingBudget.find(arrayName);
+		// If there is already an element for this array, we cannot reuse this budget later as there may be overlapping
+		// concurrency. In this case we invalidate the remaining budget at all
+		remainingBudget[arrayName] = (remainingBudget.end() == found)?
+			remainingBudgetTy(nonSilentLast? (busBudget + 4) % DDR_DATA_BUS_WIDTH : busBudget, burst.second.baseAddress, burst.second.offset) :
+			remainingBudgetTy();
+#endif
 	}
 }
 
+bool XilinxZCUMemoryModel::analyseLoadOutBurstFeasabilityGlobal(std::string arrayName, unsigned loopLevel, unsigned datapathType) {
+	if(ArgPack::DDR_POLICY_CANNOT_OVERLAP == args.ddrSched) {
+		for(auto &it : filteredDDRMap) {
+			// Ignore elements that are from upper loops
+			if(it.loopLevel < loopLevel)
+				continue;
+			// If it refers to this DDDG itself, also ignore
+			if(it.loopLevel == loopLevel && datapathType == it.datapathType)
+				continue;
+			// Also ignore BETWEEN DDDGs
+			if(BaseDatapath::NON_PERFECT_BETWEEN == it.datapathType)
+				continue;
+
+			if(ddrBanking) {
+				// No reads for the same array
+				if(it.arraysLoaded.count(arrayName))
+					return false;
+			}
+			else {
+				// No reads at all
+				if(it.arraysLoaded.size())
+					return false;
+			}
+
+			// No writes for the same array
+			if(it.arraysStored.count(arrayName))
+				return false;
+		}
+	}
+	else if(ArgPack::DDR_POLICY_CAN_OVERLAP == args.ddrSched) {
+		for(auto &it : filteredDDRMap) {
+			// Ignore elements that are from upper loops
+			if(it.loopLevel < loopLevel)
+				continue;
+			// If it refers to this DDDG itself, also ignore
+			if(it.loopLevel == loopLevel && datapathType == it.datapathType)
+				continue;
+			// Also ignore BETWEEN DDDGs
+			if(BaseDatapath::NON_PERFECT_BETWEEN == it.datapathType)
+				continue;
+
+			// No reads for the same array
+			if(it.arraysLoaded.count(arrayName))
+				return false;
+
+			// No writes for the same array
+			if(it.arraysStored.count(arrayName))
+				return false;
+		}
+	}
+	else {
+		assert(false && "Invalid DDR scheduling policy selected (this assert should never execute)");
+	}
+
+	return true;
+}
+
+bool XilinxZCUMemoryModel::analyseStoreOutBurstFeasabilityGlobal(std::string arrayName, unsigned loopLevel, unsigned datapathType) {
+	if(ArgPack::DDR_POLICY_CANNOT_OVERLAP == args.ddrSched) {
+		for(auto &it : filteredDDRMap) {
+			// Ignore elements that are from upper loops
+			if(it.loopLevel < loopLevel)
+				continue;
+			// If it refers to this DDDG itself, also ignore
+			if(it.loopLevel == loopLevel && datapathType == it.datapathType)
+				continue;
+			// Also ignore BETWEEN DDDGs
+			if(BaseDatapath::NON_PERFECT_BETWEEN == it.datapathType)
+				continue;
+
+			if(ddrBanking) {
+				// No writes for the same array
+				if(it.arraysStored.count(arrayName))
+					return false;
+			}
+			else {
+				// No writes at all
+				if(it.arraysStored.size())
+					return false;
+			}
+
+			// No reads for the same array
+			if(it.arraysLoaded.count(arrayName))
+				return false;
+		}
+	}
+	else if(ArgPack::DDR_POLICY_CAN_OVERLAP == args.ddrSched) {
+		for(auto &it : filteredDDRMap) {
+			// Ignore elements that are from upper loops
+			if(it.loopLevel < loopLevel)
+				continue;
+			// If it refers to this DDDG itself, also ignore
+			if(it.loopLevel == loopLevel && datapathType == it.datapathType)
+				continue;
+			// Also ignore BETWEEN DDDGs
+			if(BaseDatapath::NON_PERFECT_BETWEEN == it.datapathType)
+				continue;
+
+			// No writes for the same array
+			if(it.arraysStored.count(arrayName))
+				return false;
+
+			// No reads for the same array
+			if(it.arraysLoaded.count(arrayName))
+				return false;
+		}
+	}
+	else {
+		assert(false && "Invalid DDR scheduling policy selected (this assert should never execute)");
+	}
+
+	return true;
+}
+
+void XilinxZCUMemoryModel::blockInvalidOutBursts(
+	std::unordered_map<std::string, outBurstInfoTy> &outBurstsFound, unsigned loopLevel, unsigned datapathType,
+	bool (XilinxZCUMemoryModel::*analyseOutBurstFeasabilityGlobal)(std::string, unsigned, unsigned)
+) {
+	// The same logic performed locally by findOutBursts(), will be performed globally here
+	for(auto &it : outBurstsFound) {
+		// If it is already false, no need to analyse then
+		if(it.second.canOutBurst) {
+			std::string arrayName = it.first;
+
+			// If with global information we assume that is not feasible, too bad, cancel this out-burst
+			if(!((this->*analyseOutBurstFeasabilityGlobal)(it.first, loopLevel, datapathType)))
+				it.second.canOutBurst = false;
+		}
+	}
+#if 0
+	for(auto &it : outBurstsFound) {
+		// If it is already false, no need to analyse then
+		if(it.second) {
+			std::string arrayName = it.first;
+
+			// Block nodes that would be exported to a previous outer-loop if they overlap inner transactions
+			for(auto &it2 : filteredDDRMap) {
+				// Ignore elements that are from upper loops
+				if(it2.loopLevel < loopLevel)
+					continue;
+				// If it refers to this DDDG itself, also ignore
+				else if(it2.loopLevel == loopLevel && datapathType == it2.datapathType)
+					continue;
+
+				// If banking is enabled, disable out-burst if there are transactions for the same array
+				// Else, disable if there is any transaction
+#if 0
+				if(ddrBanking) {
+#endif
+					if(it2.arrays.count(arrayName)) {
+						it.second = false;
+						break;
+					}
+#if 0
+				}
+				else {
+					if(it2.arrays.size()) {
+						it.second = false;
+						break;
+					}
+				}
+#endif
+			}
+		}
+	}
+#endif
+}
+
 XilinxZCUMemoryModel::XilinxZCUMemoryModel(BaseDatapath *datapath) : MemoryModel(datapath) {
-	loadOutBurstFound = false;
-	storeOutBurstFound = false;
-	//completedTransactions = 0;
-	readReqImported = false;
-	writeReqImported = false;
-	writeRespImported = false;
-	//allUnimportedComplete = false;
-	//importedWriteRespComplete = true;
+	importedReadReqs.clear();
+	importedWriteReqs.clear();
+	importedWriteResps.clear();
 }
 
 void XilinxZCUMemoryModel::analyseAndTransform() {
+	std::unordered_map<std::string, outBurstInfoTy> loadOutBurstsFound;
+	std::unordered_map<std::string, outBurstInfoTy> storeOutBurstsFound;
+
 	if(!(args.fNoMMABurst)) {
 		// The memory trace map can be generated in two ways:
 		// - Running Lina with "--mem-trace" and any other mode than "--mode=estimation"
@@ -256,7 +773,7 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 			std::ifstream traceFile;
 
 			traceFile.open(traceFileName);
-			assert(traceFile.is_open() && "No memory trace found. Please run Lina with \"--mem-trace\" flag (leave it enabled) and any mode other than \"--mode=estimation\" (only once is needed) to generate it or deactivate inter-iteration burst analysis with \"--fno-mmaburst\"");
+			assert(traceFile.is_open() && "No memory trace found. Please run Lina with \"--mem-trace\" flag (leave it enabled) and any mode other than \"--mode=estimation\" (only once is needed) to generate it; or deactivate inter-iteration burst analysis with \"--fno-mmaburst\"");
 
 			while(true) {
 				std::getline(traceFile, line);
@@ -342,28 +859,73 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 	};
 	findInBursts(storeNodes, behavedStores, burstedStores, storeComparator);
 
+	// TODO: Here would be the perfect place to implement the warning about redundant load/store
+	// Recalling: If in an after, a load is performed that in a BEFORE DDDG it could be well performed
+	// by using the remaining budget from a load, this is a redudant load that could be supressed,
+	// if there are no writes for the same array in the inner loops that are between BEFORE and AFTER.
+	// Something similar applies to the AFTER DDDG regarding to stores: if an AFTER has remaining budget
+	// for a store and there are stores in BEFORE DDDG that could use this remaining budget, it is also
+	// a redundant store, if there are no writes or reads for the same array in the inner loops.
+	// The BETWEEN DDDG also comes into act here somehow
+#ifdef CROSS_DDDG_PACKING
+	if(!(args.fNoBurstPack) && ArgPack::MMA_MODE_USE == args.mmaMode) {
+		assert(importedFromContext && "\"--mma-mode\" is set to USE and no context supplied");
+
+		tryAllocateRemainingBudget(microops, loadNodes, behavedLoads, burstedLoads, loadRemainingBudget);
+	}
+#endif
+
 	// TODO: why && burstedStores.size()????
 	if(!(args.fNoMMABurst) && burstedStores.size()) {
-		std::string wholeLoopName = appendDepthToLoopName(datapath->getTargetLoopName(), datapath->getTargetLoopLevel());
+		// XXX: Out-burst analysis assumes that no arrays overlap in memory space!
+		// This is because for our analysis like it is explained at the beginning of tryAllocate(), we need the
+		// region that is read/written to analyse overlap. Within a single DDDG, this information is available
+		// for out-bursts, we would have to know the entire region considering the whole loop execution. This information
+		// we don't have now and it is not calculated.
+		// - For local out-burst analysis, we can still take into account this information as it is available
+		// - For global out-burst analysis, we would need to calculate the region read not only by a single DDDG, but all
+		//   the iteration instances of it
+		// For now we are considering the worst-case scenario:
+		// - If arrays overlap, the worst-case scenario would be the whole memory (would block 99.9% of out-bursts)
+		// - If arrays don't overlap, the worst-case scenario is the total array size (as it is guaranteed that arrays will never overlap)
+
+		// XXX: For now out-burst analysis does not work with burst mix active
+		assert((!args.fBurstMix || ddrBanking) && "Currently burst mix is not supported when iteration burst analysis is active");
+
 		const std::vector<std::string> &instIDList = PC.getInstIDList();
-
-		// Try to find contiguous loads between loop iterations
-		loadOutBurstFound = findOutBursts(burstedLoads, wholeLoopName, instIDList);
-
-		// Try to find contiguous stores between loop iterations
-		storeOutBurstFound = findOutBursts(burstedStores, wholeLoopName, instIDList);
 
 		// TODO: Perhaps if loadOutBurstFound and storeOutBurstFound are true, we should check if
 		// the spaces do not overlap before outbursting both
 
-		// If MMA mode is set to GEN, we do not out-burst, since the context-import file is actually
-		// used to better analyse out-bursts, at least for now. However, we do analyse here whether
-		// should we out-burst or not, we just don't actually out-burst.
-		if(ArgPack::MMA_MODE_GEN == args.mmaMode) {
-			// TODO: save to context here?
+		// If mode is not USE, we run findOutBursts() normally
+		if(args.mmaMode != ArgPack::MMA_MODE_USE) {
+			// Try to find contiguous loads between loop iterations
+			loadOutBurstsFoundCached = findOutBursts(burstedLoads, loadNodes, instIDList, &XilinxZCUMemoryModel::analyseLoadOutBurstFeasability);
+			// Try to find contiguous stores between loop iterations
+			storeOutBurstsFoundCached = findOutBursts(burstedStores, storeNodes, instIDList, &XilinxZCUMemoryModel::analyseStoreOutBurstFeasability);
+		}
 
-			loadOutBurstFound = false;
-			storeOutBurstFound = false;
+		// If MMA mode is set to GEN, we do not out-burst, since the context-import file is actually
+		// used to better analyse out-bursts, at least for now.
+		if(args.mmaMode != ArgPack::MMA_MODE_GEN) {
+			loadOutBurstsFound = loadOutBurstsFoundCached;
+			storeOutBurstsFound = storeOutBurstsFoundCached;
+		}
+
+		// If MMA mode is set to USE, we use the context-imported cache information to improve out-bursts
+		if(ArgPack::MMA_MODE_USE == args.mmaMode) {
+			unsigned loopLevel = datapath->getTargetLoopLevel();
+			unsigned datapathType = datapath->getDatapathType();
+
+			// In this case we will use information from previous execution to make a better prediction on out-bursts
+			assert(importedFromContext && "\"--mma-mode\" is set to USE and no context supplied");
+			assert(filteredDDRMap.size() && "\"--mma-mode\" is set to USE and global DDR map is not populated");
+
+			// Perform global out-burst analysis using context-imported information
+			if(BaseDatapath::NON_PERFECT_BEFORE == datapathType || BaseDatapath::NON_PERFECT_AFTER == datapathType) {
+				blockInvalidOutBursts(loadOutBurstsFound, loopLevel, datapathType, &XilinxZCUMemoryModel::analyseLoadOutBurstFeasabilityGlobal);
+				blockInvalidOutBursts(storeOutBurstsFound, loopLevel, datapathType, &XilinxZCUMemoryModel::analyseStoreOutBurstFeasabilityGlobal);
+			}
 		}
 	}
 
@@ -378,28 +940,36 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 		// XXX: If we start removing edges when packing, should we request DDDG update here?
 	}
 
-	// After out-burst analysis, we update the DDR transaction flag to block further out-burst attempts (when scheduling policy is conservative)
-	// TODO: We are being conservative here. IF ANY operation is found, we already block any out-bursting, without checking if it is read or write
-	//       perhaps the best way would be to test for overlapness, but this was left as a TODO, as you can see.
-	if(burstedLoads.size() || burstedStores.size())
-		anyDDRTransactionFound = true;
-
 	// Add the relevant DDDG nodes for offchip load
 	for(auto &burst : burstedLoads) {
+#if 0
+		std::string arrayName = ddrBanking? loadNodes.at(burst.first).first : "";
+#else
+		std::string arrayName = loadNodes.at(burst.first).first;
+#endif
+
+		std::unordered_map<std::string, outBurstInfoTy>::iterator found = loadOutBurstsFound.find(arrayName);
+		bool canOutBurst = (found != loadOutBurstsFound.end())? found->second.canOutBurst : false;
+
 		// Create a node with opcode LLVM_IR_DDRReadReq
-		artificialNodeTy newNode = datapath->createArtificialNode(burst.first, loadOutBurstFound? LLVM_IR_DDRSilentReadReq : LLVM_IR_DDRReadReq);
+		artificialNodeTy newNode = datapath->createArtificialNode(burst.first, canOutBurst? LLVM_IR_DDRSilentReadReq : LLVM_IR_DDRReadReq);
 
 		// Add this new node to the mapping map (lol)
 		ddrNodesToRootLS[newNode.ID] = burst.first;
 
 		// If this is an out-bursted load, we must export the LLVM_IR_DDRReadReq node to be allocated to the DDDG before the current
+		if(canOutBurst) {
+			uint64_t expBaseAddress = (found->second.isRegistered)? found->second.baseAddress : burst.second.baseAddress;
+			uint64_t expOffset = (found->second.isRegistered)? found->second.offset : burst.second.offset;
 #ifdef VAR_WSIZE
-		if(loadOutBurstFound)
-			nodesToBeforeDDDG.push_back(nodeExportTy(newNode, loadNodes.at(burst.first).first, burst.second.baseAddress, burst.second.offset, burst.second.wordSize));
+			uint64_t expWordSize = (found->second.isRegistered)? found->second.wordSize : burst.second.wordSize;
+
+			nodesToBeforeDDDG.push_back(nodeExportTy(newNode, loadNodes.at(burst.first).first, expBaseAddress, expOffset, expWordSize));
 #else
-		if(loadOutBurstFound)
-			nodesToBeforeDDDG.push_back(nodeExportTy(newNode, loadNodes.at(burst.first).first, burst.second.baseAddress, burst.second.offset));
+
+			nodesToBeforeDDDG.push_back(nodeExportTy(newNode, loadNodes.at(burst.first).first, expBaseAddress, expOffset));
 #endif
+		}
 
 		// Disconnect the edges incoming to the first load and connect to the read request
 		std::set<Edge> edgesToRemove;
@@ -411,7 +981,7 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 
 			// If an out-burst was detected, we isolate these nodes instead of connecting them, since they will be "executed" outside this DDDG
 			// TODO: Perhaps we should isolate only relevant nodes (e.g. getelementptr and indexadd/sub)
-			if(!loadOutBurstFound)
+			if(!canOutBurst)
 				edgesToAdd.push_back({sourceID, newNode.ID, edgeToWeight[*inEdgei]});
 		}
 		// Connect this node to the first load
@@ -438,20 +1008,34 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 
 	// Add the relevant DDDG nodes for offchip store
 	for(auto &burst : burstedStores) {
+#if 0
+		std::string arrayName = ddrBanking? storeNodes.at(burst.first).first : "";
+#else
+		std::string arrayName = storeNodes.at(burst.first).first;
+#endif
+
+		std::unordered_map<std::string, outBurstInfoTy>::iterator found = storeOutBurstsFound.find(arrayName);
+		bool canOutBurst = (found != storeOutBurstsFound.end())? found->second.canOutBurst : false;
+
 		// DDRWriteReq is positioned before the burst
-		artificialNodeTy newNode = datapath->createArtificialNode(burst.first, storeOutBurstFound? LLVM_IR_DDRSilentWriteReq : LLVM_IR_DDRWriteReq);
+		artificialNodeTy newNode = datapath->createArtificialNode(burst.first, canOutBurst? LLVM_IR_DDRSilentWriteReq : LLVM_IR_DDRWriteReq);
 
 		// Add this new node to the mapping map (lol)
 		ddrNodesToRootLS[newNode.ID] = burst.first;
 
 		// If this is an out-bursted store, we must export the LLVM_IR_DDRWriteReq node to be allocated to the DDDG before the current
+		if(canOutBurst) {
+			uint64_t expBaseAddress = (found->second.isRegistered)? found->second.baseAddress : burst.second.baseAddress;
+			uint64_t expOffset = (found->second.isRegistered)? found->second.offset : burst.second.offset;
 #ifdef VAR_WSIZE
-		if(storeOutBurstFound)
-			nodesToBeforeDDDG.push_back(nodeExportTy(newNode, storeNodes.at(burst.first).first, burst.second.baseAddress, burst.second.offset, burst.second.wordSize));
+			uint64_t expWordSize = (found->second.isRegistered)? found->second.wordSize : burst.second.wordSize;
+
+			nodesToBeforeDDDG.push_back(nodeExportTy(newNode, storeNodes.at(burst.first).first, expBaseAddress, expOffset, expWordSize));
 #else
-		if(storeOutBurstFound)
-			nodesToBeforeDDDG.push_back(nodeExportTy(newNode, storeNodes.at(burst.first).first, burst.second.baseAddress, burst.second.offset));
+
+			nodesToBeforeDDDG.push_back(nodeExportTy(newNode, storeNodes.at(burst.first).first, expBaseAddress, expOffset));
 #endif
+		}
 
 		// Two type of edges can come to a store: data and address
 		// For data, we keep it at the appropriate writes
@@ -471,7 +1055,7 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 			edgesToRemove.insert(*inEdgei);
 
 			// If an out-burst was detected, we isolate these nodes instead of connecting them, since they will be "executed" outside this DDDG
-			if(!storeOutBurstFound)
+			if(!canOutBurst)
 				edgesToAdd.push_back({sourceID, newNode.ID, weight});
 		}
 		// Connect this node to the first store
@@ -497,19 +1081,24 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 
 		// DDRWriteResp is positioned after the last burst beat
 		unsigned lastStore = burst.second.participants.back();
-		newNode = datapath->createArtificialNode(lastStore, storeOutBurstFound? LLVM_IR_DDRSilentWriteResp : LLVM_IR_DDRWriteResp);
+		newNode = datapath->createArtificialNode(lastStore, canOutBurst? LLVM_IR_DDRSilentWriteResp : LLVM_IR_DDRWriteResp);
 
 		// Add this new node to the mapping map (lol)
 		ddrNodesToRootLS[newNode.ID] = burst.first;
 
 		// If this is an out-bursted store, we must export the LLVM_IR_DDRWriteResp node to be allocated to the DDDG after the current
+		if(canOutBurst) {
+			uint64_t expBaseAddress = (found->second.isRegistered)? found->second.baseAddress : burst.second.baseAddress;
+			uint64_t expOffset = (found->second.isRegistered)? found->second.offset : burst.second.offset;
 #ifdef VAR_WSIZE
-		if(storeOutBurstFound)
-			nodesToAfterDDDG.push_back(nodeExportTy(newNode, storeNodes.at(burst.first).first, burst.second.baseAddress, burst.second.offset, burst.second.wordSize));
+			uint64_t expWordSize = (found->second.isRegistered)? found->second.wordSize : burst.second.wordSize;
+
+			nodesToAfterDDDG.push_back(nodeExportTy(newNode, storeNodes.at(burst.first).first, expBaseAddress, expOffset, expWordSize));
 #else
-		if(storeOutBurstFound)
-			nodesToAfterDDDG.push_back(nodeExportTy(newNode, storeNodes.at(burst.first).first, burst.second.baseAddress, burst.second.offset));
+
+			nodesToAfterDDDG.push_back(nodeExportTy(newNode, storeNodes.at(burst.first).first, expBaseAddress, expOffset));
 #endif
+		}
 
 		// Disconnect the edges outcoming from the last store and connect to the write response
 		edgesToRemove.clear();
@@ -533,6 +1122,7 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 	// Temporary map used for the recently-imported nodes. The main structures are only updated after the imported nodes
 	// are successfully imported
 	std::unordered_map<unsigned, unsigned> ddrNodesToRootLSTmp;
+	std::unordered_map<unsigned, unsigned> rootLSToDDRNodesTmp;
 
 	// Add the relevant DDDG nodes for imported offchip load
 	for(auto &burst : importedLoads) {
@@ -548,7 +1138,7 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 		edgesToAdd.push_back({newNode.ID, burst.first, 0});
 
 		// With conservative DDR scheduling policy, this imported transaction must execute after all DDR transactions from this DDDG
-		if(ArgPack::DDR_POLICY_CANNOT_OVERLAP == args.ddrSched) {
+		//if(ArgPack::DDR_POLICY_CANNOT_OVERLAP == args.ddrSched) {
 			// Connect imported LLVM_IR_DDRReadReq to all last DDR transactions (LLVM_IR_DDRRead's and LLVM_IR_DDRWriteResp)
 
 			// Find for LLVM_IR_DDRWriteResp
@@ -575,7 +1165,7 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 				// XXX: Does the edge weight matter here?
 				edgesToAdd.push_back({lastLoad, newNode.ID, 0});
 			}
-		}
+		//}
 
 		// Update DDDG
 		datapath->updateAddDDDGEdges(edgesToAdd);
@@ -585,9 +1175,9 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 	for(auto &burst : importedStores) {
 		// DDRWriteReq is positioned before the burst
 		artificialNodeTy newNode;
-		if(writeReqImported && burst.first == importedWriteReq)
+		if(importedWriteReqs.count(burst.first))
 			newNode = datapath->createArtificialNode(burst.first, LLVM_IR_DDRWriteReq);
-		else if(writeRespImported && burst.first == importedWriteResp)
+		else if(importedWriteResps.count(burst.first))
 			newNode = datapath->createArtificialNode(burst.first, LLVM_IR_DDRSilentWriteReq);
 		else
 			assert(false && "There is an artificially-generated store for imported write transactions, but no imported write node found");
@@ -602,9 +1192,9 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 
 		// With conservative DDR scheduling policy, this imported transaction must execute after (for LLVM_IR_DDRWriteReq)
 		// all DDR transactions from this DDDG
-		if(ArgPack::DDR_POLICY_CANNOT_OVERLAP == args.ddrSched) {
+		//if(ArgPack::DDR_POLICY_CANNOT_OVERLAP == args.ddrSched) {
 			// Connect imported LLVM_IR_DDRWriteReq to all last DDR transactions (LLVM_IR_DDRRead's and LLVM_IR_DDRWriteResp)
-			if(writeReqImported && burst.first == importedWriteReq) {
+			if(importedWriteReqs.count(burst.first)) {
 				// Find for LLVM_IR_DDRWriteResp
 				for(auto &it : ddrNodesToRootLS) {
 					int opcode = microops.at(it.first);
@@ -629,22 +1219,24 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 					edgesToAdd.push_back({lastLoad, newNode.ID, 0});
 				}
 			}
-		}
+		//}
 
 		// Update DDDG
 		datapath->updateAddDDDGEdges(edgesToAdd);
 
 		// DDRWriteResp is positioned after the last burst beat
 		unsigned lastStore = burst.second.participants.back();
-		if(writeRespImported && burst.first == importedWriteResp)
+		if(importedWriteResps.count(burst.first))
 			newNode = datapath->createArtificialNode(lastStore, LLVM_IR_DDRWriteResp);
-		else if(writeReqImported && burst.first == importedWriteReq)
+		else if(importedWriteReqs.count(burst.first))
 			newNode = datapath->createArtificialNode(lastStore, LLVM_IR_DDRSilentWriteResp);
 		else
 			assert(false && "There is an artificially-generated store for imported write transactions, but no imported write node found");
 
 		// Add this new node to the mapping map (lol)
 		ddrNodesToRootLSTmp[newNode.ID] = burst.first;
+		// Reverse map is used on wrap-up
+		rootLSToDDRNodesTmp[burst.first] = newNode.ID;
 
 		// Connect this node to the last store
 		// XXX: Does the edge weight matter here?
@@ -653,9 +1245,9 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 
 		// With conservative DDR scheduling policy, this imported transaction must execute before (for LLVM_IR_DDRWriteResp)
 		// all DDR transactions from this DDDG
-		if(ArgPack::DDR_POLICY_CANNOT_OVERLAP == args.ddrSched) {
+		//if(ArgPack::DDR_POLICY_CANNOT_OVERLAP == args.ddrSched) {
 			// Connect imported LLVM_IR_DDRWriteResp to all root DDR transactions (LLVM_IR_DDRReadReq's and LLVM_IR_DDRWriteReq's)
-			if(writeRespImported && burst.first == importedWriteResp) {
+			if(importedWriteResps.count(burst.first)) {
 				// Find for LLVM_IR_DDRReadReq and LLVM_IR_DDRWriteReq
 				for(auto &it : ddrNodesToRootLS) {
 					int opcode = microops.at(it.first);
@@ -678,11 +1270,49 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 					}
 				}
 			}
-		}
+		//}
 
 		// Update DDDG
 		datapath->updateAddDDDGEdges(edgesToAdd);
 	}
+
+	// Wrap-up run. On cases for BETWEEN DDDGs, we might have imported nodes from both sides. We have to
+	// ensure the order here as well. Here is simple: this logic is reciprocate, so if we guarantee that A comes after B,
+	// for sure B will come before A (sounds stupid but hey). Only LLVM_IR_DDRWriteResp comes from the DDDG from that
+	// direction. So we only check for this type of node against all the rest
+	//if(ArgPack::DDR_POLICY_CANNOT_OVERLAP == args.ddrSched) {
+		std::vector<edgeTy> edgesToAdd;
+
+		for(auto &burst : importedStores) {
+			unsigned respID = rootLSToDDRNodesTmp.at(burst.first);
+
+			if(importedWriteResps.count(burst.first)) {
+				for(auto &it : ddrNodesToRootLSTmp) {
+					int opcode = microops.at(it.first);
+
+					if(LLVM_IR_DDRReadReq == opcode) {
+						// If DDR banking is active, we only create the edge if this node shares the same memory port as the imported one
+						if(ddrBanking && (genFromImpLoadNodes.at(it.second).first != genFromImpStoreNodes.at(burst.first).first))
+							continue;
+
+						// XXX: Does the edge weight matter here?
+						edgesToAdd.push_back({respID, it.first, 0});
+					}
+					if(LLVM_IR_DDRWriteReq == opcode) {
+						// If DDR banking is active, we only create the edge if this node shares the same memory port as the imported one
+						if(ddrBanking && (genFromImpStoreNodes.at(it.second).first != genFromImpStoreNodes.at(burst.first).first))
+							continue;
+
+						// XXX: Does the edge weight matter here?
+						edgesToAdd.push_back({respID, it.first, 0});
+					}
+				}
+			}
+		}
+
+		// Update DDDG
+		datapath->updateAddDDDGEdges(edgesToAdd);
+	//}
 
 	// After finished updating DDDG, we import all the data to the normal structures of MemoryModel
 	burstedLoads.insert(importedLoads.begin(), importedLoads.end());
@@ -696,9 +1326,33 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 	// Create a dummy last node and connect the DDDG leaves and the imported nodes to it,
 	// so that the imported nodes (if any) won't stay disconnected
 	// TODO: maybe this should be performed somewhere else, in a different timing?
-	if(writeRespImported || readReqImported || writeReqImported) {
+	if(importedWriteResps.size() || importedReadReqs.size() || importedWriteReqs.size()) {
 		datapath->createDummySink();
 		datapath->refreshDDDG();
+	}
+
+	// Save accessed array names to global DDR map
+	if(ArgPack::MMA_MODE_GEN == args.mmaMode) {
+		std::set<std::string> arrayNamesLoaded;
+		std::set<std::string> arrayNamesStored;
+
+#if 0
+		// We only save the actual names if DDR banking is enabled
+		if(ddrBanking) {
+#endif
+			for(auto &it : loadNodes)
+				arrayNamesLoaded.insert(it.second.first);
+			for(auto &it : storeNodes)
+				arrayNamesStored.insert(it.second.first);
+#if 0
+		}
+		else {
+			arrayNames.insert("");
+		}
+#endif
+
+		globalDDRMap[datapath->getTargetLoopName()].push_back(ddrInfoTy(
+			datapath->getTargetLoopLevel(), datapath->getDatapathType(), arrayNamesLoaded, arrayNamesStored));
 	}
 
 #if 0
@@ -735,9 +1389,6 @@ bool XilinxZCUMemoryModel::tryAllocate(unsigned node, int opcode, bool commit) {
 	// Overlapping:
 	// - Any transaction can coexist if their regions do not overlap;
 	// Please note that if DDR banking is active, active reads and writes will be filtered by array
-
-	errs() << "<<<<<<<<<< " << node << " " << opcode << " " << commit << "\n";
-	//errs() << "<< " << ddrNodesToRootLS.at(node) << "\n";
 
 	if(LLVM_IR_DDRReadReq == opcode || LLVM_IR_DDRSilentReadReq == opcode) {
 		unsigned nodeToRootLS = ddrNodesToRootLS.at(node);
@@ -1023,35 +1674,34 @@ void XilinxZCUMemoryModel::release(unsigned node, int opcode) {
 	}
 }
 
-bool XilinxZCUMemoryModel::outBurstsOverlap() {
-	// Check if the scheduled outbursts overlap
-	// XXX: Since for now only one write and one read outbursts are allowed, this check is somewhat simple
-	burstInfoTy &outBurstedWrite = burstedStores.begin()->second;
-	burstInfoTy &outBurstedRead = burstedLoads.begin()->second;
-	uint64_t writeBase = outBurstedWrite.baseAddress;
-#ifdef VAR_WSIZE
-	uint64_t writeEnd = writeBase + outBurstedWrite.offset * outBurstedWrite.wordSize;
-#else
-	// XXX: As always, assuming 32-bit
-	uint64_t writeEnd = writeBase + outBurstedWrite.offset * 4;
-#endif
-	uint64_t readBase = outBurstedRead.baseAddress;
-#ifdef VAR_WSIZE
-	uint64_t readEnd = readBase + outBurstedRead.offset * outBurstedRead.wordSize;
-#else
-	// XXX: As always, assuming 32-bit
-	uint64_t readEnd = readBase + outBurstedRead.offset * 4;
+bool XilinxZCUMemoryModel::canOutBurstsOverlap() {
+	return MemoryModel::canOutBurstsOverlap(nodesToBeforeDDDG, nodesToAfterDDDG);
+}
+
+void XilinxZCUMemoryModel::setUpWithContext(ContextManager &CtxM) {
+	CtxM.getOutBurstsInfo(wholeLoopName, datapath->getDatapathType(), &loadOutBurstsFoundCached, &storeOutBurstsFoundCached);
+#ifdef CROSS_DDDG_PACKING
+	CtxM.getRemainingBudgetInfo(wholeLoopName, datapath->getDatapathType(), &loadRemainingBudget, &storeRemainingBudget);
 #endif
 
-	return writeEnd >= readBase && readEnd >= writeBase;
+	std::unordered_map<std::string, std::vector<ddrInfoTy>>::iterator found = globalDDRMap.find(datapath->getTargetLoopName());
+	assert(found != globalDDRMap.end() && "Loop not found in global DDR map");
+	filteredDDRMap = found->second;
+
+	importedFromContext = true;
+}
+
+void XilinxZCUMemoryModel::saveToContext(ContextManager &CtxM) {
+	CtxM.saveOutBurstsInfo(wholeLoopName, datapath->getDatapathType(), loadOutBurstsFoundCached, storeOutBurstsFoundCached);
+#ifdef CROSS_DDDG_PACKING
+	CtxM.saveRemainingBudgetInfo(wholeLoopName, datapath->getDatapathType(), loadRemainingBudget, storeRemainingBudget);
+#endif
 }
 
 void XilinxZCUMemoryModel::importNode(nodeExportTy &exportedNode) {
 	if(LLVM_IR_DDRSilentReadReq == exportedNode.node.opcode) {
 		artificialNodeTy newNode = datapath->createArtificialNode(exportedNode.node, LLVM_IR_DDRSilentRead);
-
-		readReqImported = true;
-		//importedReadReq = newNode.ID;
+		importedReadReqs.insert(newNode.ID);
 
 		std::vector<unsigned> nodes;
 		nodes.push_back(newNode.ID);
@@ -1064,9 +1714,7 @@ void XilinxZCUMemoryModel::importNode(nodeExportTy &exportedNode) {
 	}
 	else if(LLVM_IR_DDRSilentWriteReq == exportedNode.node.opcode) {
 		artificialNodeTy newNode = datapath->createArtificialNode(exportedNode.node, LLVM_IR_DDRSilentWrite);
-
-		writeReqImported = true;
-		importedWriteReq = newNode.ID;
+		importedWriteReqs.insert(newNode.ID);
 
 		std::vector<unsigned> nodes;
 		nodes.push_back(newNode.ID);
@@ -1079,9 +1727,7 @@ void XilinxZCUMemoryModel::importNode(nodeExportTy &exportedNode) {
 	}
 	else if(LLVM_IR_DDRSilentWriteResp == exportedNode.node.opcode) {
 		artificialNodeTy newNode = datapath->createArtificialNode(exportedNode.node, LLVM_IR_DDRSilentWrite);
-
-		writeRespImported = true;
-		importedWriteResp = newNode.ID;
+		importedWriteResps.insert(newNode.ID);
 
 		std::vector<unsigned> nodes;
 		nodes.push_back(newNode.ID);

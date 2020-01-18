@@ -17,6 +17,15 @@ void Multipath::_Multipath() {
 		unsigned latencyType = std::get<1>(elem);
 		uint64_t latency = std::get<2>(elem);
 		uint64_t maxII = std::get<3>(elem);
+		std::vector<MemoryModel::nodeExportTy> nodesToBeforeDDDG;
+		std::vector<MemoryModel::nodeExportTy> nodesToAfterDDDG;
+		bool canOutBurstsOverlap;
+		exportedNodesMapTy::iterator exportedFound = exportedNodes.find(currLoopLevel + 1);
+		if(exportedFound != exportedNodes.end()) {
+			nodesToBeforeDDDG = std::get<0>(exportedFound->second);
+			nodesToAfterDDDG = std::get<1>(exportedFound->second);
+			canOutBurstsOverlap = std::get<2>(exportedFound->second);
+		}
 
 		std::string wholeLoopName = appendDepthToLoopName(loopName, currLoopLevel);
 		wholeloopName2loopBoundMapTy::iterator found = wholeloopName2loopBoundMap.find(wholeLoopName);
@@ -75,12 +84,41 @@ void Multipath::_Multipath() {
 				numCycles = latency * unrolledBound + BaseDatapath::EXTRA_ENTER_EXIT_LOOP_LATENCY;
 		}
 		else if(BaseDatapath::PERFECT_LOOP == latencyType) {
-			numCycles = numCycles * loopBound + BaseDatapath::EXTRA_ENTER_EXIT_LOOP_LATENCY;
+			// Even though this is a perfect loop level, there might be exported nodes to be considered
+			uint64_t extraEnter = BaseDatapath::EXTRA_ENTER_LOOP_LATENCY;
+			uint64_t extraExit = BaseDatapath::EXTRA_EXIT_LOOP_LATENCY;
+			bool allocatedDDDGBefore = false;
+			bool allocatedDDDGAfter = false;
+			// If there are out-burst nodes to allocate before DDDG, we add on the extra cycles
+			for(auto &it : nodesToBeforeDDDG) {
+				// We don't use profile->getLatency() here because the opcode might be silent
+				// and here we want the non-silent case. We could call getNonSilentOpcode(),
+				// but since we already have this calculated, why not use it?
+				unsigned latency = it.node.nonSilentLatency;
+				if(latency >= extraEnter)
+					extraEnter = latency;
+
+				allocatedDDDGBefore = true;
+			}
+			// If there are out-burst nodes to allocate after DDDG, we add on the extra cycles
+			for(auto &it : nodesToAfterDDDG) {
+				// Look explanation on the previous loop
+				unsigned latency = it.node.nonSilentLatency;
+				if(latency >= extraExit)
+					extraExit = latency;
+
+				allocatedDDDGAfter = true;
+			}
+			uint64_t extraEnterExit = extraEnter + extraExit;
+
+			numCycles = numCycles * loopBound + extraEnterExit;
 			// We consider EXTRA_ENTER_EXIT_LOOP_LATENCY as the overhead latency for a loop. When two consecutive loops
 			// are present, a cycle for each loop overhead can be merged (i.e. the exit condition of a loop can be evaluated
 			// at the same time as the enter condition of the following loop). Since right now consecutive inner loops are only
 			// possible with unroll, we compensate this cycle difference with the loop unroll factor
-			numCycles -= (currUnrollFactor - 1) * (loopBound / currUnrollFactor);
+			// TODO: same as BaseDatapath, this wasn't thoroughly tested!
+			if((currUnrollFactor > 1) && !(allocatedDDDGBefore && allocatedDDDGAfter && canOutBurstsOverlap))
+				numCycles -= (currUnrollFactor - 1) * std::min(extraEnter, extraExit) * (loopBound / currUnrollFactor);
 		}
 		else if(BaseDatapath::NON_PERFECT_BEFORE == latencyType) {
 			uint64_t afterLatency = std::get<2>(latencies[i + 1]);
@@ -136,29 +174,71 @@ void Multipath::_Multipath() {
 		uint64_t loopBound = found->second;
 		unsigned currUnrollFactor = unrolls.at(i);
 
-		numCycles = numCycles * loopBound + BaseDatapath::EXTRA_ENTER_EXIT_LOOP_LATENCY;
+		uint64_t extraEnter = BaseDatapath::EXTRA_ENTER_LOOP_LATENCY;
+		uint64_t extraExit = BaseDatapath::EXTRA_EXIT_LOOP_LATENCY;
+		bool allocatedDDDGBefore = false;
+		bool allocatedDDDGAfter = false;
+		bool canOutBurstsOverlap = false;
+
+		// For the first loop level right after the DDDGs, we analyse for out-bursts
+		if(firstNonPerfectLoopLevel - 2 == i) {
+			// TODO: should be here i + 1 or i + 2? Failing for now until a better thought is given
+			// I think it is i + 2, otherwise it clashes with the logic right after this loop
+			// But maybe if here is executed, it shouldn't run below (in this case, here would be i + 1)
+			assert(false && "TODO!");
+			exportedNodesMapTy::iterator exportedFound = exportedNodes.find(i + 2);
+			if(exportedFound != exportedNodes.end()) {
+				for(auto &it : std::get<0>(exportedFound->second)) {
+					unsigned latency = it.node.nonSilentLatency;
+					if(latency >= extraEnter)
+						extraEnter = latency;
+
+					allocatedDDDGBefore = true;
+				}
+				for(auto &it : std::get<1>(exportedFound->second)) {
+					unsigned latency = it.node.nonSilentLatency;
+					if(latency >= extraExit)
+						extraExit = latency;
+
+					allocatedDDDGAfter = true;
+				}
+				canOutBurstsOverlap = std::get<2>(exportedFound->second);
+			}
+		}
+
+		uint64_t extraEnterExit = extraEnter + extraExit;
+
+		numCycles = numCycles * loopBound + extraEnterExit;;
 
 		// See explanation above, in the if(BaseDatapath::PERFECT_LOOP == ...)
-		numCycles -= (currUnrollFactor - 1) * (loopBound / currUnrollFactor);
+		bool shouldShrink =
+			(firstNonPerfectLoopLevel - 2 == i)? (currUnrollFactor > 1) && !(allocatedDDDGBefore && allocatedDDDGAfter && canOutBurstsOverlap) : true;
+		if(shouldShrink)
+			numCycles -= (currUnrollFactor - 1) * std::min(extraEnter, extraExit) * (loopBound / currUnrollFactor);
 	}
-
-	// If there are any out-bursts for the top loop level, take into account here
-	uint64_t extraEnter = 0;
-	uint64_t extraExit = 0;
-	for(auto &it : nodesToBeforeDDDG) {
-		unsigned latency = it.node.nonSilentLatency;
-		if(latency >= extraEnter)
-			extraEnter = latency;
-	}
-	for(auto &it : nodesToAfterDDDG) {
-		unsigned latency = it.node.nonSilentLatency;
-		if(latency >= extraExit)
-			extraExit = latency;
-	}
-	numCycles += extraEnter + extraExit;
 
 	// Remove the enter/exit loop latency that was added to the top loop
 	numCycles -= BaseDatapath::EXTRA_ENTER_EXIT_LOOP_LATENCY;
+
+	// If the top-level out-bursted, we should take into account here
+	uint64_t extraEnter = 0;
+	uint64_t extraExit = 0;
+	exportedNodesMapTy::iterator exportedFound = exportedNodes.find(1);
+	if(exportedFound != exportedNodes.end()) {
+		for(auto &it : std::get<0>(exportedFound->second)) {
+			unsigned latency = it.node.nonSilentLatency;
+			if(latency >= extraEnter)
+				extraEnter = latency;
+		}
+		for(auto &it : std::get<1>(exportedFound->second)) {
+			unsigned latency = it.node.nonSilentLatency;
+			if(latency >= extraExit)
+				extraExit = latency;
+		}
+	}
+	uint64_t extraEnterExit = extraEnter + extraExit;
+	DBG_DUMP("Top level loop additional cycles: " << extraEnter << " " << extraExit << "\n");
+	numCycles += extraEnterExit;
 
 	for(auto &it : P.getStructure()) {
 		std::string name = std::get<0>(it);
@@ -209,14 +289,6 @@ void Multipath::_Multipath() {
 #endif
 }
 
-// XXX: This may be a good place to implement some global optimisations.
-// For example, the gemm case, where loadstoreinstcombine transforms the last store in the inner loop as a phi-store in the header, that could be detected here.
-// Performing this optimisation post-DDDG may have some benefits, for example being sensitive to post-DDDG optimisations such as unroll, pipeline, etc.
-// For now, I am performing instcombine before DDDG generation due to simplicity.
-// One approach for global optimisation is: in this method, generate the DynamicDatapath but stop RIGHT AFTER DDDG is generated. Save all DDs in a vector
-// Then, iterate over all DDs in loop nest order and detect for optimisations. Optimise, then schedule.
-// One possible issue is regarding the global variables that are used. We must ensure that one DD messing in the global vars does not interfere with the other DDs
-// And this is why I hate global variables...
 void Multipath::recursiveLookup(unsigned currLoopLevel, unsigned finalLoopLevel) {
 	unsigned recII = 0;
 
@@ -243,8 +315,11 @@ void Multipath::recursiveLookup(unsigned currLoopLevel, unsigned finalLoopLevel)
 		latencies.push_back(std::make_tuple(finalLoopLevel, BaseDatapath::NORMAL_LOOP, DD.getRCIL(), DD.getMaxII()));
 		P.merge(DD.getPack());
 		// If there are out-bursts, save them as they will be useful later
-		nodesToBeforeDDDG = std::vector<MemoryModel::nodeExportTy>(DD.getExportedNodesToBeforeDDDG());
-		nodesToAfterDDDG = std::vector<MemoryModel::nodeExportTy>(DD.getExportedNodesToAfterDDDG());
+		exportedNodes.insert(std::make_pair(finalLoopLevel, std::make_tuple(
+			std::vector<MemoryModel::nodeExportTy>(DD.getExportedNodesToBeforeDDDG()),
+			std::vector<MemoryModel::nodeExportTy>(DD.getExportedNodesToAfterDDDG()),
+			MemoryModel::canOutBurstsOverlap(DD.getExportedNodesToBeforeDDDG(), DD.getExportedNodesToAfterDDDG())
+		)));
 
 		return;
 	}
@@ -259,10 +334,6 @@ void Multipath::recursiveLookup(unsigned currLoopLevel, unsigned finalLoopLevel)
 		unsigned currUnrollFactor = unrolls.at(currLoopLevel - 1);
 		unsigned targetUnrollFactor = (currLoopBound < currUnrollFactor && currLoopBound)? currLoopBound : currUnrollFactor;
 
-		// XXX: SOMEWHERE AROUND HERE, the memory model must be consulted
-		// XXX: for example, if the memory model says that writeresp should be outside of the loop, it should be accounted here
-		// XXX: but also in the getLoopTotalLatency in BaseDatapath
-
 		if(currIsPerfect) {
 			VERBOSE_PRINT(errs() << "[][][][multipath][" << std::to_string(currLoopLevel) << "] This loop nest is perfect. Proceeding to next level\n");
 
@@ -276,6 +347,14 @@ void Multipath::recursiveLookup(unsigned currLoopLevel, unsigned finalLoopLevel)
 
 			VERBOSE_PRINT(errs() << "[][][][multipath][" << std::to_string(currLoopLevel) << "] Building dynamic datapath for the nested loop\n");
 			recursiveLookup(currLoopLevel + 1, finalLoopLevel);
+
+			std::vector<MemoryModel::nodeExportTy> nodesToBeforeDDDG;
+			std::vector<MemoryModel::nodeExportTy> nodesToAfterDDDG;
+			exportedNodesMapTy::iterator exportedFound = exportedNodes.find(currLoopLevel + 1);
+			if(exportedFound != exportedNodes.end()) {
+				nodesToBeforeDDDG = std::get<0>(exportedFound->second);
+				nodesToAfterDDDG = std::get<1>(exportedFound->second);
+			}
 
 			VERBOSE_PRINT(errs() << "[][][][multipath][" << std::to_string(currLoopLevel) << "] Building dynamic datapath for the region before the nested loop\n");
 			DynamicDatapath DD(kernelName, CM, CtxM, summaryFile, loopName, currLoopLevel, targetUnrollFactor, nodesToBeforeDDDG, BaseDatapath::NON_PERFECT_BEFORE);
@@ -299,13 +378,12 @@ void Multipath::recursiveLookup(unsigned currLoopLevel, unsigned finalLoopLevel)
 				P.merge(DD3.getPack());
 			}
 
-			// TODO: I'm just adding the detected out-bursts to the vectors, without properly checking
-			// overlappingness. Maybe we should think better about that
-			// If there are out-bursts, save them as they will be useful later
 			nodesToBeforeDDDG = std::vector<MemoryModel::nodeExportTy>(DD.getExportedNodesToBeforeDDDG());
 			nodesToBeforeDDDG.insert(nodesToBeforeDDDG.end(), DD2.getExportedNodesToBeforeDDDG().begin(), DD2.getExportedNodesToBeforeDDDG().end());
 			nodesToAfterDDDG = std::vector<MemoryModel::nodeExportTy>(DD2.getExportedNodesToAfterDDDG());
 			nodesToAfterDDDG.insert(nodesToAfterDDDG.end(), DD.getExportedNodesToAfterDDDG().begin(), DD.getExportedNodesToAfterDDDG().end());
+			bool canOutBurstsOverlap = MemoryModel::canOutBurstsOverlap(nodesToBeforeDDDG, nodesToAfterDDDG);
+			exportedNodes.insert(std::make_pair(currLoopLevel, std::make_tuple(nodesToBeforeDDDG, nodesToAfterDDDG, canOutBurstsOverlap)));
 
 			VERBOSE_PRINT(errs() << "[][][][multipath][" << std::to_string(currLoopLevel) << "] Finished\n");
 		}

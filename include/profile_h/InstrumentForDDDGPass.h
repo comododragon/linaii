@@ -40,7 +40,7 @@
 #define RESULT_LINE 19134
 #define FORWARD_LINE 24601
 
-extern bool anyDDRTransactionFound;
+extern std::unordered_map<std::string, std::vector<ddrInfoTy>> globalDDRMap;
 
 namespace llvm {
 

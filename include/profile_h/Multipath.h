@@ -5,6 +5,8 @@
 
 using namespace llvm;
 
+typedef std::unordered_map<unsigned, std::tuple<std::vector<MemoryModel::nodeExportTy>, std::vector<MemoryModel::nodeExportTy>, bool>> exportedNodesMapTy;
+
 class Multipath {
 	uint64_t numCycles;
 	std::string kernelName;
@@ -22,8 +24,7 @@ class Multipath {
 	std::vector<std::tuple<unsigned, unsigned, uint64_t, uint64_t>> latencies;
 	Pack P;
 
-	std::vector<MemoryModel::nodeExportTy> nodesToBeforeDDDG;
-	std::vector<MemoryModel::nodeExportTy> nodesToAfterDDDG;
+	exportedNodesMapTy exportedNodes;
 
 	void _Multipath();
 

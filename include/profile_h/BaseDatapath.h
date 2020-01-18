@@ -276,6 +276,7 @@ public:
 	std::string constructUniqueID(std::string funcID, std::string instID, std::string bbID);
 
 	// Interface for non-subclasses (e.g. MemoryModel)
+	unsigned getDatapathType();
 	ConfigurationManager &getConfigurationManager();
 	ParsedTraceContainer &getParsedTraceContainer();
 	Graph &getDDDG();

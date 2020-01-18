@@ -66,11 +66,11 @@ BaseDatapath::BaseDatapath(
 		builder = nullptr;
 	}
 	else {
-		VERBOSE_PRINT(errs() << "\t\"--mma-mode\" is set to \"use\", skiping DDDG build\n");
+		VERBOSE_PRINT(errs() << "\t\"--mma-mode\" is set to \"use\", skipping DDDG build\n");
 		VERBOSE_PRINT(errs() << "\tRecovering context from previous execution\n");
 		std::string wholeLoopName = appendDepthToLoopName(loopName, loopLevel);
 		CtxM.getParsedTraceContainer(wholeLoopName, &PC);
-		CtxM.getDDDG(wholeLoopName, datapathType, *this);
+		CtxM.getDDDG(wholeLoopName, datapathType, this);
 	}
 
 	postDDDGBuild();
@@ -324,6 +324,10 @@ unsigned BaseDatapath::createDummySink() {
 	return dummySink;
 }
 
+unsigned BaseDatapath::getDatapathType() {
+	return datapathType;
+}
+
 ConfigurationManager &BaseDatapath::getConfigurationManager() {
 	return CM;
 }
@@ -491,10 +495,16 @@ uint64_t BaseDatapath::fpgaEstimation() {
 	}
 
 	if(!(args.fNoMMA)) {
+		if(ArgPack::MMA_MODE_USE == args.mmaMode) {
+			VERBOSE_PRINT(errs() <<"\t\"--mma-mode\" is set to \"use\", setting up memory model\n");
+			memmodel->setUpWithContext(CtxM);
+		}
+
 		VERBOSE_PRINT(errs() << "\tPerforming DDDG memory model-based analysis and transform\n");
 		profile->performMemoryModelAnalysis();
 
 		if(ArgPack::MMA_MODE_GEN == args.mmaMode) {
+			memmodel->saveToContext(CtxM);
 			VERBOSE_PRINT(errs() <<"\t\"--mma-mode\" is set to \"gen\", halting now\n");
 			return 0;
 		}
@@ -1660,26 +1670,31 @@ uint64_t BaseDatapath::getLoopTotalLatency(uint64_t maxII) {
 		uint64_t extraExit = EXTRA_EXIT_LOOP_LATENCY;
 		bool allocatedDDDGBefore = false;
 		bool allocatedDDDGAfter = false;
-		// If there are out-burst nodes to allocate before DDDG, we add on the extra cycles
-		for(auto &it : memmodel->getNodesToBeforeDDDG()) {
-			// We don't use profile->getLatency() here because the opcode might be silent
-			// and here we want the non-silent case. We could call getNonSilentOpcode(),
-			// but since we already have this calculated, why not use it?
-			unsigned latency = it.node.nonSilentLatency;
-			if(latency >= extraEnter)
-				extraEnter = latency;
 
-			allocatedDDDGBefore = true;
-		}
-		// If there are out-burst nodes to allocate after DDDG, we add on the extra cycles
-		for(auto &it : memmodel->getNodesToAfterDDDG()) {
-			// Look explanation on the previous loop
-			unsigned latency = it.node.nonSilentLatency;
-			if(latency >= extraExit)
-				extraExit = latency;
+		// For the first loop level right after the DDDGs, we analyse for out-bursts
+		if(loopLevel - 1 == i) {
+			// If there are out-burst nodes to allocate before DDDG, we add on the extra cycles
+			for(auto &it : memmodel->getNodesToBeforeDDDG()) {
+				// We don't use profile->getLatency() here because the opcode might be silent
+				// and here we want the non-silent case. We could call getNonSilentOpcode(),
+				// but since we already have this calculated, why not use it?
+				unsigned latency = it.node.nonSilentLatency;
+				if(latency >= extraEnter)
+					extraEnter = latency;
 
-			allocatedDDDGAfter = true;
+				allocatedDDDGBefore = true;
+			}
+			// If there are out-burst nodes to allocate after DDDG, we add on the extra cycles
+			for(auto &it : memmodel->getNodesToAfterDDDG()) {
+				// Look explanation on the previous loop
+				unsigned latency = it.node.nonSilentLatency;
+				if(latency >= extraExit)
+					extraExit = latency;
+
+				allocatedDDDGAfter = true;
+			}
 		}
+
 		uint64_t extraEnterExit = extraEnter + extraExit;
 
 		if(loopLevel - 1 == i)
@@ -1694,13 +1709,16 @@ uint64_t BaseDatapath::getLoopTotalLatency(uint64_t maxII) {
 
 			noPipelineLatency *= upperLoopUnrollFactor;
 
+			bool shouldShrink =
+				(loopLevel - 1 == i)? (upperLoopUnrollFactor > 1) && !(allocatedDDDGBefore && allocatedDDDGAfter && memmodel->canOutBurstsOverlap()) : true;
+
 			// We consider EXTRA_ENTER_EXIT_LOOP_LATENCY as the overhead latency for a loop. When two consecutive loops
 			// are present, a cycle for each loop overhead can be merged (i.e. the exit condition of a loop can be evaluated
 			// at the same time as the enter condition of the following loop). Since right now consecutive inner loops are only
 			// possible with unroll, we compensate this cycle difference with the loop unroll factor
 			// XXX: However, if there are DDR operations before AND after the DDDG, we do not merge if the address space overlap
-			// TODO: this is untested!
-			if((upperLoopUnrollFactor > 1) && !(allocatedDDDGBefore && allocatedDDDGAfter && memmodel->outBurstsOverlap()))
+			// TODO: this wasn't thoroughly tested!
+			if(shouldShrink)
 				noPipelineLatency -= (upperLoopUnrollFactor - 1) * std::min(extraEnter, extraExit);
 		}
 	}

@@ -58,18 +58,6 @@
 
 class BaseDatapath;
 
-#ifdef CROSS_DDDG_PACKING
-struct remainingBudgetTy {
-	bool isValid;
-	unsigned remainingBudget;
-	uint64_t baseAddress;
-	uint64_t offset;
-
-	remainingBudgetTy() : isValid(false) { }
-	remainingBudgetTy(unsigned remainingBudget, uint64_t baseAddress, uint64_t offset) : isValid(true), remainingBudget(remainingBudget), baseAddress(baseAddress), offset(offset) { }
-};
-#endif
-
 struct ddrInfoTy {
 	unsigned loopLevel;
 	unsigned datapathType;
@@ -179,10 +167,6 @@ class XilinxZCUMemoryModel : public MemoryModel {
 	std::vector<nodeExportTy> nodesToAfterDDDG;
 	std::unordered_map<std::string, outBurstInfoTy> loadOutBurstsFoundCached;
 	std::unordered_map<std::string, outBurstInfoTy> storeOutBurstsFoundCached;
-#ifdef CROSS_DDDG_PACKING
-	std::unordered_map<std::string, remainingBudgetTy> loadRemainingBudget;
-	std::unordered_map<std::string, remainingBudgetTy> storeRemainingBudget;
-#endif
 	// This map relates DDR nodes (e.g. ReadReq, WriteReq, WriteResp) to the node ID used in burstedLoad/burstedStores
 	std::unordered_map<unsigned, unsigned> ddrNodesToRootLS;
 	std::unordered_map<std::string, bool> readActive, writeActive;
@@ -211,9 +195,6 @@ class XilinxZCUMemoryModel : public MemoryModel {
 	void packBursts(
 		std::unordered_map<unsigned, burstInfoTy> &burstedNodes,
 		std::unordered_map<unsigned, std::pair<std::string, uint64_t>> &nodes,
-#ifdef CROSS_DDDG_PACKING
-		std::unordered_map<std::string, remainingBudgetTy> &remainingBudget,
-#endif
 		int silentOpcode, bool nonSilentLast = false
 	);
 	bool analyseLoadOutBurstFeasabilityGlobal(std::string arrayName, unsigned loopLevel, unsigned datapathType);

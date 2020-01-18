@@ -10,9 +10,6 @@
 class BaseDatapath;
 struct ddrInfoTy;
 struct outBurstInfoTy;
-#ifdef CROSS_DDDG_PACKING
-struct remainingBudgetTy;
-#endif
 
 class ContextManager {
 	enum {
@@ -23,9 +20,6 @@ class ContextManager {
 		TYPE_DDDG = 4,
 		TYPE_OUTBURSTS_INFO = 5,
 		TYPE_GLOBAL_DDR_MAP = 6,
-#ifdef CROSS_DDDG_PACKING
-		TYPE_REMAINING_BUDGET_INFO = 7,
-#endif
 	};
 
 	struct cfd_t {
@@ -84,12 +78,6 @@ public:
 		std::unordered_map<std::string, outBurstInfoTy> *loadOutBurstsFound, std::unordered_map<std::string, outBurstInfoTy> *storeOutBurstsFound);
 	void saveGlobalDDRMap(std::unordered_map<std::string, std::vector<ddrInfoTy>> &globalDDRMap);
 	void getGlobalDDRMap(std::unordered_map<std::string, std::vector<ddrInfoTy>> *globalDDRMap);
-#ifdef CROSS_DDDG_PACKING
-	void saveRemainingBudgetInfo(std::string wholeLoopName, unsigned datapathType,
-		std::unordered_map<std::string, remainingBudgetTy> &loadRemainingBudget, std::unordered_map<std::string, remainingBudgetTy> &storeRemainingBudget);
-	void getRemainingBudgetInfo(std::string wholeLoopName, unsigned datapathType,
-		std::unordered_map<std::string, remainingBudgetTy> *loadRemainingBudget, std::unordered_map<std::string, remainingBudgetTy> *storeRemainingBudget);
-#endif
 
 #ifdef DBG_PRINT_ALL
 	void printDatabase();

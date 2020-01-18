@@ -11,9 +11,6 @@ const std::unordered_map<int, ContextManager::cfd_t> ContextManager::typeMap = {
 	{ContextManager::TYPE_DDDG, cfd_t(-1)},
 	{ContextManager::TYPE_OUTBURSTS_INFO, cfd_t(-1)},
 	{ContextManager::TYPE_GLOBAL_DDR_MAP, cfd_t(-1)},
-#ifdef CROSS_DDDG_PACKING
-	{ContextManager::TYPE_REMAINING_BUDGET_INFO, cfd_t(-1)},
-#endif
 };
 
 // TODO
@@ -171,19 +168,6 @@ template<> size_t ContextManager::writeElement<outBurstInfoTy>(std::stringstream
 
 	return writtenSize;
 }
-
-#ifdef CROSS_DDDG_PACKING
-template<> size_t ContextManager::writeElement<remainingBudgetTy>(std::stringstream &ss, remainingBudgetTy &elem) {
-	size_t writtenSize = 0;
-
-	writtenSize += writeElement<bool>(ss, elem.isValid);
-	writtenSize += writeElement<unsigned>(ss, elem.remainingBudget);
-	writtenSize += writeElement<uint64_t>(ss, elem.baseAddress);
-	writtenSize += writeElement<uint64_t>(ss, elem.offset);
-
-	return writtenSize;
-}
-#endif
 
 template<typename E> size_t ContextManager::writeElement(std::stringstream &ss, std::vector<E> &elem) {
 	size_t writtenSize = 0;
@@ -350,15 +334,6 @@ template<> void ContextManager::readElement<outBurstInfoTy>(std::fstream &fs, ou
 	readElement<uint64_t>(fs, elem.wordSize);
 #endif
 }
-
-#ifdef CROSS_DDDG_PACKING
-template<> void ContextManager::readElement<remainingBudgetTy>(std::fstream &fs, remainingBudgetTy &elem) {
-	readElement<bool>(fs, elem.isValid);
-	readElement<unsigned>(fs, elem.remainingBudget);
-	readElement<uint64_t>(fs, elem.baseAddress);
-	readElement<uint64_t>(fs, elem.offset);
-}
-#endif
 
 template<typename E> void ContextManager::readElement(std::fstream &fs, std::vector<E> &elem) {
 	size_t elemSize;
@@ -895,47 +870,3 @@ void ContextManager::getGlobalDDRMap(std::unordered_map<std::string, std::vector
 
 	assert(!(contextFile.eof()) && "Context file is incomplete or corrupt");
 }
-
-#ifdef CROSS_DDDG_PACKING
-void ContextManager::saveRemainingBudgetInfo(std::string wholeLoopName, unsigned datapathType,
-	std::unordered_map<std::string, remainingBudgetTy> &loadRemainingBudget, std::unordered_map<std::string, remainingBudgetTy> &storeRemainingBudget) {
-// TODO TODO TODO
-#if 1//DBG_PRINT_ALL
-	DBG_DUMP("Dump of loadRemainingBudget:\n");
-	for(auto const &x : loadRemainingBudget)
-		DBG_DUMP("-- " << x.first << ": <" << x.second.isValid << ", " << x.second.remainingBudget << ", " << x.second.baseAddress << ", " << x.second.offset << ">\n");
-	DBG_DUMP("Dump of storeRemainingBudget:\n");
-	for(auto const &x : storeRemainingBudget)
-		DBG_DUMP("-- " << x.first << ": <" << x.second.isValid << ", " << x.second.remainingBudget << ", " << x.second.baseAddress << ", " << x.second.offset << ">\n");
-#endif
-
-	assert(!readOnly && "Attempt to save remaining budget info on a read-only context manager");
-
-	size_t totalFieldSize = 0;
-	std::stringstream ss;
-	totalFieldSize += writeElement<std::string, remainingBudgetTy>(ss, loadRemainingBudget);
-	totalFieldSize += writeElement<std::string, remainingBudgetTy>(ss, storeRemainingBudget);
-	commit(ContextManager::TYPE_REMAINING_BUDGET_INFO, ss, totalFieldSize, wholeLoopName, datapathType);
-}
-
-void ContextManager::getRemainingBudgetInfo(std::string wholeLoopName, unsigned datapathType,
-	std::unordered_map<std::string, remainingBudgetTy> *loadRemainingBudget, std::unordered_map<std::string, remainingBudgetTy> *storeRemainingBudget) {
-	assert(readOnly && "Attempt to read remaining budget info from a write-only context manager");
-	assert(seekToIdentified(ContextManager::TYPE_REMAINING_BUDGET_INFO, wholeLoopName, datapathType) && "Requested remaining budget info not found at the context manager");
-
-	readElement<std::string, remainingBudgetTy>(contextFile, *loadRemainingBudget);
-	readElement<std::string, remainingBudgetTy>(contextFile, *storeRemainingBudget);
-
-// TODO TODO TODO
-#if 1//DBG_PRINT_ALL
-	DBG_DUMP("Dump of loadRemainingBudget:\n");
-	for(auto const &x : *loadRemainingBudget)
-		DBG_DUMP("-- " << x.first << ": <" << x.second.isValid << ", " << x.second.remainingBudget << ", " << x.second.baseAddress << ", " << x.second.offset << ">\n");
-	DBG_DUMP("Dump of storeRemainingBudget:\n");
-	for(auto const &x : *storeRemainingBudget)
-		DBG_DUMP("-- " << x.first << ": <" << x.second.isValid << ", " << x.second.remainingBudget << ", " << x.second.baseAddress << ", " << x.second.offset << ">\n");
-#endif
-
-	assert(!(contextFile.eof()) && "Context file is incomplete or corrupt");
-}
-#endif

@@ -1,0 +1,23 @@
+#!/bin/bash
+
+if [ 1 == $# ]; then
+	if [ 1 == $1 ]; then
+		FIRST=1
+		SECOND=0
+	else
+		FIRST=0
+		SECOND=1
+	fi
+else
+	FIRST=0
+	SECOND=1
+fi
+
+while true; do
+	clear
+	./trender $FIRST
+	sleep 5
+	clear
+	./trender $SECOND
+	sleep 5
+done

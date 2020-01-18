@@ -1,0 +1,262 @@
+#!/usr/bin/env python3
+
+
+import os, re, shutil, sys, subprocess
+
+
+appName = os.path.splitext(sys.argv[0])[0].replace("./", "")
+
+
+def getKnob(knob, val):
+	if val == knob.upper():
+		return True
+	elif val == knob.lower():
+		return False
+	else:
+		raise RuntimeError("Invalid value passed for knob {}: {}".format(knob, val))
+
+
+def getNumericKnob(knob, val):
+	if (val[:len(knob)] == knob.upper()) or (val[:len(knob)] == knob.lower()):
+		return int(val[len(knob):])
+	else:
+		raise RuntimeError("Invalid value passed for numeric knob {}: {}".format(knob, val))
+
+
+class EnvSwitcher:
+	def __init__(self):
+		self._environBkp = {
+			"PATH": os.environ["PATH"] if "PATH" in os.environ else "",
+			"LD_LIBRARY_PATH": os.environ["LD_LIBRARY_PATH"] if "LD_LIBRARY_PATH" in os.environ else "",
+			"XILINX_VIVADO": os.environ["XILINX_VIVADO"] if "XILINX_VIVADO" in os.environ else "",
+			"XILINX_SDX": os.environ["XILINX_SDX"] if "XILINX_SDX" in os.environ else ""
+		}
+
+	def switchToVivado(self):
+		os.environ["PATH"] = "/home/perina/xilinx/SDx/2018.2/bin:/home/perina/xilinx/SDK/2018.2/bin:/home/perina/xilinx/SDK/2018.2/gnu/microblaze/lin/bin:/home/perina/xilinx/SDK/2018.2/gnu/arm/lin/bin:/home/perina/xilinx/SDK/2018.2/gnu/microblaze/linux_toolchain/lin64_le/bin:/home/perina/xilinx/SDK/2018.2/gnu/aarch32/lin/gcc-arm-linux-gnueabi/bin:/home/perina/xilinx/SDK/2018.2/gnu/aarch32/lin/gcc-arm-none-eabi/bin:/home/perina/xilinx/SDK/2018.2/gnu/aarch64/lin/aarch64-linux/bin:/home/perina/xilinx/SDK/2018.2/gnu/aarch64/lin/aarch64-none/bin:/home/perina/xilinx/SDK/2018.2/gnu/armr5/lin/gcc-arm-none-eabi/bin:/home/perina/xilinx/SDK/2018.2/tps/lnx64/cmake-3.3.2/bin:/home/perina/xilinx/Vivado/2018.2/bin:{}".format(self._environBkp["PATH"])
+		#'The first two elements were built using `/path/to/xilinx/SDx/2018.2/bin/ldlibpath.sh /path/to/xilinx/SDx/2018.2/lib/lnx64.o`
+		os.environ["LD_LIBRARY_PATH"] = "/home/perina/xilinx/SDx/2018.2/lib/lnx64.o/Default:/home/perina/xilinx/SDx/2018.2/lib/lnx64.o:/home/perina/xilinx/SDx/2018.2/runtime/lib/x86_64:{}".format(self._environBkp["LD_LIBRARY_PATH"])
+		os.environ["XILINX_VIVADO"] = "/home/perina/xilinx/Vivado/2018.2"
+		os.environ["XILINX_SDX"] = "/home/perina/xilinx/SDx/2018.2"
+
+	def switchToLina(self):
+		os.environ["PATH"] = "/home/perina/Desktop/DD/Stage2/tools/linaii/build/bin:{}".format(self._environBkp["PATH"])
+		os.environ["LD_LIBRARY_PATH"] = self._environBkp["LD_LIBRARY_PATH"]
+
+	def switchBack(self):
+		for k in self._environBkp:
+			os.environ[k] = self._environBkp[k]
+
+
+def printLatencyTable(vivLatency, linLatency):
+	keys = ["min", "max", "il-min", "il-max", "il-il"]
+
+	sys.stdout.write("+{}\n".format("----------+" * (len(keys) + 1)))
+
+	sys.stdout.write("|{:>10}|".format("tool"))
+	for key in keys:
+		sys.stdout.write("{:>10}|".format(key))
+	sys.stdout.write("\n")
+
+	sys.stdout.write("+{}\n".format("----------+" * (len(keys) + 1)))
+
+	sys.stdout.write("|{:>10}|".format("viv"))
+	for key in keys:
+		sys.stdout.write("{:>10}|".format(vivLatency[key] if key in vivLatency else "---"))
+	sys.stdout.write("\n")
+
+	sys.stdout.write("|{:>10}|".format("lina"))
+	for key in keys:
+		sys.stdout.write("{:>10}|".format(linLatency[key] if key in linLatency else "---"))
+	sys.stdout.write("\n")
+
+	sys.stdout.write("+{}\n".format("----------+" * (len(keys) + 1)))
+
+
+if "__main__" == __name__:
+	if len(sys.argv) != 8 and len(sys.argv) != 9:
+		sys.stderr.write("{}: missing argument(s)\n".format(appName))
+		sys.stderr.write("Usage: {} m|M bu|BU bm|BM bp|BP p|P0|1 PROJECT FOLDER [VIVFOLDER]\n".format(appName))
+		sys.stderr.write("Knobs (use lower-case to disable, upper-case to enable):\n")
+		sys.stderr.write("    m        : toggle memory model analysis\n")
+		sys.stderr.write("    bu       : toggle memory model burst analysis\n")
+		sys.stderr.write("    bm       : toggle memory model burst mix\n")
+		sys.stderr.write("    bp       : toggle memory model burst packing\n")
+		sys.stderr.write("Numeric knobs (case insensitive):\n")
+		sys.stderr.write("    p|P      : toggle memory model scheduling policy\n")
+		sys.stderr.write("               0 for \"--ddrsched=0\"\n")
+		sys.stderr.write("               1 for \"--ddrsched=1\"\n")
+		sys.stderr.write("Positional arguments:\n")
+		sys.stderr.write("    PROJECT  : project name\n")
+		sys.stderr.write("    FOLDER   : optimisation folder\n")
+		sys.stderr.write("    VIVFOLDER: Vivado optimisation folder (when different\n")
+		sys.stderr.write("               from FOLDER), optional\n")
+		sys.stderr.write("Example: \"./scripter M BU BM BP P1 rw-add2-np3 b\"\n")
+		exit(1)
+
+	mmaEnable = getKnob("m", sys.argv[1])
+	burstEnable = getKnob("bu", sys.argv[2])
+	burstMix = getKnob("bm", sys.argv[3])
+	burstPacking = getKnob("bp", sys.argv[4])
+	schedPolicy = getNumericKnob("p", sys.argv[5])
+	project = sys.argv[6]
+	folder = sys.argv[7]
+	vivFolder = sys.argv[8] if 9 == len(sys.argv) else folder
+
+	sys.stderr.write("Memory model analysis: {}\n".format("enabled" if mmaEnable else "disabled"))
+	sys.stderr.write("Burst analysis: {}\n".format("enabled" if burstEnable else "disabled"))
+	sys.stderr.write("Burst mix: {}\n".format("enabled" if burstMix else "disabled"))
+	sys.stderr.write("Burst packing: {}\n".format("enabled" if burstPacking else "disabled"))
+	sys.stderr.write("Scheduling policy: {}\n".format(schedPolicy))
+
+	vivLatency = {}
+	linLatency = {}
+
+	switcher = EnvSwitcher()
+	try:
+		vivProject = os.path.join("vivado", vivFolder, project)
+		vivReport = os.path.join(vivProject, "_x", "_xocc_compile", "test", "test", "solution", ".autopilot", "db", "test.verbose.sched.rpt")
+		linProject = os.path.join("lina", folder, project)
+		linReport = os.path.join(linProject, "test.log")
+
+		sys.stderr.write("\n")
+
+		sys.stderr.write("Switching to Vivado environment...\n")
+		switcher.switchToVivado()
+
+		lastModified = int(os.stat(vivReport).st_mtime) if os.path.exists(vivReport) else None
+
+		sys.stderr.write("Running \"make xo\"...\n")
+		subprocess.run(["make", "xo"], stdout=sys.stderr, cwd=vivProject)
+
+		sys.stderr.write("Get results...\n")
+		print("-" * shutil.get_terminal_size().columns)
+		if lastModified is not None and lastModified == int(os.stat(vivReport).st_mtime):
+			print("WARNING: REPORT HAS NOT CHANGED")
+
+		with open(vivReport, "r") as rpt:
+			sectionRegex = re.compile(r"== Performance Estimates.*")
+			subSectionRegex = re.compile(r" *\+ Latency \(clock cycles\):.*")
+			subSubSectionRegex = re.compile(r" *\* Summary:.*")
+			subSubSection2Regex = re.compile(r" *\* Loop:.*")
+			divRegex = re.compile(r" +(\+-+)+\+")
+			state = 0
+			divCounter = 0
+			firstLiner = True
+
+			for l in rpt.readlines():
+				# State 0: outside of everything
+				if 0 == state:
+					if sectionRegex.match(l) is not None:
+						state = 1
+				# State 1: inside "== Performance Estimates"
+				elif 1 == state:
+					if subSectionRegex.match(l) is not None:
+						state = 2
+				# State 2: inside "+ Latency (clock cycles):"
+				elif 2 == state:
+					if subSubSectionRegex.match(l) is not None:
+						state = 3
+				# State 3: inside "* Summary:", the table is already here!
+				elif 3 == state:
+					print(l[:-1].lstrip())
+
+					# Save cycle count for later show
+					if 2 == divCounter and firstLiner:
+						splitL = l.split("|")
+						vivLatency["min"] = int(splitL[1])
+						vivLatency["max"] = int(splitL[2])
+						firstLiner = False
+
+					if divRegex.match(l) is not None:
+						if 2 == divCounter:
+							state = 4
+							divCounter = 0
+							firstLiner = True
+						else:
+							divCounter += 1
+				# State 4: inside "+ Latency (clock cycles):"
+				elif 4 == state:
+					if subSubSection2Regex.match(l) is not None:
+						state = 5
+				# State 5: inside "* Loop:", the table is already here!
+				elif 5 == state:
+					print(l[:-1].lstrip())
+
+					if divRegex.match(l) is not None:
+						if 2 == divCounter:
+							break
+						else:
+							divCounter += 1
+					else:
+						# Save cycle count for later show
+						if 2 == divCounter:
+							splitL = l.split("|")
+							vivLatency["il-min"] = int(splitL[2])
+							vivLatency["il-max"] = int(splitL[3])
+							vivLatency["il-il"] = int(splitL[4])
+
+		print("-" * shutil.get_terminal_size().columns)
+		sys.stderr.write("\n")
+
+		sys.stderr.write("Switching to Lina environment...\n")
+		switcher.switchToLina()
+
+		reportSHA = subprocess.run(["sha1sum", linReport], stdout=subprocess.PIPE).stdout if os.path.exists(linReport) else None
+
+		sys.stderr.write("Running \"make linked_opt.bc\"...\n")
+		subprocess.run(["make", "linked_opt.bc"], stdout=sys.stderr, cwd=linProject)
+
+		sys.stderr.write("Building Lina command...\n")
+		linaCommand = ["lina", "-p", "-c", "config.cfg", "-v", "-l", "0", "-t", "ZCU104", "-f", "100", "-u", "27"]
+		linaCommand += ["--f-npla", "--show-pre-dddg", "--show-post-dddg", "--show-scheduling", "--mem-trace", "--ddrsched", str(schedPolicy)]
+		if not mmaEnable:
+			linaCommand.append("--fno-mma")
+		if not burstEnable:
+			linaCommand.append("--fno-mmaburst")
+		if burstMix:
+			linaCommand.append("--f-burstmix")
+		if not burstPacking:
+			linaCommand.append("--fno-burstpack")
+		finalArgs = ["linked_opt.bc", "test"]
+
+		sys.stderr.write("Running \"lina ...\"...\n")
+		subprocess.run(linaCommand + ["--mma-mode", "gen"] + finalArgs, stdout=sys.stderr, cwd=linProject)
+		subprocess.run(linaCommand + ["--mma-mode", "use"] + finalArgs, stdout=sys.stderr, cwd=linProject)
+		subprocess.run(["rm", "-f", "test.log"], stdout=sys.stderr, cwd=linProject)
+		subprocess.run("mv *.log test.log", stdout=sys.stderr, cwd=linProject, shell=True)
+
+		sys.stderr.write("Get results...\n")
+		print("-" * shutil.get_terminal_size().columns)
+		if reportSHA is not None and reportSHA == subprocess.run(["sha1sum", linReport], stdout=subprocess.PIPE).stdout:
+			print("WARNING: REPORT HAS NOT CHANGED")
+
+		with open(linReport, "r") as rpt:
+			totalCyclesRegex = re.compile(r"Total cycles: (\d+)")
+			iterationLatencyRegex = re.compile(r"Constrained iteration latency: (\d+)")
+
+			for l in rpt.readlines():
+				# If NPLA is active, several matches will happen
+				# but the one that matters is the last one ¯\_(ツ)_/¯
+				totalCyclesMatch = totalCyclesRegex.match(l)
+				if totalCyclesMatch is not None:
+					linLatency["max"] = int(totalCyclesMatch[1])
+
+				if "il-il" not in linLatency:
+					iterationLatencyMatch = iterationLatencyRegex.match(l)
+					if iterationLatencyMatch is not None:
+						linLatency["il-il"] = int(iterationLatencyMatch[1])
+				sys.stdout.write(l)
+
+		print("-" * shutil.get_terminal_size().columns)
+
+		sys.stderr.write("Summarising...\n")
+		print("-" * shutil.get_terminal_size().columns)
+
+		printLatencyTable(vivLatency, linLatency)
+
+		print("-" * shutil.get_terminal_size().columns)
+
+
+	finally:
+		switcher.switchBack()

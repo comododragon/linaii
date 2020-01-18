@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+
+
+import json, os, sys
+from datetime import datetime
+from enum import Enum
+
+
+DBFILE = "_trender.db"
+LOGFILE = "runall.log"
+
+
+ANSI_BLACK = "\u001b[30m"
+ANSI_RED = "\u001b[31m"
+ANSI_GREEN = "\u001b[32m"
+ANSI_YELLOW = "\u001b[33m"
+ANSI_BLUE = "\u001b[34m"
+ANSI_MAGENTA = "\u001b[35m"
+ANSI_CYAN = "\u001b[36m"
+ANSI_WHITE = "\u001b[37m"
+ANSI_RESET = "\u001b[0m"
+
+
+if "__main__" == __name__:
+	if len(sys.argv) != 2:
+		sys.stderr.write("Usage: trender [0|1]\n")
+		exit(1)
+
+	mode = int(sys.argv[1])
+	db = {}
+	cddate = None
+
+	if os.path.exists(DBFILE):
+		with open(DBFILE, "r") as dbfile:
+			db = json.loads(dbfile.readline())
+			cddate = datetime.strptime(dbfile.readline()[:-1], "%Y-%m-%d %H:%M:%S")
+
+	lmdate = datetime.fromtimestamp(os.stat(LOGFILE).st_mtime)
+	lmdate = lmdate.replace(microsecond=0)
+
+	if cddate is None or lmdate > cddate:
+		with open(LOGFILE, "r") as logfile:
+			logfile.readline()
+			for l in logfile.readlines():
+				lsplit = l.split(",")
+				key = "{},{}".format(lsplit[0], lsplit[1])
+
+				if 6 == len(lsplit):
+					vivl = int(lsplit[2])
+					vivil = int(lsplit[3])
+					linl = int(lsplit[4])
+					linil = int(lsplit[5][:-1])
+
+					if key not in db or 0 == len(db[key]):
+						db[key] = [[vivl, vivil]]
+
+					if [vivl, vivil] != db[key][0]:
+						print("WARNING! Latency for Vivado changed!")
+
+					if 11 == len(db[key]):
+						db[key].pop(1)
+					db[key].append([abs(linl - vivl), abs(linil - vivil)])
+				else:
+					db[key] = []
+
+		with open(DBFILE, "w") as dbfile:
+			dbfile.write(json.dumps(db))
+			dbfile.write("\n")
+			dbfile.write(lmdate.strftime("%Y-%m-%d %H:%M:%S"))
+			dbfile.write("\n")
+
+	for key in db:
+		if 0 == len(db[key]):
+			print("{}{}".format(ANSI_MAGENTA, key))
+			print("\t{}!!".format(ANSI_RED))
+		else:
+			print("{}{} ({},{})".format(ANSI_MAGENTA, key, db[key][0][0], db[key][0][1]))
+
+			prevVal = None
+			for elem in db[key][1:]:
+				if prevVal is None:
+					sys.stdout.write("\t{}{:7}".format(ANSI_WHITE, elem[mode]))
+				elif prevVal == elem[mode]:
+					sys.stdout.write("{}, {:7}-".format(ANSI_WHITE, elem[mode]))
+				elif prevVal > elem[mode]:
+					sys.stdout.write("{}, {}{:7}↓".format(ANSI_WHITE, ANSI_GREEN, elem[mode]))
+				else:
+					sys.stdout.write("{}, {}{:7}↑".format(ANSI_WHITE, ANSI_RED, elem[mode]))
+
+				prevVal = elem[mode]
+
+			sys.stdout.write("\n")
+
+	print(ANSI_RESET)

@@ -46,8 +46,6 @@ public:
 	};
 
 	class TCScheduler {
-		typedef std::pair<double, std::vector<unsigned>> pathTy;
-
 		const std::vector<int> &microops;
 		const Graph &graph;
 		unsigned numOfTotalNodes;
@@ -56,7 +54,8 @@ public:
 		HardwareProfile &profile;
 
 		double effectivePeriod;
-		std::vector<pathTy> paths;
+		std::unordered_map<unsigned, double> delayMap;
+		std::vector<unsigned> runningNodes;
 
 	public:
 		TCScheduler(
@@ -67,7 +66,8 @@ public:
 		);
 
 		void clear();
-		std::pair<std::vector<pathTy *>, std::vector<pathTy>> findDependencies(unsigned nodeID);
+		void clearFinishedNodes();
+		void markAsRunning(unsigned nodeID);
 		bool tryAllocate(unsigned nodeID, bool checkTiming = true);
 		double getCriticalPath();
 	};

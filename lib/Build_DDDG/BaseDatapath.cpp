@@ -1451,7 +1451,6 @@ std::tuple<std::string, uint64_t> BaseDatapath::calculateResIIMem() {
 	std::map<std::string, uint64_t> arrayPartitionToResII;
 	std::map<std::string, std::vector<uint64_t>> arrayPartitionToSchedReadDiffs;
 	std::map<std::string, std::vector<uint64_t>> arrayPartitionToSchedWriteDiffs;
-
 	arrayPartitionToNumOfReads.clear();
 	arrayPartitionToNumOfWrites.clear();
 
@@ -1583,7 +1582,7 @@ std::tuple<std::string, uint64_t> BaseDatapath::calculateResIIMem() {
 
 	std::map<std::string, uint64_t>::iterator maxIt = std::max_element(arrayPartitionToResII.begin(), arrayPartitionToResII.end(), prioritiseSmallerResIIMem);
 
-	if(maxIt->second > 1)
+	if(arrayPartitionToResII.size() && maxIt->second > 1)
 		return std::make_tuple(maxIt->first, maxIt->second);
 	else
 		return std::make_tuple("none", 1);
@@ -2022,32 +2021,9 @@ std::pair<uint64_t, double> BaseDatapath::RCScheduler::schedule() {
 		if(startingNodes.size())
 			assignReadyStartingNodes();
 
-		if(!(args.fNoTCS)) {
-			// Reset timing-constraint scheduling
-			tcSched.clear();
-
-			// Before selecting, we must deduce the in-cycle latency that is being held by running instructions
-			for(auto &it : fAddExecuting)
-				tcSched.tryAllocate(it.first, false);
-			for(auto &it : fSubExecuting)
-				tcSched.tryAllocate(it.first, false);
-			for(auto &it : fMulExecuting)
-				tcSched.tryAllocate(it.first, false);
-			for(auto &it : fDivExecuting)
-				tcSched.tryAllocate(it.first, false);
-			for(auto &it : fCmpExecuting)
-				tcSched.tryAllocate(it.first, false);
-			for(auto &it : loadExecuting)
-				tcSched.tryAllocate(it.first, false);
-			for(auto &it : storeExecuting)
-				tcSched.tryAllocate(it.first, false);
-			for(auto &it : intOpExecuting)
-				tcSched.tryAllocate(it.first, false);
-			for(auto &it : callExecuting)
-				tcSched.tryAllocate(it.first, false);
-			for(auto &it : ddrOpExecuting)
-				tcSched.tryAllocate(it.first, false);
-		}
+		// Before selecting, we must deduce the in-cycle latency that is being held by running instructions
+		if(!(args.fNoTCS))
+			tcSched.clearFinishedNodes();
 
 		// Nodes must be executed only once per clock tick. These lists hold which nodes were already executed
 		fAddExecuted.clear();
@@ -2606,6 +2582,10 @@ void BaseDatapath::RCScheduler::tryRelease(unsigned opcode, executingMapTy &exec
 		else {
 			if(args.showScheduling)
 				dumpFile << "\t[ALLOCATED] [" << std::to_string(it.second + 1) << "/" <<  std::to_string(profile.getLatency(opcode)) << "] Node " << executingNodeID << " (" << reverseOpcodeMap.at(opcode) << ")\n";
+
+			// Inform TCS that this node should be accounted from the next cycle timing budget as it is still running
+			if(!(args.fNoTCS))
+				tcSched.markAsRunning(executingNodeID);
 		}
 	}
 
@@ -2646,6 +2626,10 @@ void BaseDatapath::RCScheduler::tryRelease(executingMapTy &executing, executedLi
 		else {
 			if(args.showScheduling)
 				dumpFile << "\t[ALLOCATED] [" << std::to_string(it.second + 1) << "/" <<  std::to_string(profile.getLatency(opcode)) << "] Node " << executingNodeID << " (" << reverseOpcodeMap.at(opcode) << ")\n";
+
+			// Inform TCS that this node should be accounted from the next cycle timing budget as it is still running
+			if(!(args.fNoTCS))
+				tcSched.markAsRunning(executingNodeID);
 		}
 	}
 
@@ -2686,6 +2670,10 @@ void BaseDatapath::RCScheduler::tryRelease(unsigned opcode, executingMapTy &exec
 		else {
 			if(args.showScheduling)
 				dumpFile << "\t[ALLOCATED] [" << std::to_string(it.second + 1) << "/" <<  std::to_string(profile.getLatency(opcode)) << "] Node " << executingNodeID << " (" << reverseOpcodeMap.at(opcode) << ")\n";
+
+			// Inform TCS that this node should be accounted from the next cycle timing budget as it is still running
+			if(!(args.fNoTCS))
+				tcSched.markAsRunning(executingNodeID);
 		}
 	}
 
@@ -2726,6 +2714,10 @@ void BaseDatapath::RCScheduler::tryRelease(executingMapTy &executing, executedLi
 		else {
 			if(args.showScheduling)
 				dumpFile << "\t[ALLOCATED] [" << std::to_string(it.second + 1) << "/" <<  std::to_string(profile.getLatency(opcode)) << "] Node " << executingNodeID << " (" << reverseOpcodeMap.at(opcode) << ")\n";
+
+			// Inform TCS that this node should be accounted from the next cycle timing budget as it is still running
+			if(!(args.fNoTCS))
+				tcSched.markAsRunning(executingNodeID);
 		}
 	}
 
@@ -2764,88 +2756,48 @@ BaseDatapath::TCScheduler::TCScheduler(
 }
 
 void BaseDatapath::TCScheduler::clear() {
-	paths.clear();
+	delayMap.clear();
+	runningNodes.clear();
 }
 
-std::pair<std::vector<BaseDatapath::TCScheduler::pathTy *>, std::vector<BaseDatapath::TCScheduler::pathTy>> BaseDatapath::TCScheduler::findDependencies(unsigned nodeID) {
-	std::vector<pathTy *> pathsToModify;
-	std::vector<pathTy> pathsToCreate;
+void BaseDatapath::TCScheduler::clearFinishedNodes() {
+	// XXX Maybe this logic could be further optimised
 
-	// Check if this node is part of any ongoing path
-	for(auto &it : paths) {
-		// Check if this node is connected to any part of the current ongoing path
-		for(auto &it2 : it.second) {
-			// Connection found
-			if(boost::edge(nameToVertex.at(it2), nameToVertex.at(nodeID), graph).second) {
-				// If this is the last node of the path, mark the path
-				if(it.second.back() == it2) {
-					pathsToModify.push_back(&it);
-				}
-				// Else, create a new path with the common nodes
-				else {
-					pathTy newPath;
-					newPath.first = 0;
+	// Clear delay map and add the nodes that are still executing
+	// Note that order matters! This is why std::vector<> is being used
+	delayMap.clear();
+	for(auto &it : runningNodes)
+		tryAllocate(it, false);
 
-					for(auto it3 = it.second.begin(); *it3 != it2; it3++) {
-						newPath.first += profile.getInCycleLatency(microops.at(*it3));
-						newPath.second.push_back(*it3);
-					}
+	runningNodes.clear();
+}
 
-					// We must also add the last common node!
-					newPath.first += profile.getInCycleLatency(microops.at(it2));
-					newPath.second.push_back(it2);
-					pathsToCreate.push_back(newPath);
-				}
-			}
-		}
-	}
-
-	return std::make_pair(pathsToModify, pathsToCreate);
+void BaseDatapath::TCScheduler::markAsRunning(unsigned nodeID) {
+	runningNodes.push_back(nodeID);
 }
 
 bool BaseDatapath::TCScheduler::tryAllocate(unsigned nodeID, bool checkTiming) {
-	std::pair<std::vector<pathTy *>, std::vector<pathTy>> pathsFound = findDependencies(nodeID);
 	double inCycleLatency = profile.getInCycleLatency(microops.at(nodeID));
 
-	// XXX: Some codes (mainly codes that does not use FP units_ can explode the amount of paths to be explored.
-	// To avoid this problem, we set an amount for maximum simultaneous paths.
-	if(paths.size() > MAX_SIMULTANEOUS_TIMING_PATHS)
-		return false; 
-
-	// If no dependency was found for this node, create a new path and return
-	if(!(pathsFound.first.size() || pathsFound.second.size())) {
-		pathTy newPath;
-		newPath.first = inCycleLatency;
-		newPath.second.push_back(nodeID);
-		paths.push_back(newPath);
-
-		return true;
+	// Calculate the delay up to this node according to its parent nodes
+	double nodeDelay = inCycleLatency;
+	double parentLargestDelay = 0;
+	InEdgeIterator inEdgei, inEdgeEnd;
+	for(std::tie(inEdgei, inEdgeEnd) = boost::in_edges(nameToVertex.at(nodeID), graph); inEdgei != inEdgeEnd; inEdgei++) {
+		unsigned parentID = vertexToName[boost::source(*inEdgei, graph)];
+		std::unordered_map<unsigned, double>::iterator found = delayMap.find(parentID);
+		double parentDelay = (delayMap.end() == found)? 0 : found->second;
+		if(parentDelay > parentLargestDelay)
+			parentLargestDelay = parentDelay;
 	}
+	nodeDelay += parentLargestDelay;
 
-	if(checkTiming) {
-		// Check if any modified path violates timing
-		for(auto &it : pathsFound.first) {
-			if((it->first + inCycleLatency) > effectivePeriod)
-				return false;
-		}
+	// Fail if adding this new node violates timing
+	if(checkTiming && nodeDelay > effectivePeriod)
+		return false;
 
-		// Check if any new path violates timing
-		for(auto &it : pathsFound.second) {
-			if((it.first + inCycleLatency) > effectivePeriod)
-				return false;
-		}
-	}
-
-	// No path violations reported. Create/modify the paths and return
-	for(auto &it : pathsFound.first) {
-		it->first += inCycleLatency;
-		it->second.push_back(nodeID);
-	}
-	for(auto &it : pathsFound.second) {
-		it.first += inCycleLatency;
-		it.second.push_back(nodeID);
-		paths.push_back(it);
-	}
+	// Add node to the delay map
+	delayMap[nodeID] = nodeDelay;
 
 	return true;
 }
@@ -2853,9 +2805,9 @@ bool BaseDatapath::TCScheduler::tryAllocate(unsigned nodeID, bool checkTiming) {
 double BaseDatapath::TCScheduler::getCriticalPath() {
 	double criticalPath = -1;
 
-	for(auto &it : paths) {
-		if(it.first > criticalPath)
-			criticalPath = it.first;
+	for(auto &it : delayMap) {
+		if(it.second > criticalPath)
+			criticalPath = it.second;
 	}
 
 	return criticalPath;

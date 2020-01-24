@@ -1,0 +1,16 @@
+*.log
+*.rpt
+*.dot
+*.dat
+*.bc
+*.gz
+**/.Xil/
+**/_x/
+vivado/**/fpga/
+vivado/bold/
+vivado/u2v/
+ver/
+terminology
+debug.dump
+mem_trace.txt
+lina/b/README

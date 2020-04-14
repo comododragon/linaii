@@ -77,13 +77,15 @@ const std::string helpMessage =
 	"        -u UNCTY , --uncertainty=UNCTY: specify the clock uncertainty (in %)\n"
 	"\n"
 	"Memory model tuning flags (ignored if \"--fno-mma\" is set):\n"
-	"                   --fno-mmaburst     : disable memory model iteration burst analysis\n"
-	"                   --f-burstmix       : if enabled, burst transfers can mix variables\n"
-	"                                        option ignored if global parameter \"ddrbanking\" is\n"
-	"                                        enabled\n"
-	"                   --fno-burstpack    : disable burst packing, i.e. burst transactions will\n"
-	"                                        not be packed together for better use of the DDR\n"
-	"                                        data bus\n"
+	"                   --f-burstaggr      : enable burst aggregation: sequential operations inside a\n"
+	"                                        DDDG are grouped together to form bursts.\n"
+	"                   --f-burstmix       : if enabled, burst aggregation can mix arrays. Option ignored\n"
+	"                                        if global parameter \"ddrbanking\" is enabled or if \"--f-burstaggr\"\n"
+	"                                        is disabled\n"
+	"                   --f-vec            : enable array vectorisation analysis, which tries to find a\n"
+	"                                        suitable SIMD type for the off-chip arrays. This analysis is\n"
+	"                                        automatically disabled when \"--mma-mode=off\". Requires\n"
+	"                                        \"--f-burstaggr\"\n"
 	"        -d LEVEL , --ddrsched=LEVEL   : specify the DDR scheduling policy:\n"
 	"                                            0: DDR transactions of same type (read/write) cannot\n"
 	"                                               overlap (i.e. once a transaction starts, it must end\n"
@@ -94,8 +96,7 @@ const std::string helpMessage =
 	"                                        be:\n"
 	"                                            off: run Lina normally (DEFAULT)\n"
 	"                                            gen: perform memory model analysis, generate a context\n"
-	"                                                 import file and stop execution. This flag is\n"
-	"                                                 ignored if \"-m trace\" | \"--mode=trace\" is set\n"
+	"                                                 import file and stop execution\n"
 	"                                            use: skip profiling and DDDG generation, proceed\n"
 	"                                                 directly to memory model analysis. In this mode, a\n"
 	"                                                 context import file is used to generate the DDDG\n"
@@ -241,9 +242,9 @@ void parseInputArguments(int argc, char **argv) {
 	args.fNPLA = false;
 	args.fNoTCS = false;
 	args.fNoMMA = false;
-	args.fNoMMABurst = false;
+	args.fBurstAggr = false;
 	args.fBurstMix = false;
-	args.fNoBurstPack = false;
+	args.fVec = false;
 	args.mmaMode = args.MMA_MODE_OFF;
 	args.fSBOpt = true;
 	args.fSLROpt = false;
@@ -286,9 +287,9 @@ void parseInputArguments(int argc, char **argv) {
 			{"f-npla", no_argument, 0, 0xF06},
 			{"fno-tcs", no_argument, 0, 0xF07},
 			{"fno-mma", no_argument, 0, 0xF08},
-			{"fno-mmaburst", no_argument, 0, 0xF09},
+			{"f-burstaggr", no_argument, 0, 0xF09},
 			{"f-burstmix", no_argument, 0, 0xF0A},
-			{"fno-burstpack", no_argument, 0, 0xF0B},
+			{"f-vec", no_argument, 0, 0xF0B},
 			{"mma-mode", required_argument, 0, 0xF0C},
 			{"fno-sb", no_argument, 0, 0xF0D},
 			{"f-slr", no_argument, 0, 0xF0E},
@@ -410,13 +411,13 @@ void parseInputArguments(int argc, char **argv) {
 				args.fNoMMA = true;
 				break;
 			case 0xF09:
-				args.fNoMMABurst = true;
+				args.fBurstAggr = true;
 				break;
 			case 0xF0A:
 				args.fBurstMix = true;
 				break;
 			case 0xF0B:
-				args.fNoBurstPack = true;
+				args.fVec = true;
 				break;
 			case 0xF0C:
 				optargStr = optarg;
@@ -515,6 +516,15 @@ void parseInputArguments(int argc, char **argv) {
 		errs() << "Lina does not support estimation with target frequency above 500 Mhz\n";
 		exit(-1);
 	}
+	if(args.mmaMode != ArgPack::MMA_MODE_OFF && ArgPack::MODE_TRACE_AND_ESTIMATE == args.mode) {
+		errs() << "When mma mode != \"off\", Lina mode must be either \"trace\" or \"estimation\"\n";
+		exit(-1);
+	}
+
+	if(args.fVec && args.mmaMode != ArgPack::MMA_MODE_OFF && !(args.fBurstAggr)) {
+		errs() << "\"--f-burstaggr\" is required for \"--f-vec\" to work\n";
+		exit(-1);
+	}
 
 	VERBOSE_PRINT(
 		errs() << "Input bitcode file: " << InputFilename << "\n";
@@ -560,33 +570,38 @@ void parseInputArguments(int argc, char **argv) {
 		errs() << "\n";
 		errs() << "Memory model analysis for offchip transactions: " << (args.fNoMMA? "disabled" : "enabled") << "\n";
 		if(!(args.fNoMMA)) {
-			if(args.fNoMMABurst)
-				errs() << "Memory model iteration burst analysis is disabled!\n";
-			if(args.fBurstMix)
-				errs() << "Burst mix is active: burst transaction boundaries may contain more than one array!\n";
-			if(args.fNoBurstPack)
-				errs() << "Burst packing is disabled: burst transactions will not be packed together to maximise data bus usage!\n";
-		}
-		errs() << "DDR scheduling policy: ";
-		switch(args.ddrSched) {
-			case ArgPack::DDR_POLICY_CANNOT_OVERLAP:
-				errs() << "conservative\n";
-				break;
-			case ArgPack::DDR_POLICY_CAN_OVERLAP:
-				errs() << "relaxed\n";
-				break;
-		}
-		errs() << "MMA mode: ";
-		switch(args.mmaMode) {
-			case ArgPack::MMA_MODE_OFF:
-				errs() << "normal Lina execution\n";
-				break;
-			case ArgPack::MMA_MODE_GEN:
-				errs() << "generate DDDG, run memory-model analysis and halt\n";
-				break;
-			case ArgPack::MMA_MODE_USE:
-				errs() << "import DDDG and other info. from context-import instead of generating\n";
-				break;
+			if(args.fBurstAggr) {
+				errs() << "Burst aggregation active\n";
+				if(args.fBurstMix)
+					errs() << "Burst mix active (will be deactivated if global parameter \"ddrbanking\" is set)\n";
+			}
+			if(args.fVec) {
+				if(ArgPack::MMA_MODE_OFF == args.mmaMode)
+					errs() << "Array vectorisation analysis disabled due to \"--mma-mode=off\"\n";
+				else
+					errs() << "Array vectorisation analysis enabled\n";
+			}
+			errs() << "DDR scheduling policy: ";
+			switch(args.ddrSched) {
+				case ArgPack::DDR_POLICY_CANNOT_OVERLAP:
+					errs() << "conservative\n";
+					break;
+				case ArgPack::DDR_POLICY_CAN_OVERLAP:
+					errs() << "permissive\n";
+					break;
+			}
+			errs() << "MMA mode: ";
+			switch(args.mmaMode) {
+				case ArgPack::MMA_MODE_OFF:
+					errs() << "normal Lina execution\n";
+					break;
+				case ArgPack::MMA_MODE_GEN:
+					errs() << "generate DDDG, run memory-model analysis and halt\n";
+					break;
+				case ArgPack::MMA_MODE_USE:
+					errs() << "import DDDG and other info. from context-import instead of generating\n";
+					break;
+			}
 		}
 	);
 

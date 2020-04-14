@@ -99,6 +99,8 @@ extern std::map<std::string, std::string> mangledName2ArrayNameMap;
 typedef std::map<std::string, uint64_t> wholeloopName2loopBoundMapTy;
 extern wholeloopName2loopBoundMapTy wholeloopName2loopBoundMap;
 
+typedef std::pair<std::string, unsigned> arrayPackSzPairTy;
+
 namespace llvm {
 
 /// FunctionName --> number of loops inside it

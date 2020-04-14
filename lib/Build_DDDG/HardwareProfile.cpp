@@ -348,7 +348,8 @@ bool HardwareProfile::storeTryAllocate(std::string arrayPartitionName, bool comm
 	}
 
 	// Allocate a port
-	(found2->second)++;
+	if(commit)
+		(found2->second)++;
 
 	return true;
 }

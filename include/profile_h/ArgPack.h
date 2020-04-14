@@ -52,9 +52,9 @@ typedef struct {
 	bool fNPLA;
 	bool fNoTCS;
 	bool fNoMMA;
-	bool fNoMMABurst;
+	bool fBurstAggr;
 	bool fBurstMix;
-	bool fNoBurstPack;
+	bool fVec;
 	bool fSBOpt;
 	bool fSLROpt;
 	bool fNoSLROpt;

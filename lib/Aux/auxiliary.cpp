@@ -495,6 +495,7 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 		}
 	}
 
+	// TODO Cleanup
 	// XXX: If banking is active, maybe we should automatically insert unroll pragmas here?
 	// Since Vivado/SDx automatically unrolls when banking is requested
 	// Actually, my idea was to SUGGEST unrolling
@@ -545,8 +546,10 @@ void ConfigurationManager::parseToFiles() {
 	outFile.close();
 
 	outFile.open(arrayInfoFileName);
-	for(auto &it : arrayInfoCfgMap)
-		outFile << "array," << it.first << "," << std::to_string(it.second.totalSize) << "," << std::to_string(it.second.wordSize) << "," << it.second.type << "\n";
+	for(auto &it : arrayInfoCfgMap) {
+		std::string type = (arrayInfoCfgTy::ARRAY_TYPE_ONCHIP == it.second.type)? "onchip" : "offchip";
+		outFile << "array," << it.first << "," << std::to_string(it.second.totalSize) << "," << std::to_string(it.second.wordSize) << "," << type << "\n";
+	}
 	outFile.close();
 
 	outFile.open(globalFileName);

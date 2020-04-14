@@ -232,7 +232,7 @@ private:
 	HardwareProfile *profile;
 
 	void findMinimumRankPair(std::pair<unsigned, unsigned> &pair, std::map<unsigned, unsigned> rankMap);
-	static bool prioritiseSmallerResIIMem(const std::pair<std::string, double> &first, const std::pair<std::string, double> &second) { return first.second < second.second; }
+	static bool prioritiseLargerResIIMem(const std::pair<std::string, double> &first, const std::pair<std::string, double> &second) { return first.second < second.second; }
 
 public:
 	BaseDatapath(
@@ -329,6 +329,9 @@ protected:
 	std::vector<uint64_t> asapScheduledTime;
 	std::vector<uint64_t> alapScheduledTime;
 	std::vector<uint64_t> rcScheduledTime;
+	// Dependability sets, used for approximating ResMIIMem
+	std::unordered_map<unsigned, std::set<std::string>> loadDependabilityMap;
+	std::unordered_map<unsigned, std::set<std::string>> storeDependabilityMap;
 	// Vector with nodes on the critical path
 	std::vector<unsigned> cPathNodes;
 	// Number of reads inside an array partition
@@ -348,6 +351,10 @@ protected:
 	// This forces relevant isolated nodes (i.e. out-bursted transactions) to be allocated properly
 	bool dummySinkCreated;
 	unsigned dummySink;
+
+	// Dependency maps, used for approximating ResMIIMem
+	std::unordered_map<unsigned, std::set<unsigned>> loadDepMap;
+	std::unordered_map<unsigned, std::set<unsigned>> storeDepMap;
 
 	void initBaseAddress();
 
@@ -369,8 +376,15 @@ protected:
 	void identifyCriticalPaths();
 	std::pair<uint64_t, double> rcScheduling();
 	std::tuple<std::string, uint64_t> calculateResIIMem();
+	std::tuple<std::string, uint64_t> calculateResIIMemPort();
+	std::tuple<std::string, uint64_t> calculateResIIMemRec();
 	uint64_t calculateRecII(uint64_t currAsapII);
 	uint64_t getLoopTotalLatency(uint64_t maxII);
+
+	void inheritLoadDepMap(unsigned targetID, unsigned sourceID);
+	void inheritStoreDepMap(unsigned targetID, unsigned sourceID);
+	void addToLoadDepMap(unsigned targetID, unsigned toAddID);
+	void addToStoreDepMap(unsigned targetID, unsigned toAddID);
 
 	void dumpSummary(
 		uint64_t numCycles, uint64_t asapII, double achievedPeriod,

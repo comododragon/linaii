@@ -3,8 +3,8 @@
 TMPFILE=$(mktemp --tmpdir tmp.LINADDRXXXX)
 
 runScripter() {
-	./scripter $1 $2 $3 $4 $5 $6 $7 $8 2> /dev/null > $TMPFILE
-	echo -n "$7,$6,"
+	./scripter $1 $2 $3 $4 $5 $6 $7 2> /dev/null > $TMPFILE
+	echo -n "$6,$5,"
 	grep -r "| *viv *|.*" $TMPFILE | sed "s/| *viv *|[^|]*| *\([0-9]\+\) *|[^|]*|[^|]*| *\([0-9]\+\) *|/\\1,\\2,/g" | tr -d "\\n"
 	grep -r "| *lina *|.*" $TMPFILE | sed "s/| *lina *|[^|]*| *\([0-9]\+\) *|[^|]*|[^|]*| *\([0-9]\+\) *|/\\1,\\2/g" | tr -d "\\n"
 	echo ""
@@ -27,9 +27,6 @@ echo "cat,project,vivl,vivil,linl,linil"
 # Reason 3: Difference is caused by instructions with latency or critical path delay that Lina does not implement;
 # Reason 4: Vivado does not burst the transactions, but also the unrolled loop leads to duplicate accesses, which apparently are not detected.
 #           Probably because SDSoC unrolls the loop BEFORE sending it to Vivado, then burst inside the loop iteration is also not detected!
-# Reason 5: The unrolled projects from Lina are compared to the manually unrolled projects from Vivado. The manually unrolled projects make
-#           use of vector types, which then complicates the comparison with Lina. Vivado automatically unrolled the outer loop against my will,
-#           even if I explicitely ask NOT to unroll using __attribute__, it is overriden by auto-inserted Vivado pragmas!
 # Reason 6: Even though both Lina and Vivado correctly burst the innermost loop, there are still differences in the after DDDG (and consequently at
 #           the inter DDDG). This is because Vivado isolates the after and before DDDG: read>fadd>write>read>fmul>write. Even with the conservative
 #           policy, Lina pipelines both reads (not burst but pipeline, i.e. one readreq instance is called right after the next):
@@ -57,87 +54,95 @@ echo "cat,project,vivl,vivil,linl,linil"
 
 # Spot on
 # P0/P1 indifferent
-runScripter M BU bm bp P1 rw-add2 -
-# Deactivating BU is too extreme; BP makes no difference
+runScripter M ba bv P1 rw-add2 -
+# BV makes no difference
 # P0 gives almost exact count, P1 gives the bursted count
 # Differences: Reasons 1 and 2
-runScripter M BU bm bp P0 rw-add2-np -
-# Deactivating BU is too extreme; BP makes no difference
+runScripter M ba bv P0 rw-add2-np -
+# BV makes no difference
 # P0 gives almost exact count, P1 gives the bursted count
 # Differences: Reasons 1 and 2
-runScripter M BU bm bp P0 rw-add2-np2 -
-# Toggling BP makes no difference
+runScripter M ba bv P0 rw-add2-np2 -
+# Toggling BV makes no difference
 # P0 gives wrong count (since in this case Vivado does burst), P1 gives almost exact count
 # Differences: Reason 2
-runScripter M BU bm bp P1 rw-add2-np3 -
+runScripter M ba bv P1 rw-add2-np3 -
 # P0 gives almost exact count, P1 bursts where Vivado does not
 # Differences: Reason 3 (uitofp, see state 144 of FSM)
-runScripter M BU bm bp P0 rw-seq -
+runScripter M ba bv P0 rw-seq -
 
 # With inner loop unroll
 # In all cases here, deactivating BU increases latency closer to Vivado but still off by almost 100%. See Reason 4
 
-# P0/P1 indifferent
+# Activating BA reduces Lina latency since a out-burst is detected, but it gets way off Vivado.
+# BV reduces even further as vectorisation possibilities are found.
+# P1 has half Vivado's latency, P0 is closer
 # Differences: Reason 4
-# XXX: Also, deactivating burst packing increase latency (expected?)
-# XXX: Probably yes, as these loops are unrolled
-runScripter M BU bm bp P0 rw-add2 u2
-# P0 and P1 give different cycle counts but still way off Vivado
+runScripter M ba bv P0 rw-add2 u2
+# Same as above, P0 is closer but still a bit off
 # Differences: Reason 4
-# XXX: Also, deactivating burst packing increase latency (expected?)
-# XXX: Probably yes, as these loops are unrolled
-runScripter M BU bm bp P0 rw-add2-np u2
-# P0 and P1 give different cycle counts but still way off Vivado
+runScripter M ba bv P0 rw-add2-np u2
+# Same as above, P0 is closer but still a bit off
 # Differences: Reason 4
-# XXX: Also, deactivating burst packing increase latency (expected?)
-# XXX: Probably yes, as these loops are unrolled
-runScripter M BU bm bp P0 rw-add2-np2 u2
-# P0 and P1 give different cycle counts but still way off Vivado
+runScripter M ba bv P0 rw-add2-np2 u2
+# Same as above, P0 is closer but still a bit off
 # Differences: Reason 4
-# XXX: Also, deactivating burst packing increase latency (expected?)
-# XXX: Probably yes, as these loops are unrolled
-runScripter M BU bm bp P0 rw-add2-np3 u2
+runScripter M ba bv P0 rw-add2-np3 u2
 
 # With inner loop unroll, comparing to vivado u2p projects, that are manually unrolled and auxiliary variables are
-# used to avoid duplicate accesses, also vector variables are used
-# XXX Deactivating bp increases the innermost latency, making it incorrect
-# XXX: Kinda makes sense, since we are using vector elements with Vivado, which enables burst packing
+# used to place reads before writes
 
-# Spot-on
-# P0/P1 indifferent
-runScripter M BU bm BP P1 rw-add2 u2 u2p | sed "s/u2/u2p/g"
-# XXX Vivado compilation ERROR!
-runScripter M BU bm BP P1 rw-add2-np u2 u2p | sed "s/u2/u2p/g"
 # P1 gives closer results than P0.
-# Deactivating BP brings difference at inner latency. Expected since Vivado naturally pack-bursts the vector types
-# Differences: Reason 5
-runScripter M BU bm BP P1 rw-add2-np2 u2 u2p | sed "s/u2/u2p/g"
-# P1 gives closer results than P0
-# Deactivating BP brings difference at inner latency. Expected since Vivado naturally pack-bursts the vector types
-# Differences: Reason 5
-runScripter M BU bm BP P1 rw-add2-np3 u2 u2p | sed "s/u2/u2p/g"
+# Activating BA reduces Lina latency since a out-burst is detected, but it gets way off Vivado.
+# BV reduces even further as vectorisation possibilities are found.
+# Difference of 1 cycle!
+runScripter M ba bv P1 rw-add2 u2 u2p | sed "s/u2/u2p/g"
+# P1 gives closer results than P0.
+# Same as above for BA and BV
+# Difference of 1 cycle at the innermost loop
+runScripter M ba bv P1 rw-add2-np u2 u2p | sed "s/u2/u2p/g"
+# P1 gives closer results than P0.
+# Same as above for BA and BV
+# Difference of 1 cycle at the innermost loop
+runScripter M ba bv P1 rw-add2-np2 u2 u2p | sed "s/u2/u2p/g"
+# P1 gives closer results than P0.
+# Same as above for BA and BV
+# Difference of 1 cycle at the innermost loop
+runScripter M ba bv P1 rw-add2-np3 u2 u2p | sed "s/u2/u2p/g"
 
 # With outer loop unroll
 
 # P0 gives closer results than P1.
+# BA/BV indifferent
 # Differences: Reason 6
-runScripter M BU bm bp P0 rw-add2-np U2
+runScripter M ba bv P0 rw-add2-np U2
+
+# With outer loop unroll, comparing to vivado u2p projects, that are manually unrolled and auxiliary variables are
+# used to place reads before writes
+
+# ???
+runScripter M ba bv P1 rw-add2-np U2 U2p | sed "s/U2/U2p/g"
 
 # With memory banking
 # Note that projects were manually unrolled to reflect Vivado banking policy
-# Also deactivating bp increases latency, which is expected since vivado in these cases pack bursts
+# Also deactivating BA and BV increases latency, which is expected since vivado in these cases pack bursts
 
 # Spot-on
 # P0/P1 indifferent
-runScripter M BU bm BP P0 rw-add2 b
-# P0/P1 indifferent
+runScripter M BA BV P0 rw-add2 b
+# The closest result comes with ba bv P1, but this could be just a coincidence because vectorisation is used by Vivado and should be considered.
+# The "reasonable" setup BA BV P0 is way off, since burst aggregation must be active for vectorisation analysis to work, and aggregation enables out-burst
 # Differences: Reasons 7 and 8
-runScripter M BU bm BP P0 rw-add2-np b
-# P0/P1 indifferent
+runScripter M BA BV P0 rw-add2-np b
+# Same as rw-add2-np
 # Differences: Reason 7
-runScripter M BU bm BP P0 rw-add2-np2 b
-# P0/P1 indifferent
+runScripter M BA BV P0 rw-add2-np2 b
+# Same as rw-add2-np
 # Differences: Reason 7
-runScripter M BU bm BP P0 rw-add2-np3 b
+runScripter M BA BV P0 rw-add2-np3 b
+
+# With pipeline
+
+runScripter M ba bv P0 rw-add2 p
 
 rm -f $TMPFILE

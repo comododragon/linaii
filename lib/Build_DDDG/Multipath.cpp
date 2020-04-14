@@ -75,6 +75,7 @@ void Multipath::_Multipath() {
 			}
 		}
 
+		// TODO: Requires further testing
 		if(BaseDatapath::NORMAL_LOOP == latencyType) {
 			uint64_t unrolledBound = loopBound / currUnrollFactor;
 

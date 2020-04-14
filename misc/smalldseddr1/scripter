@@ -74,14 +74,13 @@ def printLatencyTable(vivLatency, linLatency):
 
 
 if "__main__" == __name__:
-	if len(sys.argv) != 8 and len(sys.argv) != 9:
+	if len(sys.argv) != 7 and len(sys.argv) != 8:
 		sys.stderr.write("{}: missing argument(s)\n".format(appName))
-		sys.stderr.write("Usage: {} m|M bu|BU bm|BM bp|BP p|P0|1 PROJECT FOLDER [VIVFOLDER]\n".format(appName))
+		sys.stderr.write("Usage: {} m|M ba|BA bv|BV p|P0|1 PROJECT FOLDER [VIVFOLDER]\n".format(appName))
 		sys.stderr.write("Knobs (use lower-case to disable, upper-case to enable):\n")
 		sys.stderr.write("    m        : toggle memory model analysis\n")
-		sys.stderr.write("    bu       : toggle memory model burst analysis\n")
-		sys.stderr.write("    bm       : toggle memory model burst mix\n")
-		sys.stderr.write("    bp       : toggle memory model burst packing\n")
+		sys.stderr.write("    ba       : toggle memory model burst aggregation\n")
+		sys.stderr.write("    bv       : toggle memory model burst vectorisation\n")
 		sys.stderr.write("Numeric knobs (case insensitive):\n")
 		sys.stderr.write("    p|P      : toggle memory model scheduling policy\n")
 		sys.stderr.write("               0 for \"--ddrsched=0\"\n")
@@ -95,18 +94,16 @@ if "__main__" == __name__:
 		exit(1)
 
 	mmaEnable = getKnob("m", sys.argv[1])
-	burstEnable = getKnob("bu", sys.argv[2])
-	burstMix = getKnob("bm", sys.argv[3])
-	burstPacking = getKnob("bp", sys.argv[4])
-	schedPolicy = getNumericKnob("p", sys.argv[5])
-	project = sys.argv[6]
-	folder = sys.argv[7]
-	vivFolder = sys.argv[8] if 9 == len(sys.argv) else folder
+	burstAggr = getKnob("ba", sys.argv[2])
+	burstVec = getKnob("bv", sys.argv[3])
+	schedPolicy = getNumericKnob("p", sys.argv[4])
+	project = sys.argv[5]
+	folder = sys.argv[6]
+	vivFolder = sys.argv[7] if 8 == len(sys.argv) else folder
 
 	sys.stderr.write("Memory model analysis: {}\n".format("enabled" if mmaEnable else "disabled"))
-	sys.stderr.write("Burst analysis: {}\n".format("enabled" if burstEnable else "disabled"))
-	sys.stderr.write("Burst mix: {}\n".format("enabled" if burstMix else "disabled"))
-	sys.stderr.write("Burst packing: {}\n".format("enabled" if burstPacking else "disabled"))
+	sys.stderr.write("Burst aggregation: {}\n".format("enabled" if burstAggr else "disabled"))
+	sys.stderr.write("Burst vectorisation: {}\n".format("enabled" if burstVec else "disabled"))
 	sys.stderr.write("Scheduling policy: {}\n".format(schedPolicy))
 
 	vivLatency = {}
@@ -212,17 +209,16 @@ if "__main__" == __name__:
 		linaCommand += ["--f-npla", "--show-pre-dddg", "--show-post-dddg", "--show-scheduling", "--mem-trace", "--ddrsched", str(schedPolicy)]
 		if not mmaEnable:
 			linaCommand.append("--fno-mma")
-		if not burstEnable:
-			linaCommand.append("--fno-mmaburst")
-		if burstMix:
-			linaCommand.append("--f-burstmix")
-		if not burstPacking:
-			linaCommand.append("--fno-burstpack")
+		if burstAggr:
+			linaCommand.append("--f-burstaggr")
+		if burstVec:
+			linaCommand.append("--f-vec")
 		finalArgs = ["linked_opt.bc", "test"]
 
 		sys.stderr.write("Running \"lina ...\"...\n")
-		subprocess.run(linaCommand + ["--mma-mode", "gen"] + finalArgs, stdout=sys.stderr, cwd=linProject)
-		subprocess.run(linaCommand + ["--mma-mode", "use"] + finalArgs, stdout=sys.stderr, cwd=linProject)
+		subprocess.run(linaCommand + ["--mode", "trace"] + finalArgs, stdout=sys.stderr, cwd=linProject)
+		subprocess.run(linaCommand + ["--mode", "estimation", "--mma-mode", "gen"] + finalArgs, stdout=sys.stderr, cwd=linProject)
+		subprocess.run(linaCommand + ["--mode", "estimation", "--mma-mode", "use"] + finalArgs, stdout=sys.stderr, cwd=linProject)
 		subprocess.run(["rm", "-f", "test.log"], stdout=sys.stderr, cwd=linProject)
 		subprocess.run("mv *.log test.log", stdout=sys.stderr, cwd=linProject, shell=True)
 

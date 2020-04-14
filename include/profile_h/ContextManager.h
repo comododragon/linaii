@@ -1,6 +1,8 @@
 #ifndef __CONTEXTMANAGER_H__
 #define __CONTEXTMANAGER_H__
 
+#include <boost/functional/hash.hpp>
+
 #include "profile_h/auxiliary.h"
 #include "profile_h/DDDGBuilder.h"
 
@@ -9,6 +11,8 @@
 
 class BaseDatapath;
 struct ddrInfoTy;
+struct globalOutBurstsInfoTy;
+struct packInfoTy;
 struct outBurstInfoTy;
 
 class ContextManager {
@@ -18,8 +22,9 @@ class ContextManager {
 		TYPE_LOOP_BOUND_INFO = 2,
 		TYPE_PARSED_TRACE_CONTAINER = 3,
 		TYPE_DDDG = 4,
-		TYPE_OUTBURSTS_INFO = 5,
+		TYPE_GLOBAL_OUTBURSTS_INFO = 5,
 		TYPE_GLOBAL_DDR_MAP = 6,
+		TYPE_GLOBAL_PACK_INFO = 7,
 	};
 
 	struct cfd_t {
@@ -35,7 +40,7 @@ class ContextManager {
 	bool readOnly;
 
 	bool seekTo(int type);
-	bool seekToIdentified(int type, std::string ID, unsigned optID2 = 0);
+	bool seekToIdentified(int type, std::string ID, uint64_t optID2 = 0);
 	void realign();
 	template<typename T> size_t writeElement(std::stringstream &ss, T &elem);
 	template<typename E> size_t writeElement(std::stringstream &ss, std::vector<E> &elem);
@@ -43,6 +48,7 @@ class ContextManager {
 	template<typename K, typename E> size_t writeElement(std::stringstream &ss, std::map<K, E> &elem);
 	template<typename K, typename E> size_t writeElement(std::stringstream &ss, std::unordered_map<K, E> &elem);
 	template<typename K, typename E> size_t writeElement(std::stringstream &ss, std::unordered_map<K, std::vector<E>> &elem);
+	template<typename K, typename L, typename E> size_t writeElement(std::stringstream &ss, std::unordered_map<std::pair<K, L>, std::vector<E>, boost::hash<std::pair<K, L>>> &elem);
 	template<typename K, typename E, typename F> size_t writeElement(std::stringstream &ss, std::unordered_map<K, std::pair<E, F>> &elem);
 	template<typename K, typename E> size_t writeElement(std::stringstream &ss, std::unordered_multimap<K, E> &elem);
 	template<typename T> void readElement(std::fstream &fs, T &elem);
@@ -51,8 +57,10 @@ class ContextManager {
 	template<typename K, typename E> void readElement(std::fstream &fs, std::map<K, E> &elem);
 	template<typename K, typename E> void readElement(std::fstream &fs, std::unordered_map<K, E> &elem);
 	template<typename K, typename E> void readElement(std::fstream &fs, std::unordered_map<K, std::vector<E>> &elem);
+	template<typename K, typename L, typename E> void readElement(std::fstream &fs, std::unordered_map<std::pair<K, L>, std::vector<E>, boost::hash<std::pair<K, L>>> &elem);
+	template<typename K, typename E, typename F> void readElement(std::fstream &fs, std::unordered_map<K, std::pair<E, F>> &elem);
 	template<typename T> void skipElement(std::fstream &fs);
-	void commit(char elemType, std::stringstream &ss, size_t totalFieldSize, std::string optID = "", unsigned optID2 = 0);
+	void commit(char elemType, std::stringstream &ss, size_t totalFieldSize, std::string optID = "", uint64_t optID2 = 0);
 	void commit(char elemType, std::stringstream &ss);
 
 public:
@@ -68,16 +76,21 @@ public:
 	void getProgressiveTraceInfo(long int *cursor, uint64_t *instCount);
 	void saveLoopBoundInfo(wholeloopName2loopBoundMapTy &wholeloopName2loopBoundMap);
 	void getLoopBoundInfo(wholeloopName2loopBoundMapTy *wholeloopName2loopBoundMap);
-	void saveParsedTraceContainer(std::string wholeLoopName, ParsedTraceContainer &PC);
-	void getParsedTraceContainer(std::string wholeLoopName, ParsedTraceContainer *PC);
-	void saveDDDG(std::string wholeLoopName, unsigned datapathType, DDDGBuilder &builder, std::vector<int> &microops);
-	void getDDDG(std::string wholeLoopName, unsigned datapathType, BaseDatapath *datapath);
-	void saveOutBurstsInfo(std::string wholeLoopName, unsigned datapathType,
-		std::unordered_map<std::string, outBurstInfoTy> &loadOutBurstsFound, std::unordered_map<std::string, outBurstInfoTy> &storeOutBurstsFound);
-	void getOutBurstsInfo(std::string wholeLoopName, unsigned datapathType,
-		std::unordered_map<std::string, outBurstInfoTy> *loadOutBurstsFound, std::unordered_map<std::string, outBurstInfoTy> *storeOutBurstsFound);
+	void saveParsedTraceContainer(std::string wholeLoopName, unsigned datapathType, unsigned unrollFactor, ParsedTraceContainer &PC);
+	void getParsedTraceContainer(std::string wholeLoopName, unsigned datapathType, unsigned unrollFactor, ParsedTraceContainer *PC);
+	void saveDDDG(std::string wholeLoopName, unsigned datapathType, unsigned unrollFactor, DDDGBuilder &builder, std::vector<int> &microops);
+	void getDDDG(std::string wholeLoopName, unsigned datapathType, unsigned unrollFactor, BaseDatapath *datapath);
+	// TODO Cleanup
+	//void saveOutBurstsInfo(std::string wholeLoopName, unsigned datapathType,
+	//	std::unordered_map<std::string, outBurstInfoTy> &loadOutBurstsFound, std::unordered_map<std::string, outBurstInfoTy> &storeOutBurstsFound);
+	//void getOutBurstsInfo(std::string wholeLoopName, unsigned datapathType,
+	//	std::unordered_map<std::string, outBurstInfoTy> *loadOutBurstsFound, std::unordered_map<std::string, outBurstInfoTy> *storeOutBurstsFound);
+	void saveGlobalOutBurstsInfo(std::unordered_map<std::string, std::vector<globalOutBurstsInfoTy>> &globalOutBurstsInfo);
+	void getGlobalOutBurstsInfo(std::unordered_map<std::string, std::vector<globalOutBurstsInfoTy>> *globalOutBurstsInfo);
 	void saveGlobalDDRMap(std::unordered_map<std::string, std::vector<ddrInfoTy>> &globalDDRMap);
 	void getGlobalDDRMap(std::unordered_map<std::string, std::vector<ddrInfoTy>> *globalDDRMap);
+	void saveGlobalPackInfo(std::unordered_map<arrayPackSzPairTy, std::vector<packInfoTy>, boost::hash<arrayPackSzPairTy>> &globalPackInfo);
+	void getGlobalPackInfo(std::unordered_map<arrayPackSzPairTy, std::vector<packInfoTy>, boost::hash<arrayPackSzPairTy>> *globalPackInfo);
 
 #ifdef DBG_PRINT_ALL
 	void printDatabase();

@@ -83,6 +83,34 @@ struct outBurstInfoTy {
 	outBurstInfoTy(bool canOutBurst) : canOutBurst(canOutBurst), isRegistered(false) { }
 };
 
+struct globalOutBurstsInfoTy {
+	unsigned loopLevel;
+	unsigned datapathType;
+	std::unordered_map<std::string, outBurstInfoTy> loadOutBurstsFound;
+	std::unordered_map<std::string, outBurstInfoTy> storeOutBurstsFound;
+
+	globalOutBurstsInfoTy() { }
+	globalOutBurstsInfoTy(
+		unsigned loopLevel, unsigned datapathType,
+		std::unordered_map<std::string, outBurstInfoTy> loadOutBurstsFound, std::unordered_map<std::string, outBurstInfoTy> storeOutBurstsFound
+	) : loopLevel(loopLevel), datapathType(datapathType), loadOutBurstsFound(loadOutBurstsFound), storeOutBurstsFound(storeOutBurstsFound) { }
+};
+
+struct packInfoTy {
+	unsigned loopLevel;
+	unsigned datapathType;
+
+	std::unordered_map<unsigned, std::pair<unsigned, unsigned>> loadAlignments;
+	std::unordered_map<unsigned, std::pair<unsigned, unsigned>> storeAlignments;
+
+	packInfoTy() { }
+	packInfoTy(
+		unsigned loopLevel, unsigned datapathType,
+		std::unordered_map<unsigned, std::pair<unsigned, unsigned>> loadAlignments,
+		std::unordered_map<unsigned, std::pair<unsigned, unsigned>> storeAlignments
+	) : loopLevel(loopLevel), datapathType(datapathType), loadAlignments(loadAlignments), storeAlignments(storeAlignments) { }
+};
+
 class MemoryModel {
 protected:
 	BaseDatapath *datapath;
@@ -94,6 +122,7 @@ protected:
 	std::unordered_map<int, std::pair<std::string, int64_t>> &baseAddress;
 	ConfigurationManager &CM;
 	ParsedTraceContainer &PC;
+	const std::unordered_map<int, std::pair<int64_t, unsigned>> &memoryTraceList;
 	std::string wholeLoopName;
 	std::vector<ddrInfoTy> filteredDDRMap;
 
@@ -150,19 +179,42 @@ public:
 	virtual bool tryAllocate(unsigned node, int opcode, bool commit = true) = 0;
 	virtual void release(unsigned node, int opcode) = 0;
 	virtual bool canOutBurstsOverlap() = 0;
+	virtual unsigned getNumOfReadPorts() = 0;
+	virtual unsigned getNumOfWritePorts() = 0;
 
-	virtual void setUpWithContext(ContextManager &CtxM) = 0;
-	virtual void saveToContext(ContextManager &CtxM) = 0;
+	virtual void setUp(ContextManager &CtxM) = 0;
+	virtual void save(ContextManager &CtxM) = 0;
 	virtual void importNode(nodeExportTy &exportedNode) = 0;
 	virtual std::vector<nodeExportTy> &getNodesToBeforeDDDG() = 0;
 	virtual std::vector<nodeExportTy> &getNodesToAfterDDDG() = 0;
+
+	virtual void inheritLoadDepMap(unsigned targetID, unsigned sourceID) = 0;
+	virtual void inheritStoreDepMap(unsigned targetID, unsigned sourceID) = 0;
+	virtual void addToLoadDepMap(unsigned targetID, unsigned toAddID) = 0;
+	virtual void addToStoreDepMap(unsigned targetID, unsigned toAddID) = 0;
+	virtual std::pair<std::string, uint64_t> calculateResIIMemRec(std::vector<uint64_t> rcScheduledTime) = 0;
 };
 
 class XilinxZCUMemoryModel : public MemoryModel {
+	static std::string preprocessedLoopName;
+	static std::vector<ddrInfoTy> filteredDDRMap;
+	static std::unordered_map<std::string, std::vector<globalOutBurstsInfoTy>>::iterator filteredOutBurstsInfo;
+	static bool ddrBanking;
+	static std::unordered_map<std::string, unsigned> packSizes;
+	static void preprocess(std::string loopName, ConfigurationManager &CM);
+	static void blockInvalidOutBursts(
+		unsigned loopLevel, unsigned datapathType,
+		std::unordered_map<std::string, outBurstInfoTy> &outBurstsFound,
+		bool (*analyseOutBurstFeasabilityGlobal)(std::string, unsigned, unsigned)
+	);
+	static bool analyseLoadOutBurstFeasabilityGlobal(std::string arrayName, unsigned loopLevel, unsigned datapathType);
+	static bool analyseStoreOutBurstFeasabilityGlobal(std::string arrayName, unsigned loopLevel, unsigned datapathType);
+
 	std::unordered_map<unsigned, std::pair<std::string, uint64_t>> loadNodes;
 	std::unordered_map<unsigned, std::pair<std::string, uint64_t>> storeNodes;
 	std::unordered_map<unsigned, burstInfoTy> burstedLoads;
 	std::unordered_map<unsigned, burstInfoTy> burstedStores;
+	std::unordered_map<unsigned, std::unordered_map<unsigned, std::pair<unsigned, unsigned>>> packInfo;
 	std::vector<nodeExportTy> nodesToBeforeDDDG;
 	std::vector<nodeExportTy> nodesToAfterDDDG;
 	std::unordered_map<std::string, outBurstInfoTy> loadOutBurstsFoundCached;
@@ -177,6 +229,11 @@ class XilinxZCUMemoryModel : public MemoryModel {
 	std::unordered_map<unsigned, burstInfoTy> importedStores;
 	std::unordered_map<unsigned, std::pair<std::string, uint64_t>> genFromImpLoadNodes;
 	std::unordered_map<unsigned, std::pair<std::string, uint64_t>> genFromImpStoreNodes;
+	// Set containing all control edges that do not configure a data dependency
+	std::set<std::pair<unsigned, unsigned>> falseDeps;
+	// Dependency maps, used for approximating ResMIIMem
+	std::unordered_map<unsigned, std::set<unsigned>> loadDepMap;
+	std::unordered_map<unsigned, std::set<unsigned>> storeDepMap;
 
 	void findInBursts(
 		std::unordered_map<unsigned, std::pair<std::string, uint64_t>> &foundNodes,
@@ -195,13 +252,7 @@ class XilinxZCUMemoryModel : public MemoryModel {
 	void packBursts(
 		std::unordered_map<unsigned, burstInfoTy> &burstedNodes,
 		std::unordered_map<unsigned, std::pair<std::string, uint64_t>> &nodes,
-		int silentOpcode, bool nonSilentLast = false
-	);
-	bool analyseLoadOutBurstFeasabilityGlobal(std::string arrayName, unsigned loopLevel, unsigned datapathType);
-	bool analyseStoreOutBurstFeasabilityGlobal(std::string arrayName, unsigned loopLevel, unsigned datapathType);
-	void blockInvalidOutBursts(
-		std::unordered_map<std::string, outBurstInfoTy> &outBurstsFound, unsigned loopLevel, unsigned datapathType,
-		bool (XilinxZCUMemoryModel::*analyseOutBurstFeasabilityGlobal)(std::string, unsigned, unsigned)
+		int silentOpcode = -1, bool nonSilentLast = false
 	);
 
 public:
@@ -216,17 +267,22 @@ public:
 	bool tryAllocate(unsigned node, int opcode, bool commit = true);
 	void release(unsigned node, int opcode);
 	bool canOutBurstsOverlap();
+	unsigned getNumOfReadPorts() { return 1; }
+	unsigned getNumOfWritePorts() { return 1; }
 
-	void setUpWithContext(ContextManager &CtxM);
-	void saveToContext(ContextManager &CtxM);
+	void setUp(ContextManager &CtxM);
+	void save(ContextManager &CtxM);
 	void importNode(nodeExportTy &exportedNode);
 	std::vector<MemoryModel::nodeExportTy> &getNodesToBeforeDDDG();
 	std::vector<MemoryModel::nodeExportTy> &getNodesToAfterDDDG();
 
-// TODO TODO TODO TODO
-// TODO TODO TODO TODO
-// TODO TODO TODO TODO
-// TODO TODO TODO TODO
+	void inheritLoadDepMap(unsigned targetID, unsigned sourceID);
+	void inheritStoreDepMap(unsigned targetID, unsigned sourceID);
+	void addToLoadDepMap(unsigned targetID, unsigned toAddID);
+	void addToStoreDepMap(unsigned targetID, unsigned toAddID);
+	std::pair<std::string, uint64_t> calculateResIIMemRec(std::vector<uint64_t> rcScheduledTime);
+
+// TODO Cleanup
 //#ifdef DBG_PRINT_ALL
 #if 1
 	void printDatabase();

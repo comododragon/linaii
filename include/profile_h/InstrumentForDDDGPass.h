@@ -41,6 +41,8 @@
 #define FORWARD_LINE 24601
 
 extern std::unordered_map<std::string, std::vector<ddrInfoTy>> globalDDRMap;
+extern std::unordered_map<std::string, std::vector<globalOutBurstsInfoTy>> globalOutBurstsInfo;
+extern std::unordered_map<arrayPackSzPairTy, std::vector<packInfoTy>, boost::hash<arrayPackSzPairTy>> globalPackInfo;
 
 namespace llvm {
 

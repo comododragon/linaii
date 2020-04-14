@@ -9,6 +9,7 @@
 #pragma GCC diagnostic ignored "-Wparentheses"
 #endif
 #include <boost/config.hpp>
+#include <boost/functional/hash.hpp>
 #include <boost/tokenizer.hpp>
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/graph_traits.hpp>

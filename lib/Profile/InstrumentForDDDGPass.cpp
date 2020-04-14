@@ -163,7 +163,6 @@ void Injector::initialise(Module &M, TraceLogger &TL) {
 }
 
 void Injector::injectTraceHeader(BasicBlock::iterator it, int lineNo, std::string funcID, std::string bbID, std::string instID, int opcode) {
-	//LLVMContext &C = M->getContext();
 	IRBuilder<> IRB(it);
 
 	// Create LLVM values for the provided arguments
@@ -832,6 +831,11 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 			VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Recovering context from previous execution\n");
 			CtxM.getLoopBoundInfo(&wholeloopName2loopBoundMap);
 			CtxM.getGlobalDDRMap(&globalDDRMap);
+			CtxM.getGlobalOutBurstsInfo(&globalOutBurstsInfo);
+			if(args.fVec) {
+				assert(1 == loopName2levelUnrollVecMap.size() && "Vectorisation analysis is only possible when only one loop nest is explored (run with \"--fno-vec\") or select only one loop for analysis");
+				CtxM.getGlobalPackInfo(&globalPackInfo);
+			}
 		}
 	}
 
@@ -945,6 +949,9 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 			VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Saving context for later use\n");
 			CtxM.saveLoopBoundInfo(wholeloopName2loopBoundMap);
 			CtxM.saveGlobalDDRMap(globalDDRMap);
+			CtxM.saveGlobalOutBurstsInfo(globalOutBurstsInfo);
+			if(args.fVec)
+				CtxM.saveGlobalPackInfo(globalPackInfo);
 		}
 
 		CtxM.close();

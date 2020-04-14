@@ -92,8 +92,8 @@ void DynamicDatapath::_DynamicDatapath(
 		if(ArgPack::MMA_MODE_GEN == args.mmaMode) {
 			VERBOSE_PRINT(errs() << "\tSaving context for later use\n");
 			std::string wholeLoopName = appendDepthToLoopName(loopName, loopLevel);
-			CtxM.saveParsedTraceContainer(wholeLoopName, PC);
-			CtxM.saveDDDG(wholeLoopName, datapathType, *builder, microops);
+			CtxM.saveParsedTraceContainer(wholeLoopName, datapathType, loopUnrollFactor, PC);
+			CtxM.saveDDDG(wholeLoopName, datapathType, loopUnrollFactor, *builder, microops);
 		}
 
 		delete builder;
@@ -103,8 +103,8 @@ void DynamicDatapath::_DynamicDatapath(
 		VERBOSE_PRINT(errs() << "\t\"--mma-mode\" is set to \"use\", skiping DDDG build\n");
 		VERBOSE_PRINT(errs() << "\tRecovering context from previous execution\n");
 		std::string wholeLoopName = appendDepthToLoopName(loopName, loopLevel);
-		CtxM.getParsedTraceContainer(wholeLoopName, &PC);
-		CtxM.getDDDG(wholeLoopName, datapathType, this);
+		CtxM.getParsedTraceContainer(wholeLoopName, datapathType, loopUnrollFactor, &PC);
+		CtxM.getDDDG(wholeLoopName, datapathType, loopUnrollFactor, this);
 	}
 
 	if(nodesToImport)

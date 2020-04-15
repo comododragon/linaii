@@ -755,77 +755,8 @@ void XilinxZCUMemoryModel::packBursts(
 					microops.at(participant) = getNonSilentOpcode(silentOpcode);
 				}
 			}
-
-			// TODO Cleanup
-			// Old comments:
-
-			// 1. ver se o array está contido em packSizes
-			// 2. Se nao esitver, rodar decidePackSize() pra esse array
-			// 3. Isso vai gerar dois valores, um packsize pra caso outburst seja feito e outro pra caso nao
-			// 3b. Se houve routburst aqui e aggr nao tá ativado, nem adianta tentar vetorizar, já cancela
-			// 4. Se não houver outburst ou se aggr estiver ativado:
-			// - Se houver out-burst
-			// 	- só pode se alinhamento for 0/0
-			// - Se não houver out-burst
-			// 	- se for load, tudo OK, so adicionar os nós artificais dos novos loads silenciosos
-			// 	- se for store, só rola se os alignments forem todos 0
-			// TODO: implementar decidePackSize()
-
-			// TODO
-			// Trazer todo o if 0 .. endif pra cá
-			// Adaptar considerando o valor vecSz
-			// Salvar o packInfo pro contexto (de todos os DDDGs!)
-			// Recuperar o packInfo no USE
-			// Em algum lugar, fazer análise global do packInfo para decidir a melhor opcao para tudo.
-			// Talvez chamar uma funcao tipo memmodel->decidePack() antes do analyseAndTransform? Ou talvez até no contrutor do memorymodel!
-
-			// *** ao criar o nó artificial para load/stores, devemos nos atentar em atualizr as seguintes estruturas:
-			// - baseAddress
-			// - PC.getElementPtrList
-			// - PC.memoryTraceList
-			// - memoryTraceMap (actually may not be necessary since it only used in findOutBursts(), which won't be called again after packBursts)
 		}
 	}
-
-// TODO Cleanup
-#if 0
-		// If nonSilentLast is true, this will pack as SOp>SOp>SOp>Op>...
-		// otherwise: Op>SOp>SOp>SOp>...0
-		int busBudget = nonSilentLast? DDR_DATA_BUS_WIDTH - 4 : 0;
-		uint64_t lastVisitedBaseAddress;
-		std::vector<unsigned> participants = burst.second.participants;
-		unsigned participantsSz = participants.size();
-
-		// Iterate through the bursted nodes, pack until the bus budget is zero'd
-		unsigned participant = -1;
-		for(unsigned int i = 0; i < participantsSz; i++) {
-			participant = participants[i];
-
-			// Remember that bursted nodes may include repeated nodes (that are treated as redundant transactions)
-			// if we face one of those, we don't change the budget, but we silence the node
-			if(i && lastVisitedBaseAddress == nodes.at(participant).second) {
-				microops.at(participant) = silentOpcode;
-			}
-			else {
-				busBudget -= 4;
-
-				// If bus budget is over, we start a new read transaction and reset
-				if(busBudget < 0)
-					busBudget = DDR_DATA_BUS_WIDTH - 4;
-				// Else, we "silence" this node
-				else
-					microops.at(participant) = silentOpcode;
-			}
-
-			lastVisitedBaseAddress = nodes.at(participant).second;
-		}
-
-		// If last should be non-silent, we make sure of that
-		if(nonSilentLast) {
-			microops.at(participant) = getNonSilentOpcode(silentOpcode);
-		}
-	}
-#endif
 }
 
 XilinxZCUMemoryModel::XilinxZCUMemoryModel(BaseDatapath *datapath) : MemoryModel(datapath) {
@@ -947,26 +878,6 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 		storeOutBurstsFound = storeOutBurstsFoundCached;
 	}
 
-// TODO Cleanup
-// Fazer isso em outro lugar, de maneira meio global, junto com o pack
-#if 0
-	// If MMA mode is set to USE, we use the context-imported cache information to improve out-bursts
-	if(ArgPack::MMA_MODE_USE == args.mmaMode) {
-		unsigned loopLevel = datapath->getTargetLoopLevel();
-		unsigned datapathType = datapath->getDatapathType();
-
-		// In this case we will use information from previous execution to make a better prediction on out-bursts
-		assert(importedFromContext && "\"--mma-mode\" is set to USE and no context supplied");
-		assert(filteredDDRMap.size() && "\"--mma-mode\" is set to USE and global DDR map is not populated");
-
-		// Perform global out-burst analysis using context-imported information
-		if(BaseDatapath::NON_PERFECT_BEFORE == datapathType || BaseDatapath::NON_PERFECT_AFTER == datapathType) {
-			blockInvalidOutBursts(loadOutBurstsFound, loopLevel, datapathType, &XilinxZCUMemoryModel::analyseLoadOutBurstFeasabilityGlobal);
-			blockInvalidOutBursts(storeOutBurstsFound, loopLevel, datapathType, &XilinxZCUMemoryModel::analyseStoreOutBurstFeasabilityGlobal);
-		}
-	}
-#endif
-
 	// Analyse burst packing
 	if(args.fVec) {
 		// If mode is GEN, we analyse packing possibilities
@@ -980,21 +891,6 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 			packBursts(burstedStores, storeNodes, LLVM_IR_DDRSilentWrite, true);
 		}
 	}
-
-// TODO Cleanup
-// TODO: Requires adaptation: use fNoVec flag and create new pack logic that finds a suitable packing factor considering global info
-#if 0
-	// If DDR burst packing is enabled, we analyse the burst transactions and merge contiguous
-	// transactions together until the whole data bus is consumed
-	// For example on a 128-bit wide memory bus, 4 32-bit words can be transferred at the same time
-	// XXX: Please note that, as always, we are considering 32-bit words here coming from the code
-	if(!(args.fNoBurstPack)) {
-		packBursts(burstedLoads, loadNodes, LLVM_IR_DDRSilentRead);
-		packBursts(burstedStores, storeNodes, LLVM_IR_DDRSilentWrite, true);
-
-		// XXX: If we start removing edges when packing, should we request DDDG update here?
-	}
-#endif
 
 	// Add the relevant DDDG nodes for offchip load
 	for(auto &burst : burstedLoads) {
@@ -1812,13 +1708,6 @@ std::pair<std::string, uint64_t> XilinxZCUMemoryModel::calculateResIIMemRec(std:
 		std::pair<uint64_t, uint64_t> value = std::make_pair(std::numeric_limits<uint64_t>::max(), 0);
 		uint64_t distance() const { return value.second - value.first; }
 	};
-// TODO Cleanup
-#if 0
-	std::pair<std::string, uint64_t> maxLoad = std::make_pair("none", 1), maxStore = std::make_pair("none", 1);
-	auto prioritiseLargerDistance = [](const std::pair<std::string, minMaxPair> &a, const std::pair<std::string, minMaxPair> &b) {
-		return a.second.distance() < b.second.distance();
-	};
-#endif
 	std::vector<std::pair<std::string, uint64_t>> loadMaxs, storeMaxs;
 	std::unordered_map<std::string, uint64_t> connectedLoadGraphs, connectedStoreGraphs;
 
@@ -1860,15 +1749,6 @@ std::pair<std::string, uint64_t> XilinxZCUMemoryModel::calculateResIIMemRec(std:
 			// Save all distances to the load max vector
 			for(auto &it2 : minMaxPerInterface)
 				loadMaxs.push_back(std::make_pair(it2.first, it2.second.distance()));
-
-// TODO Cleanup
-#if 0
-			// Find the largest among all interfaces
-			std::unordered_map<std::string, minMaxPair>::iterator maxIfcLoad = std::max_element(minMaxPerInterface.begin(), minMaxPerInterface.end(), prioritiseLargerDistance);
-			// Compare to the other connected graphs that were analysed
-			if(minMaxPerInterface.size() && maxIfcLoad->second.distance() > maxLoad.second)
-				maxLoad = std::make_pair(maxIfcLoad->first, maxIfcLoad->second.distance());
-#endif
 		}
 	}
 
@@ -1944,56 +1824,6 @@ std::pair<std::string, uint64_t> XilinxZCUMemoryModel::calculateResIIMemRec(std:
 
 	// At last choose the largest
 	return (loadMax.second > storeMax.second)? loadMax : storeMax;
-
-// TODO Cleanup
-#if 0
-	std::vector<unsigned> indexMapper;
-
-
-	std::set<unsigned> toVisit;
-	std::set<unsigned> visited;
-
-	// Consider only loads
-	for(auto &it : loadDepMap) {
-		if(microops.at(it.first) != LLVM_IR_DDRReadReq)
-			continue;
-		toVisit.insert(it.first);
-	}
-
-	// Find for all connected graphs
-	while(toVisit.size()) {
-		// Bypass visited nodes
-		unsigned currNode;
-		do {
-			currNode = *(toVisit.begin());
-			toVisit.erase(currNode);
-		} while(visited.count(currNode));
-
-		// Search if this node is contained in any ongoing set.
-		bool setFound = false;
-		for(auto &it : forest) {
-			// If positive, add all dependent nodes to this set
-			if(it.count(currNode)) {
-				it.insert(loadDepMap[currNode].begin(), loadDepMap[currNode].end());
-				// Mark all dependent nodes to be visited
-				toVisit.insert(loadDepMap[currNode].begin(), loadDepMap[currNode].end());
-				setFound = true;
-			}
-		}
-
-		// Otherwise, create a new set
-		if(!setFound) {
-			std::set<unsigned> gr;
-			gr.insert(currNode);
-			gr.insert(loadDepMap[currNode].begin(), loadDepMap[currNode].end());
-			forest.push_back(gr);
-			// Mark all dependent nodes to be visited
-			toVisit.insert(loadDepMap[currNode].begin(), loadDepMap[currNode].end());
-		}
-	}
-
-	return forest;
-#endif
 }
 
 #ifdef DBG_PRINT_ALL

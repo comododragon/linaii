@@ -282,9 +282,7 @@ public:
 	void addToStoreDepMap(unsigned targetID, unsigned toAddID);
 	std::pair<std::string, uint64_t> calculateResIIMemRec(std::vector<uint64_t> rcScheduledTime);
 
-// TODO Cleanup
-//#ifdef DBG_PRINT_ALL
-#if 1
+#if DBG_PRINT_ALL
 	void printDatabase();
 #endif
 };

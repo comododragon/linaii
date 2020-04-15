@@ -80,11 +80,6 @@ public:
 	void getParsedTraceContainer(std::string wholeLoopName, unsigned datapathType, unsigned unrollFactor, ParsedTraceContainer *PC);
 	void saveDDDG(std::string wholeLoopName, unsigned datapathType, unsigned unrollFactor, DDDGBuilder &builder, std::vector<int> &microops);
 	void getDDDG(std::string wholeLoopName, unsigned datapathType, unsigned unrollFactor, BaseDatapath *datapath);
-	// TODO Cleanup
-	//void saveOutBurstsInfo(std::string wholeLoopName, unsigned datapathType,
-	//	std::unordered_map<std::string, outBurstInfoTy> &loadOutBurstsFound, std::unordered_map<std::string, outBurstInfoTy> &storeOutBurstsFound);
-	//void getOutBurstsInfo(std::string wholeLoopName, unsigned datapathType,
-	//	std::unordered_map<std::string, outBurstInfoTy> *loadOutBurstsFound, std::unordered_map<std::string, outBurstInfoTy> *storeOutBurstsFound);
 	void saveGlobalOutBurstsInfo(std::unordered_map<std::string, std::vector<globalOutBurstsInfoTy>> &globalOutBurstsInfo);
 	void getGlobalOutBurstsInfo(std::unordered_map<std::string, std::vector<globalOutBurstsInfoTy>> *globalOutBurstsInfo);
 	void saveGlobalDDRMap(std::unordered_map<std::string, std::vector<ddrInfoTy>> &globalDDRMap);

@@ -495,11 +495,6 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 		}
 	}
 
-	// TODO Cleanup
-	// XXX: If banking is active, maybe we should automatically insert unroll pragmas here?
-	// Since Vivado/SDx automatically unrolls when banking is requested
-	// Actually, my idea was to SUGGEST unrolling
-
 	// Activate load latency increase if pipelining and partitioning was enabled
 	if(!pipeliningCfgStr.size()) {
 		for(partitionCfgTy i : partitionCfg) {

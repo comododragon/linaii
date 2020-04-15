@@ -1241,15 +1241,6 @@ std::tuple<uint64_t, uint64_t> BaseDatapath::asapScheduling() {
 			continue;
 		}
 
-		// TODO Cleanup
-		// If this operation accesses memory, save information to the respective map
-		// notice that we only look for "header" memory operations (requests, ignoring
-		// responses and mid-transactions)
-		//if(LLVM_IR_Load == opcode || LLVM_IR_DDRReadReq == opcode)
-		//	memmodel->addToLoadDepMap(nodeID);
-		//if(LLVM_IR_Store == opcode || LLVM_IR_DDRWriteReq == opcode)
-		//	memmodel->addToStoreDepMap(nodeID);
-
 		unsigned maxCurrStartTime = 0;
 		InEdgeIterator inEdgei, inEdgeEnd;
 		// Evaluate all incoming edges. Save the largest incoming time considering scheduled time of parents + the edge weight

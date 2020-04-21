@@ -10,6 +10,170 @@ std::unordered_map<std::string, std::vector<globalOutBurstsInfoTy>> globalOutBur
 std::unordered_map<arrayPackSzPairTy, std::vector<packInfoTy>, boost::hash<arrayPackSzPairTy>> globalPackInfo;
 std::unordered_map<std::string, std::pair<unsigned, unsigned>> globalPackSizes;
 
+// Static attributes
+const std::string Reporter::warnReasonMap[] = {
+	"detected reads for the same array",
+	"detected other reads",
+	"detected writes for the same array",
+	"detected other writes",
+	"cannot align write with pack size",
+	"cannot align read with pack size",
+	"misaligned read (left and/or right) comprises more than one element"
+};
+std::ofstream Reporter::rptFile;
+std::string Reporter::loopName;
+
+void Reporter::open(std::string loopName) {
+	Reporter::loopName = loopName;
+	rptFile.open(loopName + FILE_MEM_ANALYSIS_RPT_SUFFIX, std::ios::trunc);
+}
+
+void Reporter::reopen(unsigned loopLevel, unsigned datapathType, ParsedTraceContainer *PC, std::vector<int> *microops) {
+	setCurrent(loopLevel, datapathType, PC, microops);
+	rptFile.open(loopName + FILE_MEM_ANALYSIS_RPT_SUFFIX, std::ios::app);
+}
+
+bool Reporter::isOpen() {
+	return rptFile.is_open();
+}
+
+void Reporter::close() {
+	rptFile.close();
+}
+
+void Reporter::setCurrent(unsigned loopLevel, unsigned datapathType, ParsedTraceContainer *PC, std::vector<int> *microops) {
+	this->loopLevel = loopLevel;
+	this->datapathType = datapathType;
+	this->PC = PC;
+	this->microops = microops;
+}
+
+void Reporter::header() {
+	rptFile << "===========================================================================================\n";
+	rptFile << "Memory model analysis report for loop nest " << loopName << "\n";
+	rptFile << "===========================================================================================\n";
+	rptFile << "Preprocess report for this loop nest\n";
+}
+
+void Reporter::currentHeader() {
+	rptFile << "Memory model analysis for loop level " << loopLevel << " " << translateDatapathType(datapathType) << "\n";
+}
+
+std::string Reporter::translateDatapathType(unsigned datapathType) {
+	if(BaseDatapath::NON_PERFECT_BEFORE == datapathType)
+		return "at region before the loop nest";
+	else if(BaseDatapath::NON_PERFECT_AFTER == datapathType)
+		return "at region after the loop nest";
+	else if(BaseDatapath::NON_PERFECT_BETWEEN == datapathType)
+		return "at region between unrolled loop nests";
+	else
+		return "within the loop nest";
+}
+
+void Reporter::infoReadOutBurstFound(std::string arrayName) {
+	rptFile << "\n[INFO] Found possibility of read burst between loop iterations\n";
+	rptFile << "       for array " << arrayName << "\n";
+	rptFile << "       at loop level " << loopLevel << "\n";
+	rptFile << "       " << translateDatapathType(datapathType) << "\n";
+}
+
+void Reporter::infoWriteOutBurstFound(std::string arrayName) {
+	rptFile << "\n[INFO] Found possibility of write burst between loop iterations\n";
+	rptFile << "       for array " << arrayName << "\n";
+	rptFile << "       at loop level " << loopLevel << "\n";
+	rptFile << "       " << translateDatapathType(datapathType) << "\n";
+}
+
+void Reporter::infoPackAttempt(std::string arrayName, unsigned sz) {
+	rptFile << "\n[INFO] Vectorisation attempt successful\n";
+	rptFile << "       for array " << arrayName << "\n";
+	rptFile << "       with " << sz << " elements vectorised\n";
+}
+
+void Reporter::infoInBurstFound(std::string arrayName, uint64_t offset, std::vector<unsigned> &participants) {
+	const std::vector<int> &lineNoList = PC->getLineNoList();
+	std::string type = (LLVM_IR_DDRRead == microops->at(participants[0]))? "read" : "write";
+
+	rptFile << "\n[INFO] Found possibility of " << type << " burst inside this loop iteration\n";
+	rptFile << "       for array " << arrayName << "\n";
+	rptFile << "       at loop level " << loopLevel << "\n";
+	rptFile << "       " << translateDatapathType(datapathType) << "\n";
+	rptFile << "       # of merged transactions: " << (offset + 1) << "\n";
+	rptFile << "       participants:\n";
+	for(auto &it : participants)
+		rptFile << "                     line " << lineNoList.at(it) << "\n";
+}
+
+void Reporter::warnPackAttemptFailed(
+	std::string arrayName, unsigned sz, unsigned warnReason,
+	unsigned lmisalign, unsigned rmisalign, unsigned otherLoopLevel, unsigned otherDatapathType
+) {
+	rptFile << "\n[WARN] Vectorisation attempt failed\n";
+	rptFile << "       for array " << arrayName << "\n";
+	rptFile << "       with " << sz << " elements vectorised\n";
+	rptFile << "       Reason: " << warnReasonMap[warnReason] << "\n";
+	if(lmisalign || rmisalign) {
+		if(lmisalign)
+			rptFile << "               due to " << lmisalign << " unused element(s) before\n";
+		if(rmisalign)
+			rptFile << "               due to " << rmisalign << " unused element(s) after\n";
+		rptFile << "               at loop level " << otherLoopLevel << "\n";
+		rptFile << "               " << translateDatapathType(otherDatapathType) << "\n";
+	}
+}
+
+void Reporter::warnOutBurstFailed(std::string arrayName, unsigned warnReason, unsigned otherLoopLevel, unsigned otherDatapathType) {
+	rptFile << "\n[WARN] Burst possibility between loop iterations failed\n";
+	rptFile << "       for array " << arrayName << "\n";
+	rptFile << "       at loop level " << loopLevel << "\n";
+	rptFile << "       " << translateDatapathType(datapathType) << "\n";
+	rptFile << "       Reason: " << warnReasonMap[warnReason] << "\n";
+	rptFile << "               at loop level " << otherLoopLevel << "\n";
+	rptFile << "               " << translateDatapathType(otherDatapathType) << "\n";
+}
+
+void Reporter::warnOutBurstNotPossible(std::string arrayName) {
+	rptFile << "\n[WARN] Burst possibility between loop iterations likely not possible\n";
+	rptFile << "       for array " << arrayName << "\n";
+	rptFile << "       at loop level " << loopLevel << "\n";
+	rptFile << "       " << translateDatapathType(datapathType) << "\n";
+	rptFile << "       Reason: more than one transaction for the same array\n";
+	rptFile << "               found in this loop level. Use \"--f-burstaggr\"\n";
+	rptFile << "               to attempt to merge these transactions if they're contiguous.\n";
+	rptFile << "               Note that such burst inference with Vivado HLS will likely\n";
+	rptFile << "               require explicit code intervention\n";
+}
+
+void Reporter::warnReadAfterWrite(std::string readArrayName, unsigned readNode, std::string writeArrayName, unsigned writeNode) {
+	const std::vector<int> &lineNoList = PC->getLineNoList();
+
+	rptFile << "\n[WARN] Detected read after a write transaction\n";
+	rptFile << "       Vivado will likely serialise these transactions and severely hurt performance\n";
+	rptFile << "       Read at array " << readArrayName << " at line " << lineNoList.at(readNode) << "\n";
+	rptFile << "       after write at array " << writeArrayName << " at line " << lineNoList.at(writeNode) << "\n";
+	rptFile << "       Consider (if possible) reordering transactions such that all reads are placed\n";
+	rptFile << "       before any write (with the use of temporary variables)\n";
+	rptFile << "       If this issue is caused by loop unrolling, consider implementing the unroll\n";
+	rptFile << "       manually\n";
+}
+
+void Reporter::warnReadAfterWriteDueUnroll() {
+	rptFile << "\n[WARN] Detected reads and writes transactions in an unrolled code segment\n";
+	rptFile << "       Vivado will likely replicate the code and put reads after writes,\n";
+	rptFile << "       potentially hurting performance due to serialisation\n";
+	rptFile << "       Consider (if possible) manually implementing the loop unroll and explicitly\n";
+	rptFile << "       placing all reads before any write with the help of temporary variables\n";
+}
+
+void Reporter::footer() {
+	rptFile << "\n===========================================================================================\n";
+}
+
+// Static attributes
+bool MemoryModel::shouldRpt = false;
+Reporter MemoryModel::reporter;
+std::string MemoryModel::preprocessedLoopName = "";
+
 MemoryModel::MemoryModel(BaseDatapath *datapath) :
 	datapath(datapath), microops(datapath->getMicroops()), graph(datapath->getDDDG()),
 	nameToVertex(datapath->getNameToVertex()), vertexToName(datapath->getVertexToName()), edgeToWeight(datapath->getEdgeToWeight()),
@@ -31,6 +195,22 @@ MemoryModel *MemoryModel::createInstance(BaseDatapath *datapath) {
 			assert(args.fNoMMA && "Memory model analysis is currently not supported with the selected platform. Please activate the \"--fno-mma\" flag");
 			return nullptr;
 	}
+}
+
+bool MemoryModel::preprocess(std::string loopName) {
+	if(loopName != preprocessedLoopName) {
+		preprocessedLoopName = loopName;
+
+		// Setup reporter
+		if(reporter.isOpen())
+			reporter.close();
+		reporter.open(preprocessedLoopName);
+		reporter.header();
+
+		return true;
+	}
+
+	return false;
 }
 
 bool MemoryModel::canOutBurstsOverlap(std::vector<MemoryModel::nodeExportTy> toBefore, std::vector<MemoryModel::nodeExportTy> toAfter) {
@@ -87,19 +267,30 @@ bool MemoryModel::canOutBurstsOverlap(std::vector<MemoryModel::nodeExportTy> toB
 	return true;
 }
 
+void MemoryModel::enableReport() {
+	shouldRpt = true;
+}
+
+void MemoryModel::finishReport() {
+	if(reporter.isOpen()) {
+		if(shouldRpt)
+			reporter.footer();
+		reporter.close();
+	}
+	shouldRpt = false;
+}
+
 void MemoryModel::analyseAndTransform() { }
 
 // Static attributes
-std::string XilinxZCUMemoryModel::preprocessedLoopName = "";
 std::vector<ddrInfoTy> XilinxZCUMemoryModel::filteredDDRMap;
 std::unordered_map<std::string, std::vector<globalOutBurstsInfoTy>>::iterator XilinxZCUMemoryModel::filteredOutBurstsInfo;
 bool XilinxZCUMemoryModel::ddrBanking = false;
 std::unordered_map<std::string, unsigned> XilinxZCUMemoryModel::packSizes;
 
 void XilinxZCUMemoryModel::preprocess(std::string loopName, ConfigurationManager &CM) {
-	if(loopName != preprocessedLoopName) {
-		preprocessedLoopName = loopName;
-
+	// Run parent preprocess. It will return false if preprocess was already executed for this loop nest
+	if(MemoryModel::preprocess(loopName)) {
 		// If MMA mode is set to USE, we use the context-imported cache information to improve out-bursts
 		if(ArgPack::MMA_MODE_USE == args.mmaMode) {
 			std::unordered_map<std::string, std::vector<ddrInfoTy>>::iterator found = globalDDRMap.find(loopName);
@@ -111,14 +302,29 @@ void XilinxZCUMemoryModel::preprocess(std::string loopName, ConfigurationManager
 
 			ddrBanking = CM.getGlobalCfg<bool>(ConfigurationManager::globalCfgTy::GLOBAL_DDRBANKING);
 
-			// There is no need to block anything from the deepest level, hence why the -1
-			for(unsigned loopLevel = LpName2numLevelMap.at(loopName) - 1; loopLevel; loopLevel--) {
+			for(unsigned loopLevel = LpName2numLevelMap.at(loopName); loopLevel; loopLevel--) {
 				for(auto &it : filteredOutBurstsInfo->second) {
 					if(it.loopLevel == loopLevel) {
-						// Perform global out-burst analysis using context-imported information
-						if(BaseDatapath::NON_PERFECT_BEFORE == it.datapathType || BaseDatapath::NON_PERFECT_AFTER == it.datapathType) {
-							blockInvalidOutBursts(loopLevel, it.datapathType, it.loadOutBurstsFound, &XilinxZCUMemoryModel::analyseLoadOutBurstFeasabilityGlobal);
-							blockInvalidOutBursts(loopLevel, it.datapathType, it.storeOutBurstsFound, &XilinxZCUMemoryModel::analyseStoreOutBurstFeasabilityGlobal);
+						for(auto it2 : it.loadOutBurstsFound) {
+							if(it2.second.canOutBurst) {
+								reporter.setCurrent(it.loopLevel, it.datapathType);
+								reporter.infoReadOutBurstFound(it2.first);
+							}
+						}
+						for(auto it2 : it.storeOutBurstsFound) {
+							if(it2.second.canOutBurst) {
+								reporter.setCurrent(it.loopLevel, it.datapathType);
+								reporter.infoWriteOutBurstFound(it2.first);
+							}
+						}
+
+						// There is no need to block anything from the deepest level
+						if(loopLevel < LpName2numLevelMap.at(loopName)) {
+							// Perform global out-burst analysis using context-imported information
+							if(BaseDatapath::NON_PERFECT_BEFORE == it.datapathType || BaseDatapath::NON_PERFECT_AFTER == it.datapathType) {
+								blockInvalidOutBursts(loopLevel, it.datapathType, it.loadOutBurstsFound, &XilinxZCUMemoryModel::analyseLoadOutBurstFeasabilityGlobal);
+								blockInvalidOutBursts(loopLevel, it.datapathType, it.storeOutBurstsFound, &XilinxZCUMemoryModel::analyseStoreOutBurstFeasabilityGlobal);
+							}
 						}
 					}
 				}
@@ -138,6 +344,10 @@ void XilinxZCUMemoryModel::preprocess(std::string loopName, ConfigurationManager
 							// Filter 1: Invalid this size if there are any stores with left or right alignments != 0
 							for(auto &it3 : it2.storeAlignments) {
 								if(it3.second.first || it3.second.second) {
+									reporter.warnPackAttemptFailed(
+										it.first, sz, Reporter::WARN_PACK_WRITE_MISALIGN,
+										it3.second.first, it3.second.second, it2.loopLevel, it2.datapathType
+									);
 									invalid = true;
 									break;
 								}
@@ -154,6 +364,10 @@ void XilinxZCUMemoryModel::preprocess(std::string loopName, ConfigurationManager
 									if(found2 != it3.loadOutBurstsFound.end() && found2->second.canOutBurst) {
 										for(auto &it4 : it2.loadAlignments) {
 											if(it4.second.first || it4.second.second) {
+												reporter.warnPackAttemptFailed(
+													it.first, sz, Reporter::WARN_PACK_READ_MISALIGN,
+													it4.second.first, it4.second.second, it2.loopLevel, it2.datapathType
+												);
 												invalid = true;
 												break;
 											}
@@ -162,6 +376,7 @@ void XilinxZCUMemoryModel::preprocess(std::string loopName, ConfigurationManager
 									else {
 										for(auto &it4 : it2.loadAlignments) {
 											if((it4.second.first || it4.second.second) && (it4.second.first + it4.second.second != (sz - 1))) {
+												reporter.warnPackAttemptFailed(it.first, sz, Reporter::WARN_PACK_NOT_POSSIBLE, 0, 0, 0, 0);
 												invalid = true;
 												break;
 											}
@@ -185,8 +400,13 @@ void XilinxZCUMemoryModel::preprocess(std::string loopName, ConfigurationManager
 
 				// Save pack size
 				packSizes[it.first] = szCandidate;
-				// TODO Notify
+				if(szCandidate > 1) reporter.infoPackAttempt(it.first, szCandidate);
 			}
+		}
+
+		if(reporter.isOpen()) {
+			reporter.footer();
+			reporter.close();
 		}
 	}
 }
@@ -205,12 +425,13 @@ void XilinxZCUMemoryModel::blockInvalidOutBursts(
 			// If with global information we assume that is not feasible, too bad, cancel this out-burst
 			if(!((*analyseOutBurstFeasabilityGlobal)(it.first, loopLevel, datapathType)))
 				it.second.canOutBurst = false;
-				// TODO Notify
 		}
 	}
 }
 
 bool XilinxZCUMemoryModel::analyseLoadOutBurstFeasabilityGlobal(std::string arrayName, unsigned loopLevel, unsigned datapathType) {
+	reporter.setCurrent(loopLevel, datapathType);
+
 	if(ArgPack::DDR_POLICY_CANNOT_OVERLAP == args.ddrSched) {
 		for(auto &it : filteredDDRMap) {
 			// Ignore elements that are from upper loops
@@ -225,18 +446,24 @@ bool XilinxZCUMemoryModel::analyseLoadOutBurstFeasabilityGlobal(std::string arra
 
 			if(ddrBanking) {
 				// No reads for the same array
-				if(it.arraysLoaded.count(arrayName))
+				if(it.arraysLoaded.count(arrayName)) {
+					reporter.warnOutBurstFailed(arrayName, Reporter::WARN_OUTBURST_READS_SAME_ARRAY, it.loopLevel, it.datapathType);
 					return false;
+				}
 			}
 			else {
 				// No reads at all
-				if(it.arraysLoaded.size())
+				if(it.arraysLoaded.size()) {
+					reporter.warnOutBurstFailed(arrayName, Reporter::WARN_OUTBURST_READS, it.loopLevel, it.datapathType);
 					return false;
+				}
 			}
 
 			// No writes for the same array
-			if(it.arraysStored.count(arrayName))
+			if(it.arraysStored.count(arrayName)) {
+				reporter.warnOutBurstFailed(arrayName, Reporter::WARN_OUTBURST_WRITES_SAME_ARRAY, it.loopLevel, it.datapathType);
 				return false;
+			}
 		}
 	}
 	else if(ArgPack::DDR_POLICY_CAN_OVERLAP == args.ddrSched) {
@@ -252,12 +479,16 @@ bool XilinxZCUMemoryModel::analyseLoadOutBurstFeasabilityGlobal(std::string arra
 				continue;
 
 			// No reads for the same array
-			if(it.arraysLoaded.count(arrayName))
+			if(it.arraysLoaded.count(arrayName)) {
+				reporter.warnOutBurstFailed(arrayName, Reporter::WARN_OUTBURST_READS_SAME_ARRAY, it.loopLevel, it.datapathType);
 				return false;
+			}
 
 			// No writes for the same array
-			if(it.arraysStored.count(arrayName))
+			if(it.arraysStored.count(arrayName)) {
+				reporter.warnOutBurstFailed(arrayName, Reporter::WARN_OUTBURST_WRITES_SAME_ARRAY, it.loopLevel, it.datapathType);
 				return false;
+			}
 		}
 	}
 	else {
@@ -282,18 +513,24 @@ bool XilinxZCUMemoryModel::analyseStoreOutBurstFeasabilityGlobal(std::string arr
 
 			if(ddrBanking) {
 				// No writes for the same array
-				if(it.arraysStored.count(arrayName))
+				if(it.arraysStored.count(arrayName)) {
+					reporter.warnOutBurstFailed(arrayName, Reporter::WARN_OUTBURST_WRITES_SAME_ARRAY, it.loopLevel, it.datapathType);
 					return false;
+				}
 			}
 			else {
 				// No writes at all
-				if(it.arraysStored.size())
+				if(it.arraysStored.size()) {
+					reporter.warnOutBurstFailed(arrayName, Reporter::WARN_OUTBURST_WRITES, it.loopLevel, it.datapathType);
 					return false;
+				}
 			}
 
 			// No reads for the same array
-			if(it.arraysLoaded.count(arrayName))
+			if(it.arraysLoaded.count(arrayName)) {
+				reporter.warnOutBurstFailed(arrayName, Reporter::WARN_OUTBURST_READS_SAME_ARRAY, it.loopLevel, it.datapathType);
 				return false;
+			}
 		}
 	}
 	else if(ArgPack::DDR_POLICY_CAN_OVERLAP == args.ddrSched) {
@@ -309,12 +546,16 @@ bool XilinxZCUMemoryModel::analyseStoreOutBurstFeasabilityGlobal(std::string arr
 				continue;
 
 			// No writes for the same array
-			if(it.arraysStored.count(arrayName))
+			if(it.arraysStored.count(arrayName)) {
+				reporter.warnOutBurstFailed(arrayName, Reporter::WARN_OUTBURST_WRITES_SAME_ARRAY, it.loopLevel, it.datapathType);
 				return false;
+			}
 
 			// No reads for the same array
-			if(it.arraysLoaded.count(arrayName))
+			if(it.arraysLoaded.count(arrayName)) {
+				reporter.warnOutBurstFailed(arrayName, Reporter::WARN_OUTBURST_READS_SAME_ARRAY, it.loopLevel, it.datapathType);
 				return false;
+			}
 		}
 	}
 	else {
@@ -339,9 +580,10 @@ void XilinxZCUMemoryModel::findInBursts(
 
 		// Lina supports burst mix, which means that it can form bursts when there are mixed-array contiguous transactions
 		// With DDR banking, burst mix is always disabled
+		// TODO BURST MIX WILL BE DISCONTINUED!
 		bool shouldMix = false;
-		if(args.fBurstMix && !ddrBanking)
-			shouldMix = true;
+		//if(args.fBurstMix && !ddrBanking)
+		//	shouldMix = true;
 
 		// If burst mix is enabled, we just add everyone to a single element
 		std::unordered_map<std::string, std::vector<unsigned>> behavedNodesBuckets;
@@ -391,6 +633,7 @@ void XilinxZCUMemoryModel::findInBursts(
 #else
 					burstedNodes[currRootNode] = burstInfoTy(currBaseAddress, currOffset, currNodes);
 #endif
+					if(shouldRpt && currOffset) reporter.infoInBurstFound(it.first, currOffset, currNodes);
 
 					// Reset variables
 					currRootNode = node;
@@ -409,6 +652,7 @@ void XilinxZCUMemoryModel::findInBursts(
 #else
 			burstedNodes[currRootNode] = burstInfoTy(currBaseAddress, currOffset, currNodes);
 #endif
+			if(shouldRpt && currOffset) reporter.infoInBurstFound(it.first, currOffset, currNodes);
 		}
 	}
 	// Else, we just add all nodes as "single bursts"
@@ -763,9 +1007,21 @@ XilinxZCUMemoryModel::XilinxZCUMemoryModel(BaseDatapath *datapath) : MemoryModel
 	importedReadReqs.clear();
 	importedWriteReqs.clear();
 	importedWriteResps.clear();
+	lastWriteAllocated = -1;
 }
 
 void XilinxZCUMemoryModel::analyseAndTransform() {
+	// This will normally execute at setUp(), but if mma mode is OFF or GEN, it will not.
+	// So we execute it here. If setUp() already ran it, this execution will be ignored
+	preprocess(datapath->getTargetLoopName(), CM);
+
+	if(shouldRpt) {
+		if(reporter.isOpen())
+			reporter.close();
+		reporter.reopen(datapath->getTargetLoopLevel(), datapath->getDatapathType(), &PC, &microops);
+		reporter.currentHeader();
+	}
+
 	std::unordered_map<std::string, outBurstInfoTy> loadOutBurstsFound;
 	std::unordered_map<std::string, outBurstInfoTy> storeOutBurstsFound;
 
@@ -801,30 +1057,42 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 
 	const ConfigurationManager::arrayInfoCfgMapTy arrayInfoCfgMap = CM.getArrayInfoCfgMap();
 
+	std::vector<std::string> foundArrays;
+
 	// Change all load/stores marked as offchip to DDR read/writes (and mark their locations)
 	VertexIterator vi, viEnd;
 	for(std::tie(vi, viEnd) = vertices(graph); vi != viEnd; vi++) {
 		Vertex currNode = *vi;
 		unsigned nodeID = vertexToName[currNode];
 		int nodeMicroop = microops.at(nodeID);
+		std::string arrayName = baseAddress[nodeID].first;
 
 		if(!isMemoryOp(nodeMicroop))
 			continue;
 
 		// Only consider offchip arrays
-		if(arrayInfoCfgMap.at(baseAddress[nodeID].first).type != ConfigurationManager::arrayInfoCfgTy::ARRAY_TYPE_OFFCHIP)
+		if(arrayInfoCfgMap.at(arrayName).type != ConfigurationManager::arrayInfoCfgTy::ARRAY_TYPE_OFFCHIP)
 			continue;
 
 		if(isLoadOp(nodeMicroop)) {
 			microops.at(nodeID) = LLVM_IR_DDRRead;
-			loadNodes[nodeID] = std::make_pair(baseAddress.at(nodeID).first, memoryTraceList.at(nodeID).first);
+			loadNodes[nodeID] = std::make_pair(arrayName, memoryTraceList.at(nodeID).first);
 		}
 
 		if(isStoreOp(nodeMicroop)) {
 			microops.at(nodeID) = LLVM_IR_DDRWrite;
-			storeNodes[nodeID] = std::make_pair(baseAddress.at(nodeID).first, memoryTraceList.at(nodeID).first);
+			storeNodes[nodeID] = std::make_pair(arrayName, memoryTraceList.at(nodeID).first);
+		}
+
+		if(shouldRpt) {
+			if(1 == std::count(foundArrays.begin(), foundArrays.end(), arrayName))
+				reporter.warnOutBurstNotPossible(arrayName);
+			foundArrays.push_back(arrayName);
 		}
 	}
+
+	if(shouldRpt && loadNodes.size() && storeNodes.size() && datapath->getTargetLoopUnrollFactor() > 1)
+		reporter.warnReadAfterWriteDueUnroll();
 
 	// TODO use loadDepMap or similar here to filter out loads that are not behaved (i.e. DDR loads that depends on other DDR ops)
 	std::vector<unsigned> behavedLoads;
@@ -1424,6 +1692,10 @@ bool XilinxZCUMemoryModel::tryAllocate(unsigned node, int opcode, bool commit) {
 
 		// Since LLVM_IR_DDRRead takes only one cycle, its release logic is located here (MemoryModel::release() is not executed)
 		if(commit) {
+			// Only non-silent!
+			if(shouldRpt && LLVM_IR_DDRRead == opcode && lastWriteAllocated != -1)
+				reporter.warnReadAfterWrite(loadNodes.at(node).first, node, storeNodes.at(lastWriteAllocated).first, lastWriteAllocated);
+
 			// If this is the last load, we must close this burst
 			for(auto &it : burstedLoads) {
 				if(it.second.participants.back() == node)
@@ -1516,6 +1788,8 @@ bool XilinxZCUMemoryModel::tryAllocate(unsigned node, int opcode, bool commit) {
 		return finalCond;
 	}
 	else if(LLVM_IR_DDRWrite == opcode || LLVM_IR_DDRSilentWrite == opcode) {
+		// Only non-silent!
+		if(commit && LLVM_IR_DDRWrite == opcode) lastWriteAllocated = node;
 		// Write transactions can always be issued, because their issuing is conditional to WriteReq
 		return true;
 	}
@@ -1597,7 +1871,7 @@ void XilinxZCUMemoryModel::setUp(ContextManager &CtxM) {
 	unsigned datapathType = datapath->getDatapathType();
 
 	// If the memory model preprocess stage has not been executed, now it is the time.
-	// The preprocess improves loop-nest-wise information. It must be ran once per execution
+	// The preprocess improves loop-nest-wise information. It must be ran once per loop nest
 	preprocess(loopName, CM);
 
 	bool foundIt = false;

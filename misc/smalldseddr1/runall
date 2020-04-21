@@ -144,5 +144,8 @@ runScripter M BA BV P0 rw-add2-np3 b
 # With pipeline
 
 runScripter M ba bv P0 rw-add2 p
+runScripter M ba bv P0 rw-add2-np p
+runScripter M ba bv P0 rw-add2-np2 p
+runScripter M ba bv P0 rw-add2-np3 p
 
 rm -f $TMPFILE

@@ -138,6 +138,8 @@ BaseDatapath::~BaseDatapath() {
 		delete builder;
 	if(profile)
 		delete profile;
+	if(memmodel)
+		delete memmodel;
 }
 
 std::string BaseDatapath::getTargetLoopName() const {
@@ -500,6 +502,8 @@ uint64_t BaseDatapath::fpgaEstimation() {
 	}
 
 	if(!(args.fNoMMA)) {
+		memmodel->enableReport();
+
 		if(ArgPack::MMA_MODE_USE == args.mmaMode) {
 			VERBOSE_PRINT(errs() <<"\t\"--mma-mode\" is set to \"use\", setting up memory model\n");
 			memmodel->setUp(CtxM);
@@ -631,6 +635,9 @@ uint64_t BaseDatapath::fpgaEstimation() {
 	}
 	// XXX: There is still missing reports for resII, resIIMem and resIIOp. I have to think on a better way of
 	// merging these values when multiple DDDGs are generated
+
+	if(!(args.fNoMMA))
+		memmodel->finishReport();
 
 	return numCycles;
 }

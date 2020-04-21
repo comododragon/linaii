@@ -6,6 +6,8 @@
 #include "profile_h/ContextManager.h"
 #include "profile_h/DDDGBuilder.h"
 
+#define FILE_MEM_ANALYSIS_RPT_SUFFIX "_memanalysis.rpt"
+
 // TODO: Improvements for non-perfect loops:
 // - Cached values: When burst packing is active, if the whole burst does not properly fit in the bus
 //   width, it will leave some values unused. For example if this happens with a read on BEFORE, if
@@ -57,6 +59,51 @@
 // Audio references @ ralder: search for "LINAII REF OPTS NAO IMPLEMENTADAS", lots of audios set 17/01 and 18/01.
 
 class BaseDatapath;
+
+class Reporter {
+	static const std::string warnReasonMap[];
+	static std::ofstream rptFile;
+	static std::string loopName;
+	unsigned loopLevel;
+	unsigned datapathType;
+	ParsedTraceContainer *PC;
+	std::vector<int> *microops;
+
+	static std::string translateDatapathType(unsigned datapathType);
+
+public:
+	enum {
+		WARN_OUTBURST_READS_SAME_ARRAY = 0,
+		WARN_OUTBURST_READS = 1,
+		WARN_OUTBURST_WRITES_SAME_ARRAY = 2,
+		WARN_OUTBURST_WRITES = 3,
+		WARN_PACK_WRITE_MISALIGN = 4,
+		WARN_PACK_READ_MISALIGN = 5,
+		WARN_PACK_NOT_POSSIBLE = 6
+	};
+
+	void open(std::string loopName);
+	void reopen(unsigned loopLevel, unsigned datapathType, ParsedTraceContainer *PC, std::vector<int> *microops);
+	bool isOpen();
+	void close();
+	void setCurrent(unsigned loopLevel, unsigned datapathType, ParsedTraceContainer *PC = nullptr, std::vector<int> *microops = nullptr);
+
+	void header();
+	void currentHeader();
+	void infoReadOutBurstFound(std::string arrayName);
+	void infoWriteOutBurstFound(std::string arrayName);
+	void infoPackAttempt(std::string arrayName, unsigned sz);
+	void infoInBurstFound(std::string arrayName, uint64_t offset, std::vector<unsigned> &participants);
+	void warnPackAttemptFailed(
+		std::string arrayName, unsigned sz, unsigned warnReason,
+		unsigned lmisalign, unsigned rmisalign, unsigned otherLoopLevel, unsigned otherDatapathType
+	);
+	void warnOutBurstFailed(std::string arrayName, unsigned warnReason, unsigned otherLoopLevel, unsigned otherDatapathType);
+	void warnOutBurstNotPossible(std::string arrayName);
+	void warnReadAfterWrite(std::string readArrayName, unsigned readNode, std::string writeArrayName, unsigned writeNode);
+	void warnReadAfterWriteDueUnroll();
+	void footer();
+};
 
 struct ddrInfoTy {
 	unsigned loopLevel;
@@ -113,6 +160,10 @@ struct packInfoTy {
 
 class MemoryModel {
 protected:
+	static std::string preprocessedLoopName;
+	static bool shouldRpt;
+	static std::ofstream rptFile;
+	static Reporter reporter;
 	BaseDatapath *datapath;
 	std::vector<int> &microops;
 	Graph &graph;
@@ -172,7 +223,10 @@ public:
 	MemoryModel(BaseDatapath *datapath);
 	virtual ~MemoryModel() { }
 	static MemoryModel *createInstance(BaseDatapath *datapath);
+	static bool preprocess(std::string loopName);
 	static bool canOutBurstsOverlap(std::vector<MemoryModel::nodeExportTy> toBefore, std::vector<MemoryModel::nodeExportTy> toAfter);
+	void enableReport();
+	void finishReport();
 
 	virtual void analyseAndTransform() = 0;
 
@@ -196,7 +250,6 @@ public:
 };
 
 class XilinxZCUMemoryModel : public MemoryModel {
-	static std::string preprocessedLoopName;
 	static std::vector<ddrInfoTy> filteredDDRMap;
 	static std::unordered_map<std::string, std::vector<globalOutBurstsInfoTy>>::iterator filteredOutBurstsInfo;
 	static bool ddrBanking;
@@ -234,6 +287,7 @@ class XilinxZCUMemoryModel : public MemoryModel {
 	// Dependency maps, used for approximating ResMIIMem
 	std::unordered_map<unsigned, std::set<unsigned>> loadDepMap;
 	std::unordered_map<unsigned, std::set<unsigned>> storeDepMap;
+	int lastWriteAllocated;
 
 	void findInBursts(
 		std::unordered_map<unsigned, std::pair<std::string, uint64_t>> &foundNodes,

@@ -81,7 +81,10 @@ class InstrumentForDDDG : public ModulePass {
 		TRACE_INTRINSIC = 1,
 		TRACE_FUNCTION_OF_INTEREST = 2,
 		TRACE_DMA_STORE = LLVM_IR_DMAStore,
-		TRACE_DMA_LOAD = LLVM_IR_DMALoad
+		TRACE_DMA_LOAD = LLVM_IR_DMALoad,
+#ifdef CUSTOM_OPS
+		TRACE_CUSTOM_OP = 3,
+#endif
 	};
 
 	std::vector<std::string> pipelineLoopLevelVec;

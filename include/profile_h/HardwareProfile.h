@@ -5,27 +5,44 @@
 #include <iostream>
 
 #include "profile_h/auxiliary.h"
+#include "profile_h/opcodes.h"
 #include "profile_h/MemoryModel.h"
+
+#define INFINITE_RESOURCES 999999999
 
 using namespace llvm;
 
 class HardwareProfile {
 protected:
-	const unsigned INFINITE_RESOURCES = 999999999;
+#ifdef CONSTRAIN_INT_OP
+	typedef std::unordered_map<unsigned, unsigned> fuCountTy;
+#endif
 
-	std::map<std::string, std::tuple<uint64_t, uint64_t, size_t>> arrayNameToConfig;
+	std::map<std::string, std::tuple<uint64_t, uint64_t, size_t, unsigned>> arrayNameToConfig;
 	std::map<std::string, unsigned> arrayNameToNumOfPartitions;
-	std::map<std::string, unsigned> arrayNameToWritePortsPerPartition;
+	//std::map<std::string, unsigned> arrayNameToWritePortsPerPartition;
 	std::map<std::string, float> arrayNameToEfficiency;
 	std::map<std::string, unsigned> arrayPartitionToReadPorts;
 	std::map<std::string, unsigned> arrayPartitionToReadPortsInUse;
 	std::map<std::string, unsigned> arrayPartitionToWritePorts;
 	std::map<std::string, unsigned> arrayPartitionToWritePortsInUse;
 	unsigned fAddCount, fSubCount, fMulCount, fDivCount;
+#ifdef CONSTRAIN_INT_OP
+	fuCountTy intOpCount;
+#endif
 	unsigned unrFAddCount, unrFSubCount, unrFMulCount, unrFDivCount;
+#ifdef CONSTRAIN_INT_OP
+	fuCountTy unrIntOpCount;
+#endif
 	unsigned fAddInUse, fSubInUse, fMulInUse, fDivInUse;
+#ifdef CONSTRAIN_INT_OP
+	fuCountTy intOpInUse;
+#endif
 	bool ddrReadPortInUse, ddrWritePortInUse;
 	unsigned fAddThreshold, fSubThreshold, fMulThreshold, fDivThreshold;
+#ifdef CONSTRAIN_INT_OP
+	fuCountTy intOpThreshold;
+#endif
 	bool isConstrained;
 	bool thresholdSet;
 	std::set<int> limitedBy;
@@ -33,11 +50,19 @@ protected:
 	MemoryModel *memmodel;
 
 public:
+#ifdef CONSTRAIN_INT_OP
+	// XXX: You can find the definition at lib/Build_DDDG/HardwareProfileParams.cpp
+	static const std::set<unsigned> constrainedIntOps;
+#endif
+
 	enum {
 		LIMITED_BY_FADD,
 		LIMITED_BY_FSUB,
 		LIMITED_BY_FMUL,
-		LIMITED_BY_FDIV
+		LIMITED_BY_FDIV,
+#ifdef CONSTRAIN_INT_OP
+		LIMITED_BY_INTOP
+#endif
 	};
 
 	HardwareProfile();
@@ -50,6 +75,7 @@ public:
 	virtual unsigned getLatency(unsigned opcode) = 0;
 	virtual double getInCycleLatency(unsigned opcode) = 0;
 	virtual bool isPipelined(unsigned opcode) = 0;
+	virtual bool canBeLiveOp(unsigned opcode) = 0;
 	virtual void calculateRequiredResources(
 		std::vector<int> &microops,
 		const ConfigurationManager::arrayInfoCfgMapTy &arrayInfoCfgMap,
@@ -78,11 +104,15 @@ public:
 	virtual bool fSubAddUnit(bool commit = true) = 0;
 	virtual bool fMulAddUnit(bool commit = true) = 0;
 	virtual bool fDivAddUnit(bool commit = true) = 0;
+#ifdef CONSTRAIN_INT_OP
+	virtual bool intOpAddUnit(unsigned opcode, bool commit = true) = 0;
+#endif
+	virtual void regStoreLiveOps(std::set<unsigned> &liveOps, const std::unordered_map<int, unsigned> &resultSizeList) = 0;
 
 	unsigned arrayGetNumOfPartitions(std::string arrayName);
 	unsigned arrayGetPartitionReadPorts(std::string partitionName);
 	unsigned arrayGetPartitionWritePorts(std::string partitionName);
-	const std::map<std::string, std::tuple<uint64_t, uint64_t, size_t>> &arrayGetConfig() { return arrayNameToConfig; }
+	const std::map<std::string, std::tuple<uint64_t, uint64_t, size_t, unsigned>> &arrayGetConfig() { return arrayNameToConfig; }
 	const std::map<std::string, unsigned> &arrayGetNumOfPartitions() { return arrayNameToNumOfPartitions; }
 	const std::map<std::string, float> &arrayGetEfficiency() { return arrayNameToEfficiency; }
 	virtual unsigned arrayGetMaximumWritePortsPerPartition() = 0;
@@ -90,6 +120,9 @@ public:
 	unsigned fSubGetAmount() { return fSubCount; }
 	unsigned fMulGetAmount() { return fMulCount; }
 	unsigned fDivGetAmount() { return fDivCount; }
+#ifdef CONSTRAIN_INT_OP
+	unsigned intOpGetAmount(unsigned opcode) { return intOpCount[opcode]; }
+#endif
 
 	bool fAddTryAllocate(bool commit = true);
 	bool fSubTryAllocate(bool commit = true);
@@ -161,6 +194,23 @@ class XilinxHardwareProfile : public HardwareProfile {
 	};
 
 protected:
+#ifdef CONSTRAIN_INT_OP
+	struct fuResourcesTy {
+		unsigned dsp;
+		unsigned ff;
+		unsigned lut;
+		unsigned bram18k;
+
+		fuResourcesTy() : dsp(0), ff(0), lut(0), bram18k(0) { }
+		fuResourcesTy(unsigned dsp, unsigned ff, unsigned lut, unsigned bram18k) : dsp(dsp), ff(ff), lut(lut), bram18k(bram18k) { }
+	};
+
+	typedef std::unordered_map<unsigned, fuResourcesTy> fuResourcesMapTy;
+
+	// XXX: You can find the definitions at lib/Build_DDDG/HardwareProfileParams.cpp
+	static const fuResourcesMapTy intOpStandardResources;
+#endif
+
 	std::map<std::string, unsigned> arrayNameToUsedBRAM18k;
 	unsigned maxDSP, maxFF, maxLUT, maxBRAM18k;
 	unsigned usedDSP, usedFF, usedLUT, usedBRAM18k;
@@ -168,6 +218,9 @@ protected:
 	unsigned fSubDSP, fSubFF, fSubLUT;
 	unsigned fMulDSP, fMulFF, fMulLUT;
 	unsigned fDivDSP, fDivFF, fDivLUT;
+#ifdef CONSTRAIN_INT_OP
+	fuResourcesMapTy intOpResources;
+#endif
 
 public:
 	XilinxHardwareProfile();
@@ -177,6 +230,7 @@ public:
 	virtual unsigned getLatency(unsigned opcode);
 	virtual double getInCycleLatency(unsigned opcode);
 	bool isPipelined(unsigned opcode);
+	bool canBeLiveOp(unsigned opcode);
 	void calculateRequiredResources(
 		std::vector<int> &microops,
 		const ConfigurationManager::arrayInfoCfgMapTy &arrayInfoCfgMap,
@@ -203,6 +257,10 @@ public:
 	bool fSubAddUnit(bool commit = true);
 	bool fMulAddUnit(bool commit = true);
 	bool fDivAddUnit(bool commit = true);
+#ifdef CONSTRAIN_INT_OP
+	bool intOpAddUnit(unsigned opcode, bool commit = true);
+#endif
+	void regStoreLiveOps(std::set<unsigned> &liveOps, const std::unordered_map<int, unsigned> &resultSizeList);
 
 	unsigned arrayGetMaximumWritePortsPerPartition();
 	std::map<std::string, unsigned> arrayGetUsedBRAM18k() { return arrayNameToUsedBRAM18k; }
@@ -238,25 +296,6 @@ public:
 };
 
 class XilinxZCUHardwareProfile : public XilinxHardwareProfile {
-	enum {
-		LATENCY_LOAD,
-		LATENCY_STORE,
-		LATENCY_ADD,
-		LATENCY_SUB,
-		LATENCY_MUL32,
-		LATENCY_DIV32,
-		LATENCY_FADD32,
-		LATENCY_FSUB32,
-		LATENCY_FMUL32,
-		LATENCY_FDIV32,
-		LATENCY_FCMP,
-		LATENCY_DDRREADREQ,
-		LATENCY_DDRREAD,
-		LATENCY_DDRWRITEREQ,
-		LATENCY_DDRWRITE,
-		LATENCY_DDRWRITERESP
-	};
-
 	// XXX: You can find the definitions at lib/Build_DDDG/HardwareProfileParams.cpp
 	/* This map format: {key (the operation being considered), {key (latency for completion), in-cycle latency in ns}} */
 	static const std::unordered_map<unsigned, std::map<unsigned, double>> timeConstrainedLatencies;

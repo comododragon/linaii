@@ -203,12 +203,13 @@ void ConfigurationManager::appendToCompletePartitionCfg(std::string baseAddr, ui
 	completePartitionCfgMap.insert(std::make_pair(baseAddr, elem));
 }
 
-void ConfigurationManager::appendToArrayInfoCfg(std::string arrayName, uint64_t totalSize, size_t wordSize, unsigned type) {
+void ConfigurationManager::appendToArrayInfoCfg(std::string arrayName, uint64_t totalSize, size_t wordSize, unsigned type, unsigned scope) {
 	arrayInfoCfgTy elem;
 
 	elem.totalSize = totalSize;
 	elem.wordSize = wordSize;
 	elem.type = type;
+	elem.scope = scope;
 
 	arrayInfoCfgMap.insert(std::make_pair(arrayName, elem));
 }
@@ -412,20 +413,30 @@ void ConfigurationManager::parseAndPopulate(std::vector<std::string> &pipelineLo
 			uint64_t totalSize;
 			size_t wordSize;
 			char buff2[BUFF_STR_SZ];
+			char buff3[BUFF_STR_SZ];
 
-			int retVal = sscanf(i.c_str(), "%*[^,],%[^,],%lu,%zu,%[^,]\n", buff, &totalSize, &wordSize, buff2);
+			int retVal = sscanf(i.c_str(), "%*[^,],%[^,],%lu,%zu,%[^,],%[^,]\n", buff, &totalSize, &wordSize, buff2, buff3);
 
 			std::string arrayName(buff);
 			unsigned type = arrayInfoCfgTy::ARRAY_TYPE_ONCHIP;
-			if(!(args.fNoMMA)) {
-				if(retVal > 3) {
-					std::string typeStr(buff);
+			unsigned scope = arrayInfoCfgTy::ARRAY_SCOPE_ARG;
+			if(retVal > 3) {
+				std::string typeStr(buff2);
 
-					if(typeStr.compare("onchip"))
-						type = arrayInfoCfgTy::ARRAY_TYPE_OFFCHIP;
-				}
+				if(!(args.fNoMMA) && typeStr.compare("onchip"))
+					type = arrayInfoCfgTy::ARRAY_TYPE_OFFCHIP;
 			}
-			appendToArrayInfoCfg(mangleArrayName(arrayName), totalSize, wordSize, type);
+			if(retVal > 4) {
+				assert(arrayInfoCfgTy::ARRAY_TYPE_ONCHIP == type && "Scope argument should not be present when array is offchip");
+
+				std::string scopeStr(buff3);
+
+				if("rovar" == scopeStr)
+					scope = arrayInfoCfgTy::ARRAY_SCOPE_ROVAR;
+				else if("rwvar" == scopeStr)
+					scope = arrayInfoCfgTy::ARRAY_SCOPE_RWVAR;
+			}
+			appendToArrayInfoCfg(mangleArrayName(arrayName), totalSize, wordSize, type, scope);
 		}
 	}
 	else {
@@ -543,7 +554,15 @@ void ConfigurationManager::parseToFiles() {
 	outFile.open(arrayInfoFileName);
 	for(auto &it : arrayInfoCfgMap) {
 		std::string type = (arrayInfoCfgTy::ARRAY_TYPE_ONCHIP == it.second.type)? "onchip" : "offchip";
-		outFile << "array," << it.first << "," << std::to_string(it.second.totalSize) << "," << std::to_string(it.second.wordSize) << "," << type << "\n";
+		std::string scope;
+		if(arrayInfoCfgTy::ARRAY_SCOPE_ROVAR == it.second.scope)
+			scope = "rovar";
+		else if(arrayInfoCfgTy::ARRAY_SCOPE_RWVAR == it.second.scope)
+			scope = "rwvar";
+		else
+			scope = "arg";
+
+		outFile << "array," << it.first << "," << std::to_string(it.second.totalSize) << "," << std::to_string(it.second.wordSize) << "," << type << "," << scope << "\n";
 	}
 	outFile.close();
 

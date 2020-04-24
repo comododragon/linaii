@@ -29,6 +29,7 @@ class Multipath {
 	void _Multipath();
 
 	void recursiveLookup(unsigned currLoopLevel, unsigned finalLoopLevel);
+	void dumpSummary();
 
 public:
 	Multipath(

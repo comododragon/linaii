@@ -79,6 +79,7 @@ public:
 		typedef std::vector<unsigned> executedListTy;
 
 		const std::vector<int> &microops;
+		const std::unordered_map<int, unsigned> &resultSizeList;
 		const Graph &graph;
 		unsigned numOfTotalNodes;
 		const std::unordered_map<unsigned, Vertex> &nameToVertex;
@@ -149,6 +150,8 @@ public:
 		executedListTy callExecuted;
 		executedListTy ddrOpExecuted;
 
+		std::set<unsigned> liveOps;
+
 		std::ofstream dumpFile;
 
 		bool dummyAllocate() { return true; }
@@ -173,11 +176,12 @@ public:
 		void tryRelease(unsigned opcode, executingMapTy &executing, executedListTy &executed, void (HardwareProfile::*releaseMem)(std::string));
 		void tryRelease(executingMapTy &executing, executedListTy &executed, void (HardwareProfile::*releaseDDRMem)(unsigned, int));
 		void setScheduledAndAssignReadyChildren(unsigned nodeID);
+		void filterOutDeadOps();
 
 	public:
 		RCScheduler(
 			const std::string loopName, const unsigned loopLevel, const unsigned datapathType,
-			const std::vector<int> &microops,
+			const std::vector<int> &microops, const std::unordered_map<int, unsigned> &resultSizeList,
 			const Graph &graph, unsigned numOfTotalNodes,
 			const std::unordered_map<unsigned, Vertex> &nameToVertex, const VertexNameMap &vertexToName,
 			HardwareProfile &profile, const std::unordered_map<int, std::pair<std::string, int64_t>> &baseAddress,

@@ -10,6 +10,7 @@ ParsedTraceContainer::ParsedTraceContainer(std::string kernelName) : kernelName(
 	getElementPtrFileName = args.outWorkDir + kernelName + "_getelementptr.gz";
 	prevBasicBlockFileName = args.outWorkDir + kernelName + "_prevbasicblock.gz";
 	currBasicBlockFileName = args.outWorkDir + kernelName + "_currbasicblock.gz";
+	resultSizeFileName = args.outWorkDir + kernelName + "_resultsize.gz";
 
 	funcFile = Z_NULL;
 	instIDFile = Z_NULL;
@@ -18,6 +19,7 @@ ParsedTraceContainer::ParsedTraceContainer(std::string kernelName) : kernelName(
 	getElementPtrFile = Z_NULL;
 	prevBasicBlockFile = Z_NULL;
 	currBasicBlockFile = Z_NULL;
+	resultSizeFile = Z_NULL;
 
 	compressed = args.compressed;
 	keepAliveRead = false;
@@ -31,6 +33,7 @@ ParsedTraceContainer::ParsedTraceContainer(std::string kernelName) : kernelName(
 	getElementPtrList.clear();
 	prevBasicBlockList.clear();
 	currBasicBlockList.clear();
+	resultSizeList.clear();
 }
 
 ParsedTraceContainer::~ParsedTraceContainer() {
@@ -48,6 +51,8 @@ ParsedTraceContainer::~ParsedTraceContainer() {
 		gzclose(prevBasicBlockFile);
 	if(currBasicBlockFile)
 		gzclose(currBasicBlockFile);
+	if(resultSizeFile)
+		gzclose(resultSizeFile);
 }
 
 void ParsedTraceContainer::openAndClearAllFiles() {
@@ -71,6 +76,8 @@ void ParsedTraceContainer::openAndClearAllFiles() {
 		assert(prevBasicBlockFile != Z_NULL && "Could not open prev BB file for write");
 		currBasicBlockFile = gzopen(currBasicBlockFileName.c_str(), "w");
 		assert(currBasicBlockFile != Z_NULL && "Could not open curr BB file for write");
+		resultSizeFile = gzopen(resultSizeFileName.c_str(), "w");
+		assert(resultSizeFile != Z_NULL && "Could not open result size file for write");
 
 		keepAliveWrite = true;
 	}
@@ -97,6 +104,8 @@ void ParsedTraceContainer::openAllFilesForWrite() {
 		assert(prevBasicBlockFile != Z_NULL && "Could not open prev BB file for write");
 		currBasicBlockFile = gzopen(currBasicBlockFileName.c_str(), "a");
 		assert(currBasicBlockFile != Z_NULL && "Could not open curr BB file for write");
+		resultSizeFile = gzopen(resultSizeFileName.c_str(), "r");
+		assert(resultSizeFile != Z_NULL && "Could not open result size file for read");
 
 		keepAliveWrite = true;
 	}
@@ -143,6 +152,8 @@ void ParsedTraceContainer::closeAllFiles() {
 			gzclose(prevBasicBlockFile);
 		if(currBasicBlockFile)
 			gzclose(currBasicBlockFile);
+		if(resultSizeFile)
+			gzclose(resultSizeFile);
 		funcFile = Z_NULL;
 		instIDFile = Z_NULL;
 		lineNoFile = Z_NULL;
@@ -150,6 +161,7 @@ void ParsedTraceContainer::closeAllFiles() {
 		getElementPtrFile = Z_NULL;
 		prevBasicBlockFile = Z_NULL;
 		currBasicBlockFile = Z_NULL;
+		resultSizeFile = Z_NULL;
 
 		keepAliveRead = false;
 		keepAliveWrite = false;
@@ -322,6 +334,28 @@ void ParsedTraceContainer::appendToCurrBBList(std::string elem) {
 	}
 	else {
 		currBasicBlockList.push_back(elem);
+	}
+}
+
+void ParsedTraceContainer::appendToResultSizeList(int key, unsigned elem) {
+	assert(!locked && "This container is locked, no modification permitted");
+	assert(!keepAliveRead && "This container is open for read, no modification permitted");
+
+	if(compressed) {
+		if(!resultSizeFile) {
+			resultSizeFile = gzopen(resultSizeFileName.c_str(), "a");
+			assert(resultSizeFile != Z_NULL && "Could not open result size file for write");
+		}
+
+		gzprintf(resultSizeFile, "%d,%u\n", key, elem);
+
+		if(!keepAliveWrite) {
+			gzclose(resultSizeFile);
+			resultSizeFile = Z_NULL;
+		}
+	}
+	else {
+		resultSizeList.insert(std::make_pair(key, elem));
 	}
 }
 
@@ -537,6 +571,37 @@ const std::vector<std::string> &ParsedTraceContainer::getCurrBBList() {
 	}
 
 	return currBasicBlockList;
+}
+
+const std::unordered_map<int, unsigned> &ParsedTraceContainer::getResultSizeList() {
+	if(compressed) {
+		assert(!keepAliveWrite && "This container is open for write, no reading permitted");
+
+		if(!resultSizeFile) {
+			resultSizeFile = gzopen(resultSizeFileName.c_str(), "r");
+			assert(resultSizeFile != Z_NULL && "Could not open result size file for read");
+		}
+
+		resultSizeList.clear();
+
+		char buffer[BUFF_STR_SZ];
+		while(!gzeof(resultSizeFile)) {
+			if(Z_NULL == gzgets(resultSizeFile, buffer, sizeof(buffer)))
+				continue;
+
+			int elem;
+			unsigned elem2;
+			sscanf(buffer, "%d,%u\n", &elem, &elem2);
+			resultSizeList.insert(std::make_pair(elem, elem2));
+		}
+
+		if(!keepAliveRead) {
+			gzclose(resultSizeFile);
+			resultSizeFile = Z_NULL;
+		}
+	}
+
+	return resultSizeList;
 }
 
 DDDGBuilder::DDDGBuilder(BaseDatapath *datapath, ParsedTraceContainer &PC) : datapath(datapath), PC(PC) {
@@ -1324,6 +1389,8 @@ void DDDGBuilder::parseResult() {
 #else
 	std::string uniqueRegID = currDynamicFunction + GLOBAL_SEPARATOR + label;
 #endif
+
+	PC.appendToResultSizeList(numOfInstructions, size);
 
 	// Store the instruction where this register was written
 	s2uMap::iterator found = registerLastWritten.find(uniqueRegID);

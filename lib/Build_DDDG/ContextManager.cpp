@@ -321,6 +321,9 @@ template<> size_t ContextManager::writeElement<ParsedTraceContainer>(std::string
 	DBG_DUMP("-- currBBList:\n");
 	for(auto const &x : elem.getCurrBBList())
 		DBG_DUMP("---- " << x << "\n");
+	DBG_DUMP("-- resultSizeList:\n");
+	for(auto const &x : elem.getResultSizeList())
+		DBG_DUMP("---- " << x.first << ": <" << x.second << "\n");
 #endif
 
 	writtenSize += writeElement<std::string>(ss, const_cast<std::vector<std::string> &>(elem.getFuncList()));
@@ -330,6 +333,7 @@ template<> size_t ContextManager::writeElement<ParsedTraceContainer>(std::string
 	writtenSize += writeElement<int, std::string, int64_t>(ss, const_cast<std::unordered_map<int, std::pair<std::string, int64_t>> &>(elem.getGetElementPtrList()));
 	writtenSize += writeElement<std::string>(ss, const_cast<std::vector<std::string> &>(elem.getPrevBBList()));
 	writtenSize += writeElement<std::string>(ss, const_cast<std::vector<std::string> &>(elem.getCurrBBList()));
+	writtenSize += writeElement<int, unsigned>(ss, const_cast<std::unordered_map<int, unsigned> &>(elem.getResultSizeList()));
 
 	return writtenSize;
 }
@@ -567,6 +571,17 @@ template<> void ContextManager::readElement<ParsedTraceContainer>(std::fstream &
 		elem.appendToCurrBBList(ee);
 	}
 
+	size_t resultSizeListSize;
+	readElement<size_t>(fs, resultSizeListSize);
+	for(size_t i = 0; i < resultSizeListSize; i++) {
+		int ee;
+		readElement<int>(fs, ee);
+		unsigned ff;
+		readElement<unsigned>(fs, ff);
+
+		elem.appendToResultSizeList(ee, ff);
+	}
+
 // TODO Cleanup
 #if 1//DBG_PRINT_ALL
 	DBG_DUMP("Dump of ParsedTraceContainer\n");
@@ -591,6 +606,9 @@ template<> void ContextManager::readElement<ParsedTraceContainer>(std::fstream &
 	DBG_DUMP("-- currBBList:\n");
 	for(auto const &x : elem.getCurrBBList())
 		DBG_DUMP("---- " << x << "\n");
+	DBG_DUMP("-- resultSizeList:\n");
+	for(auto const &x : elem.getResultSizeList())
+		DBG_DUMP("---- " << x.first << ": <" << x.second << "\n");
 #endif
 }
 

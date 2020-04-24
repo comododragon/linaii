@@ -65,6 +65,7 @@ typedef struct {
 	bool fNoFPUThresOpt;
 	bool fExtraScalar;
 	bool fRWRWMem;
+	bool fArgRes;
 	bool fILL;
 
 	std::vector<std::string> targetLoops;

@@ -68,6 +68,7 @@ class ParsedTraceContainer {
 	std::string getElementPtrFileName;
 	std::string prevBasicBlockFileName;
 	std::string currBasicBlockFileName;
+	std::string resultSizeFileName;
 
 	gzFile funcFile;
 	gzFile instIDFile;
@@ -76,6 +77,7 @@ class ParsedTraceContainer {
 	gzFile getElementPtrFile;
 	gzFile prevBasicBlockFile;
 	gzFile currBasicBlockFile;
+	gzFile resultSizeFile;
 
 	std::vector<std::string> funcList;
 	std::vector<std::string> instIDList;
@@ -84,6 +86,7 @@ class ParsedTraceContainer {
 	std::unordered_map<int, std::pair<std::string, int64_t>> getElementPtrList;
 	std::vector<std::string> prevBasicBlockList;
 	std::vector<std::string> currBasicBlockList;
+	std::unordered_map<int, unsigned> resultSizeList;
 
 	bool compressed;
 	bool keepAliveRead;
@@ -109,6 +112,7 @@ public:
 	void appendToGetElementPtrList(int key, std::string elem, int64_t elem2);
 	void appendToPrevBBList(std::string elem);
 	void appendToCurrBBList(std::string elem);
+	void appendToResultSizeList(int key, unsigned elem);
 
 	const std::vector<std::string> &getFuncList();
 	const std::vector<std::string> &getInstIDList();
@@ -117,6 +121,7 @@ public:
 	const std::unordered_map<int, std::pair<std::string, int64_t>> &getGetElementPtrList();
 	const std::vector<std::string> &getPrevBBList();
 	const std::vector<std::string> &getCurrBBList();
+	const std::unordered_map<int, unsigned> &getResultSizeList();
 };
 
 class DDDGBuilder {

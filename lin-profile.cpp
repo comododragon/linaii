@@ -125,6 +125,8 @@ const std::string helpMessage =
 	"                   --fno-ft           : disable FPU threshold optimisation\n"
 	"                   --f-es             : enable extra-scalar\n"
 	"                   --f-rwrwm          : enable RWRW memory\n"
+	"Other flags:\n"
+	"                   --f-argres         : consider resource used by function arguments\n"
 	"\n"
 	"For bug reporting, please file a github issue at https://github.com/comododragon/linaii\n";
 
@@ -256,6 +258,7 @@ void parseInputArguments(int argc, char **argv) {
 	args.fNoFPUThresOpt = false;
 	args.fExtraScalar = false;
 	args.fRWRWMem = false;
+	args.fArgRes = false;
 	// XXX: Does not seem to make sense for me right now to leave this deactivated
 	// since according to Vivado reports, the load latency is in fact 2
 	args.fILL = true;
@@ -301,6 +304,7 @@ void parseInputArguments(int argc, char **argv) {
 			{"fno-ft", no_argument, 0, 0xF14},
 			{"f-es", no_argument, 0, 0xF15},
 			{"f-rwrwm", no_argument, 0, 0xF16},
+			{"f-argres", no_argument, 0, 0xF17},
 			{0, 0, 0, 0}
 		};
 		int optionIndex = 0;
@@ -457,6 +461,9 @@ void parseInputArguments(int argc, char **argv) {
 				break;
 			case 0xF16:
 				args.fRWRWMem = true;
+				break;
+			case 0xF17:
+				args.fArgRes = true;
 				break;
 		}
 	}

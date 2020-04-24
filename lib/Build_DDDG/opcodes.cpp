@@ -2,7 +2,18 @@
 #include "profile_h/opcodes.h"
 
 bool isAssociative(unsigned microop) {
-	return LLVM_IR_Add == microop;
+	switch(microop) {
+		case LLVM_IR_Add:
+#ifdef BYTE_OPS
+		case LLVM_IR_Add8:
+#endif
+#ifdef CUSTOM_OPS
+		case LLVM_IR_APAdd:	
+#endif
+			return true;
+		default:
+			return false;
+	}
 }
 
 bool isFAssociative(unsigned microop) {
@@ -35,6 +46,25 @@ bool isComputeOp(unsigned microop) {
 		case LLVM_IR_Xor:
 		case LLVM_IR_ICmp:
 		case LLVM_IR_FCmp:
+#ifdef BYTE_OPS
+		case LLVM_IR_Add8:
+		case LLVM_IR_Sub8:
+		case LLVM_IR_Mul8:
+		case LLVM_IR_UDiv8:
+		case LLVM_IR_SDiv8:
+		case LLVM_IR_Shl8:
+		case LLVM_IR_LShr8:
+		case LLVM_IR_AShr8:
+		case LLVM_IR_And8:
+		case LLVM_IR_Or8:
+		case LLVM_IR_Xor8:
+#endif
+#ifdef CUSTOM_OPS
+		case LLVM_IR_APAdd:
+		case LLVM_IR_APSub:
+		case LLVM_IR_APMul:
+		case LLVM_IR_APDiv:
+#endif
 			return true;
 		default:
 			return false;
@@ -57,6 +87,14 @@ bool isBitOp(unsigned microop) {
 		case LLVM_IR_And:
 		case LLVM_IR_Or:
 		case LLVM_IR_Xor:
+#ifdef BYTE_OPS
+		case LLVM_IR_Shl8:
+		case LLVM_IR_LShr8:
+		case LLVM_IR_AShr8:
+		case LLVM_IR_And8:
+		case LLVM_IR_Or8:
+		case LLVM_IR_Xor8:
+#endif
 			return true;
 		default:
 			return false;
@@ -102,6 +140,15 @@ bool isMulOp(unsigned microop) {
 		case LLVM_IR_SDiv:
 		case LLVM_IR_URem:
 		case LLVM_IR_SRem:
+#ifdef BYTE_OPS
+		case LLVM_IR_Mul8:
+		case LLVM_IR_UDiv8:
+		case LLVM_IR_SDiv8:
+#endif
+#ifdef CUSTOM_OPS
+		case LLVM_IR_APMul:
+		case LLVM_IR_APDiv:
+#endif
 			return true;
 		default:
 			return false;
@@ -109,7 +156,21 @@ bool isMulOp(unsigned microop) {
 }
 
 bool isAddOp(unsigned microop) {
-	return LLVM_IR_Add == microop || LLVM_IR_Sub == microop;
+	switch(microop) {
+		case LLVM_IR_Add:
+		case LLVM_IR_Sub:
+#ifdef BYTE_OPS
+		case LLVM_IR_Add8:
+		case LLVM_IR_Sub8:
+#endif
+#ifdef CUSTOM_OPS
+		case LLVM_IR_APAdd:
+		case LLVM_IR_APSub:
+#endif
+			return true;
+		default:
+			return false;
+	}
 }
 
 bool isFAddOp(unsigned microop) {
@@ -135,6 +196,12 @@ bool isFCmpOp(unsigned microop) {
 bool isFloatOp(unsigned microop) {
 	return LLVM_IR_FAdd == microop || LLVM_IR_FSub == microop || LLVM_IR_FMul == microop || LLVM_IR_FDiv == microop;
 }
+
+#ifdef CUSTOM_OPS
+bool isCustomOp(unsigned microop) {
+	return LLVM_IR_APAdd == microop || LLVM_IR_APSub == microop || LLVM_IR_APMul == microop || LLVM_IR_APDiv == microop;
+}
+#endif
 
 bool isDDRMemoryOp(unsigned microop) {
 	return LLVM_IR_DDRReadReq == microop ||

@@ -206,6 +206,24 @@ void BaseDatapath::postDDDGBuild() {
 
 		functionNames.insert(functionName);
 	}
+
+#ifdef BYTE_OPS
+	for(auto &it : PC.getResultSizeList()) {
+		if(8 == it.second) {
+			if(LLVM_IR_Add == microops.at(it.first)) microops[it.first] = LLVM_IR_Add8;
+			if(LLVM_IR_Sub == microops.at(it.first)) microops[it.first] = LLVM_IR_Sub8;
+			if(LLVM_IR_Mul == microops.at(it.first)) microops[it.first] = LLVM_IR_Mul8;
+			if(LLVM_IR_UDiv == microops.at(it.first)) microops[it.first] = LLVM_IR_UDiv8;
+			if(LLVM_IR_SDiv == microops.at(it.first)) microops[it.first] = LLVM_IR_SDiv8;
+			if(LLVM_IR_And == microops.at(it.first)) microops[it.first] = LLVM_IR_And8;
+			if(LLVM_IR_Or == microops.at(it.first)) microops[it.first] = LLVM_IR_Or8;
+			if(LLVM_IR_Xor == microops.at(it.first)) microops[it.first] = LLVM_IR_Xor8;
+			if(LLVM_IR_Shl == microops.at(it.first)) microops[it.first] = LLVM_IR_Shl8;
+			if(LLVM_IR_AShr == microops.at(it.first)) microops[it.first] = LLVM_IR_AShr8;
+			if(LLVM_IR_LShr == microops.at(it.first)) microops[it.first] = LLVM_IR_LShr8;
+		}
+	}
+#endif
 }
 
 void BaseDatapath::refreshDDDG() {
@@ -630,6 +648,11 @@ uint64_t BaseDatapath::fpgaEstimation() {
 				case HardwareProfile::LIMITED_BY_FDIV:
 					P.addElement<std::string>("Units limited by DSP usage", "fdiv");
 					break;
+#ifdef CONSTRAIN_INT_OP
+				case HardwareProfile::LIMITED_BY_INTOP:
+					P.addElement<std::string>("Units limited by DSP usage", "int op");
+					break;
+#endif
 			}
 		}
 	}
@@ -654,10 +677,17 @@ void BaseDatapath::removeInductionDependencies() {
 		std::string nodeInstID = instID.at(nodeID);
 
 		if(nodeInstID.find("indvars") != std::string::npos) {
+#ifndef BYTE_OPS
 			if(LLVM_IR_Add == microops.at(nodeID))
 				microops.at(nodeID) = LLVM_IR_IndexAdd;
 			else if(LLVM_IR_Sub == microops.at(nodeID))
 				microops.at(nodeID) = LLVM_IR_IndexSub;
+#else
+			if(LLVM_IR_Add == microops.at(nodeID) || LLVM_IR_Add8 == microops.at(nodeID))
+				microops.at(nodeID) = LLVM_IR_IndexAdd;
+			else if(LLVM_IR_Sub == microops.at(nodeID) || LLVM_IR_Sub8 == microops.at(nodeID))
+				microops.at(nodeID) = LLVM_IR_IndexSub;
+#endif
 		}
 		else {
 			InEdgeIterator inEdgei, inEdgeEnd;
@@ -668,10 +698,17 @@ void BaseDatapath::removeInductionDependencies() {
 				if(std::string::npos == parentInstID.find("indvars") && !isIndexOp(microops.at(parentID)))
 					continue;
 
+#ifndef BYTE_OPS
 				if(LLVM_IR_Add == microops.at(nodeID))
 					microops.at(nodeID) = LLVM_IR_IndexAdd;
 				else if(LLVM_IR_Sub == microops.at(nodeID))
 					microops.at(nodeID) = LLVM_IR_IndexSub;
+#else
+				if(LLVM_IR_Add == microops.at(nodeID) || LLVM_IR_Add8 == microops.at(nodeID))
+					microops.at(nodeID) = LLVM_IR_IndexAdd;
+				else if(LLVM_IR_Sub == microops.at(nodeID) || LLVM_IR_Sub8 == microops.at(nodeID))
+					microops.at(nodeID) = LLVM_IR_IndexSub;
+#endif
 			}
 		}
 	}
@@ -1449,7 +1486,7 @@ std::pair<uint64_t, double> BaseDatapath::rcScheduling() {
 
 	RCScheduler rcSched(
 		loopName, loopLevel, datapathType,
-		microops, graph, numOfTotalNodes, nameToVertex, vertexToName,
+		microops, PC.getResultSizeList(), graph, numOfTotalNodes, nameToVertex, vertexToName,
 		*profile, baseAddress, asapScheduledTime, alapScheduledTime, rcScheduledTime
 	);
 	std::pair<uint64_t, double> rcPair = rcSched.schedule();
@@ -1471,7 +1508,7 @@ std::tuple<std::string, uint64_t> BaseDatapath::calculateResIIMem() {
 
 std::tuple<std::string, uint64_t> BaseDatapath::calculateResIIMemPort() {
 	const ConfigurationManager::arrayInfoCfgMapTy arrayInfoCfgMap = CM.getArrayInfoCfgMap();
-	const std::map<std::string, std::tuple<uint64_t, uint64_t, uint64_t>> &arrayConfig = profile->arrayGetConfig();
+	const std::map<std::string, std::tuple<uint64_t, uint64_t, uint64_t, unsigned>> &arrayConfig = profile->arrayGetConfig();
 	// Boolean flag is false for onchip transactions, true for offchip
 	std::map<std::string, uint64_t> arrayPartitionToResII;
 	std::map<std::string, bool> isArrayOffchip;
@@ -2043,6 +2080,11 @@ void BaseDatapath::dumpSummary(
 				case HardwareProfile::LIMITED_BY_FDIV:
 					unitName = "fdiv";
 					break;
+#ifdef CONSTRAIN_INT_OP
+				case HardwareProfile::LIMITED_BY_INTOP:
+					unitName = "int op";
+					break;
+#endif
 			}
 
 			if(!anyFound) {
@@ -2114,13 +2156,13 @@ void BaseDatapath::dumpGraph(bool isOptimised) {
 
 BaseDatapath::RCScheduler::RCScheduler(
 	const std::string loopName, const unsigned loopLevel, const unsigned datapathType,
-	const std::vector<int> &microops,
+	const std::vector<int> &microops, const std::unordered_map<int, unsigned> &resultSizeList,
 	const Graph &graph, unsigned numOfTotalNodes,
 	const std::unordered_map<unsigned, Vertex> &nameToVertex, const VertexNameMap &vertexToName,
 	HardwareProfile &profile, const std::unordered_map<int, std::pair<std::string, int64_t>> &baseAddress,
 	const std::vector<uint64_t> &asap, const std::vector<uint64_t> &alap, std::vector<uint64_t> &rc
 ) :
-	microops(microops),
+	microops(microops), resultSizeList(resultSizeList),
 	graph(graph), numOfTotalNodes(numOfTotalNodes),
 	nameToVertex(nameToVertex), vertexToName(vertexToName),
 	profile(profile), baseAddress(baseAddress),
@@ -2232,6 +2274,9 @@ std::pair<uint64_t, double> BaseDatapath::RCScheduler::schedule() {
 		if(!(args.fNoTCS))
 			tcSched.clearFinishedNodes();
 
+		// Clear list of live results
+		liveOps.clear();
+
 		// Nodes must be executed only once per clock tick. These lists hold which nodes were already executed
 		fAddExecuted.clear();
 		fSubExecuted.clear();
@@ -2272,6 +2317,13 @@ std::pair<uint64_t, double> BaseDatapath::RCScheduler::schedule() {
 				}
 			}
 		}
+
+		// Live ops are considered live at the end when there are still dependent nodes on this result
+		// that weren't allocated in this cycle. We filter out from liveOps all results that are not
+		// going to be used again in the following cycles
+		filterOutDeadOps();
+		// All alive results are then allocated to registers
+		profile.regStoreLiveOps(liveOps, resultSizeList);
 
 		// Release pipelined functional units for next clock tick
 		profile.pipelinedRelease();
@@ -2428,6 +2480,33 @@ void BaseDatapath::RCScheduler::pushReady(unsigned nodeID, uint64_t tick) {
 		case LLVM_IR_Mul:
 		case LLVM_IR_UDiv:
 		case LLVM_IR_SDiv:
+#ifdef CONSTRAIN_INT_OP
+		case LLVM_IR_And:
+		case LLVM_IR_Or:
+		case LLVM_IR_Xor:
+		case LLVM_IR_Shl:
+		case LLVM_IR_AShr:
+		case LLVM_IR_LShr:
+#ifdef BYTE_OPS
+		case LLVM_IR_Add8:
+		case LLVM_IR_Sub8:
+		case LLVM_IR_Mul8:
+		case LLVM_IR_UDiv8:
+		case LLVM_IR_SDiv8:
+		case LLVM_IR_And8:
+		case LLVM_IR_Or8:
+		case LLVM_IR_Xor8:
+		case LLVM_IR_Shl8:
+		case LLVM_IR_AShr8:
+		case LLVM_IR_LShr8:
+#endif
+#ifdef CUSTOM_OPS
+		case LLVM_IR_APAdd:
+		case LLVM_IR_APSub:
+		case LLVM_IR_APMul:
+		case LLVM_IR_APDiv:
+#endif
+#endif
 			intOpReady.push_back(std::make_pair(nodeID, tick));
 			break;
 		case LLVM_IR_Call:
@@ -2508,15 +2587,17 @@ void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &sel
 	if(ready.size()) {
 		selected.clear();
 
-		// XXX: Please note that if we start constraining these resources (i.e. tryAllocateOp might start returning false),
-		// We should remove the breaks from timing and resource contention. Also, the iterating loop should also be slightly
-		// modified. Please check trySelect() for DDR operations for more info, at it has the same characteristic.
-
 		// Sort nodes by their ALAP, smallest first (urgent nodes first)
 		ready.sort(prioritiseSmallerALAP);
+#ifdef CONSTRAIN_INT_OP
+		for(auto it = ready.begin(); it != ready.end();) {
+			bool iteratorWasInvalidated = false;
+			unsigned nodeID = it->first;
+#else
 		size_t initialReadySize = ready.size();
 		for(unsigned i = 0; i < initialReadySize; i++) {
 			unsigned nodeID = ready.front().first;
+#endif
 
 			// If allocation is successful (i.e. there is one operation unit available), select this operation
 			// If timing-constrained scheduling is enabled, allocation is not yet performed, only attempted
@@ -2541,19 +2622,36 @@ void BaseDatapath::RCScheduler::trySelect(nodeTickTy &ready, selectedListTy &sel
 						criticalPathAllocated = true;
 
 					selected.push_back(nodeID);
+#ifdef CONSTRAIN_INT_OP
+					it = ready.erase(it);
+					iteratorWasInvalidated = true;
+#else
 					ready.pop_front();
+#endif
 					readyChanged = true;
 					rc[nodeID] = cycleTick;
 				}
+#ifdef CONSTRAIN_INT_OP
+				// Timing contention, not able to allocate now (but the next, less-prioritised node might allocate, so no break here)
+#else
 				// Timing contention, not able to allocate now
 				else {
 					break;
 				}
+#endif
 			}
+#ifdef CONSTRAIN_INT_OP
+			// Resource contention, not able to allocate now (but the next, less-prioritised node might allocate, so no break here)
+
+			// Increment logic of iterator depends whether the iterator was invalidated by an erase (and later reconstructed)
+			if(!iteratorWasInvalidated)
+				it++;
+#else
 			// Resource contention, not able to allocate now
 			else {
 				break;
 			}
+#endif
 		}
 	}
 }
@@ -2934,6 +3032,7 @@ void BaseDatapath::RCScheduler::tryRelease(executingMapTy &executing, executedLi
 
 void BaseDatapath::RCScheduler::setScheduledAndAssignReadyChildren(unsigned nodeID) {
 	scheduledNodeCount++;
+	liveOps.insert(nodeID);
 
 	OutEdgeIterator outEdgei, outEdgeEnd;
 	for(std::tie(outEdgei, outEdgeEnd) = boost::out_edges(nameToVertex.at(nodeID), graph); outEdgei != outEdgeEnd; outEdgei++) {
@@ -2945,6 +3044,37 @@ void BaseDatapath::RCScheduler::setScheduledAndAssignReadyChildren(unsigned node
 		if(!numParents[childNodeID] && !finalIsolated[childNodeID])
 			pushReady(childNodeID, alap[childNodeID]);
 	}
+}
+
+void BaseDatapath::RCScheduler::filterOutDeadOps() {
+	std::set<unsigned> filteredLiveOps;
+	std::set<unsigned> executing;
+	for(auto &it : fAddExecuting) executing.insert(it.first);
+	for(auto &it : fSubExecuting) executing.insert(it.first);
+	for(auto &it : fMulExecuting) executing.insert(it.first);
+	for(auto &it : fDivExecuting) executing.insert(it.first);
+	for(auto &it : fCmpExecuting) executing.insert(it.first);
+	for(auto &it : loadExecuting) executing.insert(it.first);
+	for(auto &it : storeExecuting) executing.insert(it.first);
+	for(auto &it : intOpExecuting) executing.insert(it.first);
+	for(auto &it : callExecuting) executing.insert(it.first);
+
+	// For each node, check its child to see how many executed or were allocated this cycle as well
+	// If all of them were allocated, this result is dead
+	for(auto &it : liveOps) {
+		if(profile.canBeLiveOp(microops.at(it))) {
+			OutEdgeIterator outEdgei, outEdgeEnd;
+			for(tie(outEdgei, outEdgeEnd) = boost::out_edges(nameToVertex.at(it), graph); outEdgei != outEdgeEnd; outEdgei++) {
+				unsigned childNode = vertexToName[boost::target(*outEdgei, graph)];
+				if(!(liveOps.count(childNode) || executing.count(childNode))) {
+					filteredLiveOps.insert(it);
+					break;
+				}
+			}
+		}
+	}
+
+	liveOps.swap(filteredLiveOps);
 }
 
 BaseDatapath::TCScheduler::TCScheduler(
@@ -3058,6 +3188,13 @@ template<class VE> void BaseDatapath::ColorWriter::operator()(std::ostream &out,
 		}
 
 		int op = opcodes.at(nodeID);
+
+#ifdef CUSTOM_OPS
+		if(isCustomOp(op)) {
+			out << "[" << colorString << " label=\"{" << nodeID << " | " << reverseOpcodeMap.at(op) << "}\"]";
+		}
+		else
+#endif
 		if(isBranchOp(op)) {
 			out << "[style=filled " << colorString << " label=\"{" << nodeID << " | br}\"]";
 		}

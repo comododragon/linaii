@@ -33,7 +33,18 @@ extern std::ofstream debugFile;
 #define PROGRESSIVE_TRACE_CURSOR
 
 // If enabled, sanity checks are performed in the multipath vector
-#define CHECK_MULTIPATH_STATE
+//#define CHECK_MULTIPATH_STATE
+
+// Enable resource contraints for int operations
+#define CONSTRAIN_INT_OP
+
+// Enable byte operations: int ops that are identified with result of 8-bits are allocated to 8-bit FUs
+// (requires CONSTRAIN_INT_OP)
+//#define BYTE_OPS
+
+// Enable custom ops: specific tagged calls are converted to functional units directly according to internal Lina structures
+// (requires CONSTRAIN_INT_OP)
+//#define CUSTOM_OPS
 
 #include <fstream>
 #include <list>
@@ -169,9 +180,15 @@ public:
 			ARRAY_TYPE_ONCHIP,
 			ARRAY_TYPE_OFFCHIP
 		};
+		enum {
+			ARRAY_SCOPE_ARG,
+			ARRAY_SCOPE_ROVAR,
+			ARRAY_SCOPE_RWVAR
+		};
 		uint64_t totalSize;
 		size_t wordSize;
 		unsigned type;
+		unsigned scope;
 	};
 	typedef std::map<std::string, arrayInfoCfgTy> arrayInfoCfgMapTy;
 
@@ -214,7 +231,11 @@ private:
 	void appendToUnrollingCfg(std::string funcName, unsigned loopNo, unsigned loopLevel, int lineNo, uint64_t unrollFactor);
 	void appendToPartitionCfg(unsigned type, std::string baseAddr, uint64_t size, size_t wordSize, uint64_t pFactor);
 	void appendToCompletePartitionCfg(std::string baseAddr, uint64_t size);
-	void appendToArrayInfoCfg(std::string arrayName, uint64_t totalSize, size_t wordSize, unsigned type = arrayInfoCfgTy::ARRAY_TYPE_ONCHIP);
+	void appendToArrayInfoCfg(
+		std::string arrayName, uint64_t totalSize, size_t wordSize,
+		unsigned type = arrayInfoCfgTy::ARRAY_TYPE_ONCHIP,
+		unsigned scope = arrayInfoCfgTy::ARRAY_SCOPE_ARG
+	);
 
 	template <class T>
 	void appendToGlobalCfg(unsigned name, T value);

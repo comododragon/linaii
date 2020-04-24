@@ -65,6 +65,27 @@
 #define LLVM_IR_IndexSub            102
 #define LLVM_IR_SilentStore         101
 
+#ifdef CUSTOM_OPS
+#define LLVM_IR_APAdd 0xe6
+#define LLVM_IR_APSub 0xe7
+#define LLVM_IR_APMul 0xe8
+#define LLVM_IR_APDiv 0xe9
+#endif
+
+#ifdef BYTE_OPS
+#define LLVM_IR_Add8                0xea
+#define LLVM_IR_Sub8                0xeb
+#define LLVM_IR_Mul8                0xec
+#define LLVM_IR_UDiv8               0xed
+#define LLVM_IR_SDiv8               0xee
+#define LLVM_IR_And8                0xef
+#define LLVM_IR_Or8                 0xf0
+#define LLVM_IR_Xor8                0xf1
+#define LLVM_IR_Shl8                0xf2
+#define LLVM_IR_AShr8               0xf3
+#define LLVM_IR_LShr8               0xf4
+#endif
+
 // Pseudo-opcodes for offchip transactions
 #define LLVM_IR_DDRReadReq 0xf5
 #define LLVM_IR_DDRRead 0xf6
@@ -79,6 +100,15 @@
 
 // Pseudo-opcode for dummy transaction
 #define LLVM_IR_Dummy 0xff
+
+#ifdef CUSTOM_OPS
+static const std::unordered_map<std::string, unsigned> customOpsMap = {
+	{"AP_ADD", LLVM_IR_APAdd},
+	{"AP_SUB", LLVM_IR_APSub},
+	{"AP_MUL", LLVM_IR_APMul},
+	{"AP_DIV", LLVM_IR_APDiv}
+};
+#endif
 
 static const std::map<unsigned, std::string> reverseOpcodeMap = {
 	{0, "move"},
@@ -145,6 +175,27 @@ static const std::map<unsigned, std::string> reverseOpcodeMap = {
 	{102, "indexsub"},
 	{101, "silentstore"},
 
+#ifdef CUSTOM_OPS
+	{0xe6, "AP_ADD"},
+	{0xe7, "AP_SUB"},
+	{0xe8, "AP_MUL"},
+	{0xe9, "AP_DIV"},
+#endif
+
+#ifdef BYTE_OPS
+	{0xea, "add8"},
+	{0xeb, "sub8"},
+	{0xec, "mul8"},
+	{0xed, "udiv8"},
+	{0xee, "sdiv8"},
+	{0xef, "and8"},
+	{0xf0, "or8"},
+	{0xf1, "xor8"},
+	{0xf2, "shl8"},
+	{0xf3, "ashr8"},
+	{0xf4, "lshr8"},
+#endif
+
 	{0xf5, "ddrreadreq"},
 	{0xf6, "ddrread"},
 	{0xf7, "ddrwritereq"},
@@ -182,6 +233,9 @@ bool isFMulOp(unsigned microop);
 bool isFDivOp(unsigned microop);
 bool isFCmpOp(unsigned microop);
 bool isFloatOp(unsigned microop);
+#ifdef CUSTOM_OPS
+bool isCustomOp(unsigned microop);
+#endif
 
 bool isDDRMemoryOp(unsigned microop);
 bool isDDRReadOp(unsigned microop);

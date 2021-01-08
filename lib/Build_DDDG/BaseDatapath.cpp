@@ -3239,6 +3239,12 @@ template<class VE> void BaseDatapath::ColorWriter::operator()(std::ostream &out,
 		else if(isCallOp(op)) {
 			out << "[" << colorString << " label=\"{" << nodeID << " | call}\"]";
 		}
+		else if(isDDRReadOp(getNonSilentOpcode(op))) {
+			out << "[shape=polygon sides=5 peripheries=2 " << colorString << " label=\"{" << nodeID << " | " << reverseOpcodeMap.at(op) << "}\"]";
+		}
+		else if(isDDRWriteOp(getNonSilentOpcode(op))) {
+			out << "[shape=polygon sides=4 peripheries=2 " << colorString << " label=\"{" << nodeID << " | " << reverseOpcodeMap.at(op) << "}\"]";
+		}
 		else {
 			out << "[" << colorString << " label=\"{" << nodeID << " | " << reverseOpcodeMap.at(op) << "}\"]";
 		}

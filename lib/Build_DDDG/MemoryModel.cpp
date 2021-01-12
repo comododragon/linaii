@@ -60,11 +60,11 @@ void Reporter::currentHeader() {
 }
 
 std::string Reporter::translateDatapathType(unsigned datapathType) {
-	if(BaseDatapath::NON_PERFECT_BEFORE == datapathType)
+	if(DatapathType::NON_PERFECT_BEFORE == datapathType)
 		return "at region before the loop nest";
-	else if(BaseDatapath::NON_PERFECT_AFTER == datapathType)
+	else if(DatapathType::NON_PERFECT_AFTER == datapathType)
 		return "at region after the loop nest";
-	else if(BaseDatapath::NON_PERFECT_BETWEEN == datapathType)
+	else if(DatapathType::NON_PERFECT_BETWEEN == datapathType)
 		return "at region between unrolled loop nests";
 	else
 		return "within the loop nest";
@@ -321,7 +321,7 @@ void XilinxZCUMemoryModel::preprocess(std::string loopName, ConfigurationManager
 						// There is no need to block anything from the deepest level
 						if(loopLevel < LpName2numLevelMap.at(loopName)) {
 							// Perform global out-burst analysis using context-imported information
-							if(BaseDatapath::NON_PERFECT_BEFORE == it.datapathType || BaseDatapath::NON_PERFECT_AFTER == it.datapathType) {
+							if(DatapathType::NON_PERFECT_BEFORE == it.datapathType || DatapathType::NON_PERFECT_AFTER == it.datapathType) {
 								blockInvalidOutBursts(loopLevel, it.datapathType, it.loadOutBurstsFound, &XilinxZCUMemoryModel::analyseLoadOutBurstFeasabilityGlobal);
 								blockInvalidOutBursts(loopLevel, it.datapathType, it.storeOutBurstsFound, &XilinxZCUMemoryModel::analyseStoreOutBurstFeasabilityGlobal);
 							}
@@ -441,7 +441,7 @@ bool XilinxZCUMemoryModel::analyseLoadOutBurstFeasabilityGlobal(std::string arra
 			if(it.loopLevel == loopLevel && datapathType == it.datapathType)
 				continue;
 			// Also ignore BETWEEN DDDGs
-			if(BaseDatapath::NON_PERFECT_BETWEEN == it.datapathType)
+			if(DatapathType::NON_PERFECT_BETWEEN == it.datapathType)
 				continue;
 
 			if(ddrBanking) {
@@ -475,7 +475,7 @@ bool XilinxZCUMemoryModel::analyseLoadOutBurstFeasabilityGlobal(std::string arra
 			if(it.loopLevel == loopLevel && datapathType == it.datapathType)
 				continue;
 			// Also ignore BETWEEN DDDGs
-			if(BaseDatapath::NON_PERFECT_BETWEEN == it.datapathType)
+			if(DatapathType::NON_PERFECT_BETWEEN == it.datapathType)
 				continue;
 
 			// No reads for the same array
@@ -508,7 +508,7 @@ bool XilinxZCUMemoryModel::analyseStoreOutBurstFeasabilityGlobal(std::string arr
 			if(it.loopLevel == loopLevel && datapathType == it.datapathType)
 				continue;
 			// Also ignore BETWEEN DDDGs
-			if(BaseDatapath::NON_PERFECT_BETWEEN == it.datapathType)
+			if(DatapathType::NON_PERFECT_BETWEEN == it.datapathType)
 				continue;
 
 			if(ddrBanking) {
@@ -542,7 +542,7 @@ bool XilinxZCUMemoryModel::analyseStoreOutBurstFeasabilityGlobal(std::string arr
 			if(it.loopLevel == loopLevel && datapathType == it.datapathType)
 				continue;
 			// Also ignore BETWEEN DDDGs
-			if(BaseDatapath::NON_PERFECT_BETWEEN == it.datapathType)
+			if(DatapathType::NON_PERFECT_BETWEEN == it.datapathType)
 				continue;
 
 			// No writes for the same array
@@ -804,7 +804,7 @@ std::unordered_map<std::string, outBurstInfoTy> XilinxZCUMemoryModel::findOutBur
 	// same instruction at the map. 
 	// NOTE: This is only applicable to DDDGs where unroll actually causes node replication (i.e. the innermost).
 	//       It is not the case for non-perfect DDDGs.
-	unsigned adjustFactor = (BaseDatapath::NORMAL_LOOP == datapath->getDatapathType())?
+	unsigned adjustFactor = (DatapathType::NORMAL_LOOP == datapath->getDatapathType())?
 		loopName2levelUnrollVecMap.at(datapath->getTargetLoopName())[datapath->getTargetLoopLevel() - 1] : 1;
 
 	for(auto &it : burstedNodes) {

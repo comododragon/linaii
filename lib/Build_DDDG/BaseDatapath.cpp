@@ -35,7 +35,7 @@ BaseDatapath::BaseDatapath(
 	bool enablePipelining, uint64_t asapII
 ) :
 	kernelName(kernelName), CM(CM), CtxM(CtxM), summaryFile(summaryFile),
-	loopName(loopName), loopLevel(loopLevel), loopUnrollFactor(loopUnrollFactor), datapathType(NORMAL_LOOP),
+	loopName(loopName), loopLevel(loopLevel), loopUnrollFactor(loopUnrollFactor), datapathType(DatapathType::NORMAL_LOOP),
 	enablePipelining(enablePipelining), asapII(asapII), PC(kernelName)
 {
 	builder = nullptr;
@@ -591,22 +591,28 @@ uint64_t BaseDatapath::fpgaEstimation() {
 	maxII = (resII > recII)? resII : recII;
 
 	P.clear();
-	profile->fillPack(P);
+	profile->fillPack(P, loopLevel, datapathType, enablePipelining? maxII : 0);
 	for(auto &it : P.getStructure()) {
-		VERBOSE_PRINT(errs() << "\t" << std::get<0>(it) << ": ");
+		std::string name = std::get<0>(it);
+
+		// Names starting with "_" are not printed (used for internal calculations)
+		if('_' == name[0])
+			continue;
+
+		VERBOSE_PRINT(errs() << "\t" << name << ": ");
 
 		switch(std::get<2>(it)) {
 			case Pack::TYPE_UNSIGNED:
-				VERBOSE_PRINT(errs() << std::to_string(P.getElements<uint64_t>(std::get<0>(it))[0]) << "\n");
+				VERBOSE_PRINT(errs() << std::to_string(P.getElements<uint64_t>(name)[0]) << "\n");
 				break;
 			case Pack::TYPE_SIGNED:
-				VERBOSE_PRINT(errs() << std::to_string(P.getElements<int64_t>(std::get<0>(it))[0]) << "\n");
+				VERBOSE_PRINT(errs() << std::to_string(P.getElements<int64_t>(name)[0]) << "\n");
 				break;
 			case Pack::TYPE_FLOAT:
-				VERBOSE_PRINT(errs() << std::to_string(P.getElements<float>(std::get<0>(it))[0]) << "\n");
+				VERBOSE_PRINT(errs() << std::to_string(P.getElements<float>(name)[0]) << "\n");
 				break;
 			case Pack::TYPE_STRING:
-				VERBOSE_PRINT(errs() << P.getElements<std::string>(std::get<0>(it))[0] << "\n");
+				VERBOSE_PRINT(errs() << P.getElements<std::string>(name)[0] << "\n");
 				break;
 		}
 	}
@@ -623,6 +629,39 @@ uint64_t BaseDatapath::fpgaEstimation() {
 		VERBOSE_PRINT(errs() << "\tNumber of repeated stores detected: " << std::to_string(repeatedStoresRemoved) << "\n");
 
 	uint64_t numCycles = getLoopTotalLatency(maxII);
+
+	// Number of loads and stores are calculated for resource estimation
+	unsigned nStore = 0, nLoad = 0;
+	VertexIterator vi, viEnd;
+	for(std::tie(vi, viEnd) = boost::vertices(graph); vi != viEnd; vi++) {
+		int nodeMicroop = microops.at(vertexToName[*vi]);
+
+		if(isStoreOp(nodeMicroop)) nStore++;
+		if(isLoadOp(nodeMicroop)) nLoad++;
+	}
+
+	loopName2levelUnrollVecMapTy::iterator found = loopName2levelUnrollVecMap.find(loopName);
+	assert(found != loopName2levelUnrollVecMap.end() && "Could not find loop in loopName2levelUnrollVecMap");
+	std::vector<unsigned> targetUnroll = found->second;
+	// Accumulated unroll factor is used to multiply the load/stores according to unroll factors
+	// This factor is dependent on the type of DDDG:
+	// - If normal loop or before/ater DDDG, we multiply by all above unroll factors (excluding this loop level)
+	// - If a between DDDG, we multiply by all above unroll factors and by this loop level unroll factor - 1
+	uint64_t accUnrollFactor = (DatapathType::NON_PERFECT_BETWEEN == datapathType)? (targetUnroll.at(loopLevel - 1) - 1) : 1;
+	for(unsigned i = loopLevel - 2; i + 1; i--)
+		accUnrollFactor *= targetUnroll.at(i);
+
+	P.addDescriptor("_nStore", Pack::MERGE_MULSUM, Pack::TYPE_UNSIGNED);
+	P.addElement<uint64_t>("_nStore", nStore);
+	P.addElement<uint64_t>("_nStore", accUnrollFactor);
+	P.addDescriptor("_nLoad", Pack::MERGE_MULSUM, Pack::TYPE_UNSIGNED);
+	P.addElement<uint64_t>("_nLoad", nLoad);
+	P.addElement<uint64_t>("_nLoad", accUnrollFactor);
+
+	P.addDescriptor("_tRcIL", Pack::MERGE_SUM, Pack::TYPE_UNSIGNED);
+	P.addElement<uint64_t>("_tRcIL", rcIL * accUnrollFactor);
+
+	// TODO Resource estimation is being performed in dumpSummary (not a very good place for this eh?)
 	dumpSummary(numCycles, std::get<0>(asapResult), achievedPeriod, maxII, resIIMem, resIIOp, recII);
 
 	P.addDescriptor("Achieved period", Pack::MERGE_MAX, Pack::TYPE_FLOAT);
@@ -656,8 +695,6 @@ uint64_t BaseDatapath::fpgaEstimation() {
 			}
 		}
 	}
-	// XXX: There is still missing reports for resII, resIIMem and resIIOp. I have to think on a better way of
-	// merging these values when multiple DDDGs are generated
 
 	if(!(args.fNoMMA))
 		memmodel->finishReport();
@@ -1424,22 +1461,28 @@ void BaseDatapath::alapScheduling(std::tuple<uint64_t, uint64_t> asapResult) {
 	std::map<uint64_t, std::set<unsigned>>().swap(minTimesNodesMap);
 
 	P.clear();
-	profile->fillPack(P);
+	profile->fillPack(P, loopLevel, datapathType, 0);
 	for(auto &it : P.getStructure()) {
-		VERBOSE_PRINT(errs() << "\t\t" << std::get<0>(it) << ": ");
+		std::string name = std::get<0>(it);
+
+		// Names starting with "_" are not printed (used for other purposes)
+		if('_' == name[0])
+			continue;
+
+		VERBOSE_PRINT(errs() << "\t\t" << name << ": ");
 
 		switch(std::get<2>(it)) {
 			case Pack::TYPE_UNSIGNED:
-				VERBOSE_PRINT(errs() << std::to_string(P.getElements<uint64_t>(std::get<0>(it))[0]) << "\n");
+				VERBOSE_PRINT(errs() << std::to_string(P.getElements<uint64_t>(name)[0]) << "\n");
 				break;
 			case Pack::TYPE_SIGNED:
-				VERBOSE_PRINT(errs() << std::to_string(P.getElements<int64_t>(std::get<0>(it))[0]) << "\n");
+				VERBOSE_PRINT(errs() << std::to_string(P.getElements<int64_t>(name)[0]) << "\n");
 				break;
 			case Pack::TYPE_FLOAT:
-				VERBOSE_PRINT(errs() << std::to_string(P.getElements<float>(std::get<0>(it))[0]) << "\n");
+				VERBOSE_PRINT(errs() << std::to_string(P.getElements<float>(name)[0]) << "\n");
 				break;
 			case Pack::TYPE_STRING:
-				VERBOSE_PRINT(errs() << P.getElements<std::string>(std::get<0>(it))[0] << "\n");
+				VERBOSE_PRINT(errs() << P.getElements<std::string>(name)[0] << "\n");
 				break;
 		}
 	}
@@ -1812,7 +1855,7 @@ uint64_t BaseDatapath::calculateRecII(uint64_t currAsapII) {
 				std::map<uint64_t, std::vector<unsigned>>::iterator found = asapToNodes.find(timeStamp);
 				while(asapToNodes.end() == found) {
 					found = asapToNodes.find(++timeStamp);
-					assert(timeStamp < currAsapII && "Did not find any critical path nodes in the timestamp window search");
+					assert(timeStamp <= currAsapII && "Did not find any critical path nodes in the timestamp window search");
 				}
 
 				maxLatency = 1;
@@ -2012,13 +2055,13 @@ void BaseDatapath::dumpSummary(
 	bool isFullBody = false;
 	*summaryFile << "DDDG type: ";
 	switch(datapathType) {
-		case NON_PERFECT_BEFORE:
+		case DatapathType::NON_PERFECT_BEFORE:
 			*summaryFile << "anterior part of loop body (before any nested loops)\n";
 			break;
-		case NON_PERFECT_AFTER:
+		case DatapathType::NON_PERFECT_AFTER:
 			*summaryFile << "posterior part of loop body (after any nested loops)\n";
 			break;
-		case NON_PERFECT_BETWEEN:
+		case DatapathType::NON_PERFECT_BETWEEN:
 			*summaryFile << "posterior + anterior (between unrolled iterations)\n";
 			break;
 		default:
@@ -2103,8 +2146,135 @@ void BaseDatapath::dumpSummary(
 		*summaryFile << "-----------------------------------------------------------------------\n";
 	}
 
+	/* XXX Resource estimation! */
+
+	// Finalise shared resources calculation
+	unsigned sharedFU = 0;
+	unsigned sharedDSP = 0;
+	unsigned sharedFF = 0;
+	unsigned sharedLUT = 0;
+#ifdef LEGACY_SEPARATOR
+	std::string value = P.mergeElements<Pack::resourceNodeTy>("_shared~fadd");
+#else
+	std::string value = P.mergeElements<Pack::resourceNodeTy>("_shared" GLOBAL_SEPARATOR "fadd");
+#endif
+	// Unpacking the values from the string. Each variable has 10 characters allocated
+	// I know this is ugly, please don't kill me...
+	sharedFU += stol(value.substr(0, 10));
+	sharedDSP += stol(value.substr(10, 10));
+	sharedFF += stol(value.substr(20, 10));
+	sharedLUT += stol(value.substr(30, 10));
+#ifdef LEGACY_SEPARATOR
+	value = P.mergeElements<Pack::resourceNodeTy>("_shared~fsub");
+#else
+	std::string value = P.mergeElements<Pack::resourceNodeTy>("_shared" GLOBAL_SEPARATOR "fsub");
+#endif
+	sharedFU += stol(value.substr(0, 10));
+	sharedDSP += stol(value.substr(10, 10));
+	sharedFF += stol(value.substr(20, 10));
+	sharedLUT += stol(value.substr(30, 10));
+#ifdef LEGACY_SEPARATOR
+	value = P.mergeElements<Pack::resourceNodeTy>("_shared~fmul");
+#else
+	std::string value = P.mergeElements<Pack::resourceNodeTy>("_shared" GLOBAL_SEPARATOR "fmul");
+#endif
+	sharedFU += stol(value.substr(0, 10));
+	sharedDSP += stol(value.substr(10, 10));
+	sharedFF += stol(value.substr(20, 10));
+	sharedLUT += stol(value.substr(30, 10));
+#ifdef LEGACY_SEPARATOR
+	value = P.mergeElements<Pack::resourceNodeTy>("_shared~fdiv");
+#else
+	std::string value = P.mergeElements<Pack::resourceNodeTy>("_shared" GLOBAL_SEPARATOR "fdiv");
+#endif
+	sharedFU += stol(value.substr(0, 10));
+	sharedDSP += stol(value.substr(10, 10));
+	sharedFF += stol(value.substr(20, 10));
+	sharedLUT += stol(value.substr(30, 10));
+
+	// Finalise unshared resources calculation
+	unsigned unsharedFU = 0;
+	unsigned unsharedDSP = 0;
+	unsigned unsharedFF = 0;
+	unsigned unsharedLUT = 0;
 	for(auto &it : P.getStructure()) {
-		*summaryFile << std::get<0>(it) << ": ";
+		std::string name = std::get<0>(it);
+
+#ifdef LEGACY_SEPARATOR
+		if(!(name.compare(0, 10, "_unshared~"))) {
+#else
+		if(!(name.compare(0, 10, "_unshared" GLOBAL_SEPARATOR))) {
+#endif
+			value = P.mergeElements<Pack::resourceNodeTy>(name);
+			unsharedFU += stol(value.substr(0, 10));
+			unsharedDSP += stol(value.substr(10, 10));
+			unsharedFF += stol(value.substr(20, 10));
+			unsharedLUT += stol(value.substr(30, 10));
+		}
+	}
+
+	std::string wholeLoopName = appendDepthToLoopName(loopName, 1);
+	wholeloopName2loopBoundMapTy::iterator found = wholeloopName2loopBoundMap.find(wholeLoopName);
+	uint64_t loopBound = found->second;
+	// Use all bounds
+	for(unsigned i = 2; i <= LpName2numLevelMap.at(loopName); i++) {
+		wholeLoopName = appendDepthToLoopName(loopName, i);
+		found = wholeloopName2loopBoundMap.find(wholeLoopName);
+		loopBound *= found->second;
+	}
+
+	assert("true" == P.mergeElements<uint64_t>("_memlogicFF") && "Merged values from datapaths differ where it should not differ (_memlogicFF)");
+	unsigned mlFF = P.getElements<uint64_t>("_memlogicFF")[0];
+	assert("true" == P.mergeElements<uint64_t>("_memlogicLUT") && "Merged values from datapaths differ where it should not differ (_memlogicLUT)");
+	unsigned mlLUT = P.getElements<uint64_t>("_memlogicLUT")[0];
+
+	uint64_t nStore = stol(P.mergeElements<uint64_t>("_nStore"));
+	uint64_t nLoad = stol(P.mergeElements<uint64_t>("_nLoad"));
+	uint64_t nOp = sharedFU + unsharedFU;
+	uint64_t tRcIL = stol(P.mergeElements<uint64_t>("_tRcIL"));
+	unsigned lK = LpName2numLevelMap.at(loopName);
+	unsigned e = logNextPowerOf2(loopBound);
+	unsigned V1 = e + 1, V2 = 2 * e, V3 = e + 2;
+
+	for(auto &it : P.getStructure()) {
+		std::string name = std::get<0>(it);
+
+		// Names starting with "_" are not printed (used for other purposes)
+		if('_' == name[0])
+			continue;
+
+		// Special treament for certain merges (other arithmetics are performed instead of simple merge)
+		if("DSPs" == name) {
+			uint64_t value = sharedDSP + unsharedDSP;
+
+			*summaryFile << name << ": " << value << "\n";
+			continue;
+		}
+		else if("FFs" == name) {
+			unsigned rFF = 32 * (nLoad + nStore + nOp) + tRcIL + (1 == lK? 1 : 2) * V1 * lK;
+			uint64_t value = sharedFF + unsharedFF + rFF + mlFF;
+
+			*summaryFile << name << ": " << value << "\n";
+			continue;
+		}
+		else if("LUTs" == name) {
+			unsigned mLUT = 32 * (nStore + nOp) + 14 * nLoad + V1 * lK;
+			// Use all unrolls
+			loopName2levelUnrollVecMapTy::iterator found2 = loopName2levelUnrollVecMap.find(loopName);
+			assert(found2 != loopName2levelUnrollVecMap.end() && "Could not find loop in loopName2levelUnrollVecMap");
+			std::vector<unsigned> targetUnroll = found2->second;
+			uint64_t accUnrollFactor = 1;
+			for(unsigned i = loopLevel - 1; i + 1; i--)
+				accUnrollFactor *= targetUnroll.at(i);
+			unsigned exLUT = (V1 + V2 + V3) * lK + V1 * (accUnrollFactor - 1);
+
+			uint64_t value = sharedLUT + unsharedLUT + mLUT + exLUT + mlLUT;
+
+			*summaryFile << name << ": " << value << "\n";
+			continue;
+		}
+
+		*summaryFile << name << ": ";
 
 		switch(std::get<2>(it)) {
 			case Pack::TYPE_UNSIGNED:
@@ -2125,7 +2295,7 @@ void BaseDatapath::dumpSummary(
 
 void BaseDatapath::dumpGraph(bool isOptimised) {
 	std::string datapathTypeStr(
-		(NON_PERFECT_BEFORE == datapathType)? "_before" : ((NON_PERFECT_AFTER == datapathType)? "_after" : ((NON_PERFECT_BETWEEN == datapathType)? "_inter" : "" ))
+		(DatapathType::NON_PERFECT_BEFORE == datapathType)? "_before" : ((DatapathType::NON_PERFECT_AFTER == datapathType)? "_after" : ((DatapathType::NON_PERFECT_BETWEEN == datapathType)? "_inter" : "" ))
 	);
 	std::string graphFileName(
 		args.outWorkDir
@@ -2235,7 +2405,7 @@ BaseDatapath::RCScheduler::RCScheduler(
 
 	if(args.showScheduling) {
 		std::string datapathTypeStr(
-			(NON_PERFECT_BEFORE == datapathType)? "_before" : ((NON_PERFECT_AFTER == datapathType)? "_after" : ((NON_PERFECT_BETWEEN == datapathType)? "_inter" : "" ))
+			(DatapathType::NON_PERFECT_BEFORE == datapathType)? "_before" : ((DatapathType::NON_PERFECT_AFTER == datapathType)? "_after" : ((DatapathType::NON_PERFECT_BETWEEN == datapathType)? "_inter" : "" ))
 		);
 		dumpFile.open(args.outWorkDir + appendDepthToLoopName(loopName, loopLevel) + datapathTypeStr + ".sched.rpt");
 
@@ -2273,9 +2443,6 @@ std::pair<uint64_t, double> BaseDatapath::RCScheduler::schedule() {
 		// Before selecting, we must deduce the in-cycle latency that is being held by running instructions
 		if(!(args.fNoTCS))
 			tcSched.clearFinishedNodes();
-
-		// Clear list of live results
-		liveOps.clear();
 
 		// Nodes must be executed only once per clock tick. These lists hold which nodes were already executed
 		fAddExecuted.clear();
@@ -2317,13 +2484,6 @@ std::pair<uint64_t, double> BaseDatapath::RCScheduler::schedule() {
 				}
 			}
 		}
-
-		// Live ops are considered live at the end when there are still dependent nodes on this result
-		// that weren't allocated in this cycle. We filter out from liveOps all results that are not
-		// going to be used again in the following cycles
-		filterOutDeadOps();
-		// All alive results are then allocated to registers
-		profile.regStoreLiveOps(liveOps, resultSizeList);
 
 		// Release pipelined functional units for next clock tick
 		profile.pipelinedRelease();
@@ -3032,7 +3192,6 @@ void BaseDatapath::RCScheduler::tryRelease(executingMapTy &executing, executedLi
 
 void BaseDatapath::RCScheduler::setScheduledAndAssignReadyChildren(unsigned nodeID) {
 	scheduledNodeCount++;
-	liveOps.insert(nodeID);
 
 	OutEdgeIterator outEdgei, outEdgeEnd;
 	for(std::tie(outEdgei, outEdgeEnd) = boost::out_edges(nameToVertex.at(nodeID), graph); outEdgei != outEdgeEnd; outEdgei++) {
@@ -3044,37 +3203,6 @@ void BaseDatapath::RCScheduler::setScheduledAndAssignReadyChildren(unsigned node
 		if(!numParents[childNodeID] && !finalIsolated[childNodeID])
 			pushReady(childNodeID, alap[childNodeID]);
 	}
-}
-
-void BaseDatapath::RCScheduler::filterOutDeadOps() {
-	std::set<unsigned> filteredLiveOps;
-	std::set<unsigned> executing;
-	for(auto &it : fAddExecuting) executing.insert(it.first);
-	for(auto &it : fSubExecuting) executing.insert(it.first);
-	for(auto &it : fMulExecuting) executing.insert(it.first);
-	for(auto &it : fDivExecuting) executing.insert(it.first);
-	for(auto &it : fCmpExecuting) executing.insert(it.first);
-	for(auto &it : loadExecuting) executing.insert(it.first);
-	for(auto &it : storeExecuting) executing.insert(it.first);
-	for(auto &it : intOpExecuting) executing.insert(it.first);
-	for(auto &it : callExecuting) executing.insert(it.first);
-
-	// For each node, check its child to see how many executed or were allocated this cycle as well
-	// If all of them were allocated, this result is dead
-	for(auto &it : liveOps) {
-		if(profile.canBeLiveOp(microops.at(it))) {
-			OutEdgeIterator outEdgei, outEdgeEnd;
-			for(tie(outEdgei, outEdgeEnd) = boost::out_edges(nameToVertex.at(it), graph); outEdgei != outEdgeEnd; outEdgei++) {
-				unsigned childNode = vertexToName[boost::target(*outEdgei, graph)];
-				if(!(liveOps.count(childNode) || executing.count(childNode))) {
-					filteredLiveOps.insert(it);
-					break;
-				}
-			}
-		}
-	}
-
-	liveOps.swap(filteredLiveOps);
 }
 
 BaseDatapath::TCScheduler::TCScheduler(

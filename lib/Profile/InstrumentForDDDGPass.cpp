@@ -2,6 +2,9 @@
 
 #define DEBUG_TYPE "instrument-code-for-building-dddg"
 
+#ifdef FUTURE_CACHE
+FutureCache futureCache;
+#endif
 staticInstID2OpcodeMapTy staticInstID2OpcodeMap;
 instName2bbNameMapTy instName2bbNameMap;
 headerBBFuncNamePair2lastInstMapTy headerBBFuncNamePair2lastInstMap;
@@ -840,6 +843,17 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 	CM.parseAndPopulate(pipelineLoopLevelVec);
 	updateUnrollingDatabase(CM.getUnrollingCfg());
 
+#ifdef FUTURE_CACHE
+	if(args.futureCache) {
+		VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Use of future cache enabled\n");
+
+		if(futureCache.load())
+			VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Future cache file found.\n");
+		else
+			VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Future cache file not found or is corrupt. Starting from scratch\n");
+	}
+#endif
+
 	ContextManager CtxM;
 	if(!(args.fNoMMA)) {
 		if(ArgPack::MMA_MODE_GEN == args.mmaMode) {
@@ -901,22 +915,7 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 			enablePipelining = found3 != pipelineLoopLevelVec.end();
 		}
 
-		int firstNonPerfectLoopLevel = -1;
-
-		// If non-perfect loop analysis is enabled, find the first loop to be non-perfect
-		if(args.fNPLA) {
-			for(unsigned i = 0; i < levelUnrollVec.size(); i++) {
-				std::string wholeLoopName = appendDepthToLoopName(loopName, i + 1);
-
-				wholeloopName2perfectOrNotMapTy::iterator found2 = wholeloopName2perfectOrNotMap.find(wholeLoopName);
-				assert(found2 != wholeloopName2perfectOrNotMap.end() && "Could not find loop in wholeloopName2perfectOrNotMap");
-
-				if(!(found2->second)) {
-					firstNonPerfectLoopLevel = i + 1;
-					break;
-				}
-			}
-		}
+		unsigned firstNonPerfectLoopLevel = 1;
 
 		VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Target loop: " << targetWholeLoopName << "\n");
 		VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Target unroll factor: " << targetUnrollFactor << "\n");
@@ -925,7 +924,8 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 
 		unsigned unrollFactor = (targetLoopBound < targetUnrollFactor && targetLoopBound)? targetLoopBound : targetUnrollFactor;
 
-		if(args.fNPLA && firstNonPerfectLoopLevel != -1) {
+		// There used to be logic to control NPLA here, but for now it is always active as long --f-npla is set
+		if(args.fNPLA) {
 			VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Non-perfect loop analysis triggered: building multipaths\n");
 
 			if(enablePipelining) {
@@ -976,6 +976,15 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 
 		CtxM.close();
 	}
+
+#ifdef FUTURE_CACHE
+	if(args.futureCache) {
+		futureCache.dumpSummary(&summaryFile);
+
+		VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Saving future cache\n");
+		futureCache.save();
+	}
+#endif
 
 	closeSummaryFile();
 	VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Summary file closed\n");

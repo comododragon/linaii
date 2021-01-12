@@ -20,7 +20,6 @@ protected:
 
 	std::map<std::string, std::tuple<uint64_t, uint64_t, size_t, unsigned>> arrayNameToConfig;
 	std::map<std::string, unsigned> arrayNameToNumOfPartitions;
-	//std::map<std::string, unsigned> arrayNameToWritePortsPerPartition;
 	std::map<std::string, float> arrayNameToEfficiency;
 	std::map<std::string, unsigned> arrayPartitionToReadPorts;
 	std::map<std::string, unsigned> arrayPartitionToReadPortsInUse;
@@ -42,6 +41,10 @@ protected:
 	unsigned fAddThreshold, fSubThreshold, fMulThreshold, fDivThreshold;
 #ifdef CONSTRAIN_INT_OP
 	fuCountTy intOpThreshold;
+#endif
+	unsigned totalFAddCount, totalFSubCount, totalFMulCount, totalFDivCount;
+#ifdef CONSTRAIN_INT_OP
+	fuCountTy totalIntOpCount;
 #endif
 	bool isConstrained;
 	bool thresholdSet;
@@ -75,7 +78,6 @@ public:
 	virtual unsigned getLatency(unsigned opcode) = 0;
 	virtual double getInCycleLatency(unsigned opcode) = 0;
 	virtual bool isPipelined(unsigned opcode) = 0;
-	virtual bool canBeLiveOp(unsigned opcode) = 0;
 	virtual void calculateRequiredResources(
 		std::vector<int> &microops,
 		const ConfigurationManager::arrayInfoCfgMapTy &arrayInfoCfgMap,
@@ -96,7 +98,7 @@ public:
 	);
 	std::tuple<std::string, uint64_t> calculateResIIOp();
 
-	virtual void fillPack(Pack &P);
+	virtual void fillPack(Pack &P, unsigned loopLevel, unsigned datapathType, uint64_t targetII);
 	std::set<int> getConstrainedUnits() { return limitedBy; }
 
 	virtual void arrayAddPartition(std::string arrayName) = 0;
@@ -107,7 +109,6 @@ public:
 #ifdef CONSTRAIN_INT_OP
 	virtual bool intOpAddUnit(unsigned opcode, bool commit = true) = 0;
 #endif
-	virtual void regStoreLiveOps(std::set<unsigned> &liveOps, const std::unordered_map<int, unsigned> &resultSizeList) = 0;
 
 	unsigned arrayGetNumOfPartitions(std::string arrayName);
 	unsigned arrayGetPartitionReadPorts(std::string partitionName);
@@ -221,6 +222,7 @@ protected:
 #ifdef CONSTRAIN_INT_OP
 	fuResourcesMapTy intOpResources;
 #endif
+	unsigned memLogicFF, memLogicLUT;
 
 public:
 	XilinxHardwareProfile();
@@ -249,7 +251,7 @@ public:
 		const ConfigurationManager::partitionCfgMapTy &completePartitionCfgMap
 	);
 
-	void fillPack(Pack &P);
+	void fillPack(Pack &P, unsigned loopLevel, unsigned datapathType, uint64_t targetII);
 
 	void arrayAddPartition(std::string arrayName);
 	void arrayAddPartitions(std::string arrayName, unsigned amount);
@@ -260,7 +262,6 @@ public:
 #ifdef CONSTRAIN_INT_OP
 	bool intOpAddUnit(unsigned opcode, bool commit = true);
 #endif
-	void regStoreLiveOps(std::set<unsigned> &liveOps, const std::unordered_map<int, unsigned> &resultSizeList);
 
 	unsigned arrayGetMaximumWritePortsPerPartition();
 	std::map<std::string, unsigned> arrayGetUsedBRAM18k() { return arrayNameToUsedBRAM18k; }

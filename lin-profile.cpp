@@ -55,6 +55,13 @@ const std::string helpMessage =
 	"                                        top loops are analysed. Loops defined with\n"
 	"                                        -l|--loops flag must be in crescent order\n"
 #endif
+#ifdef FUTURE_CACHE
+	"        -C       , --future-cache     : use future cache. DDDG positions in the dynamic_trace.gz\n"
+	"                                        file are cached to be used in successive executions of Lina\n"
+	"                                        saving seek time. Only supported when progressive trace\n"
+	"                                        cursor is active with -p | --progressive. Future cache is\n"
+	"                                        disabled when runtime loop bound analysis is required.\n"
+#endif
 	"        -l LOOPS , --loops=LOOPS      : specify loops to be analysed comma-separated (e.g.\n"
 	"                                        --loops=2,3 only analyse loops 2 and 3)\n"
 	"                   --mem-trace        : obtain memory trace for access pattern analysis.\n"
@@ -231,6 +238,9 @@ void parseInputArguments(int argc, char **argv) {
 #ifdef PROGRESSIVE_TRACE_CURSOR
 	args.progressive = false;
 #endif
+#ifdef FUTURE_CACHE
+	args.futureCache = false;
+#endif
 	args.frequency = 100.0;
 	args.uncertainty = 27;
 	args.verbose = false;
@@ -277,6 +287,9 @@ void parseInputArguments(int argc, char **argv) {
 #ifdef PROGRESSIVE_TRACE_CURSOR
 			{"progressive", no_argument, 0, 'p'},
 #endif
+#ifdef FUTURE_CACHE
+			{"future-cache", no_argument, 0, 'C'},
+#endif
 			{"frequency", required_argument, 0, 'f'},
 			{"uncertainty", required_argument, 0, 'u'},
 			{"loops", required_argument, 0, 'l'},
@@ -310,7 +323,11 @@ void parseInputArguments(int argc, char **argv) {
 		int optionIndex = 0;
 
 #ifdef PROGRESSIVE_TRACE_CURSOR
+#ifdef FUTURE_CACHE
+		c = getopt_long(argc, argv, "+hi:o:c:m:t:vxpCf:u:l:d:", longOptions, &optionIndex);
+#else
 		c = getopt_long(argc, argv, "+hi:o:c:m:t:vxpf:u:l:d:", longOptions, &optionIndex);
+#endif
 #else
 		c = getopt_long(argc, argv, "+hi:o:c:m:t:vxf:u:l:d:", longOptions, &optionIndex);
 #endif
@@ -356,6 +373,11 @@ void parseInputArguments(int argc, char **argv) {
 #ifdef PROGRESSIVE_TRACE_CURSOR
 			case 'p':
 				args.progressive = true;
+				break;
+#endif
+#ifdef FUTURE_CACHE
+			case 'C':
+				args.futureCache = true;
 				break;
 #endif
 			case 'f':
@@ -508,6 +530,13 @@ void parseInputArguments(int argc, char **argv) {
 			}
 			maxLoop = itInt;
 		}
+	}
+#endif
+
+#ifdef FUTURE_CACHE
+	if(args.futureCache && !(args.progressive)) {
+		errs() << "Please activate progressive trace cursor with -p | --progressive in order to use future cache\n";
+		exit(-1);
 	}
 #endif
 

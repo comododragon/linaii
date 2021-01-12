@@ -2,6 +2,141 @@
 
 #include "profile_h/BaseDatapath.h"
 
+#ifdef FUTURE_CACHE
+std::string FutureCache::constructKey(
+	std::string wholeLoopName, unsigned datapathType,
+	long int progressiveTraceCursor, uint64_t progressiveTraceInstCount
+) {
+#ifdef LEGACY_SEPARATOR
+	return wholeLoopName + "~" + std::to_string(datapathType) + "~" + std::to_string(progressiveTraceCursor) + "~" + std::to_string(progressiveTraceInstCount);
+#else
+	return wholeLoopName + GLOBAL_SEPARATOR + std::to_string(datapathType) + GLOBAL_SEPARATOR + std::to_string(progressiveTraceCursor) + GLOBAL_SEPARATOR + std::to_string(progressiveTraceInstCount);
+#endif
+}
+
+void FutureCache::dumpSummary(std::ofstream *summaryFile) {
+	*summaryFile << "================================================\n";
+	*summaryFile << "No. of cache miss: " << std::to_string(cacheMiss) << "\n";
+	*summaryFile << "No. of cache hit: " << std::to_string(cacheHit) << "\n";
+}
+
+bool FutureCache::load() {
+	std::ifstream futureCacheFile;
+
+	futureCacheFile.open(args.workDir + FILE_FUTURE_CACHE, std::ios::in | std::ios::binary);
+	if(futureCacheFile.is_open()) {
+		/* Check for magic bits in future cache file */
+		char magicBits[4];
+		futureCacheFile.read(magicBits, std::string(FILE_FUTURE_CACHE_MAGIC_STRING).size());
+		magicBits[3] = '\0';
+		if(std::string(magicBits) != FILE_FUTURE_CACHE_MAGIC_STRING) {
+			futureCacheFile.close();
+			return false;
+		}
+
+		clear();
+		/* Read cache size */
+		size_t mapSize;
+		futureCacheFile.read((char *) &mapSize, sizeof(size_t));
+		/* Now read each element */
+		for(unsigned i = 0; i < mapSize; i++) {
+			size_t keySize;
+			futureCacheFile.read((char *) &keySize, sizeof(size_t));
+
+			char buff[BUFF_STR_SZ];
+			futureCacheFile.read(buff, keySize);
+			buff[keySize] = '\0';
+			std::string key(buff);
+
+			long int gzCursor;
+			futureCacheFile.read((char *) &gzCursor, sizeof(long int));
+			uint64_t byteFrom;
+			futureCacheFile.read((char *) &byteFrom, sizeof(uint64_t));
+			uint64_t instCount;
+			futureCacheFile.read((char *) &instCount, sizeof(uint64_t));
+			long int progressiveTraceCursor;
+			futureCacheFile.read((char *) &progressiveTraceCursor, sizeof(long int));
+			uint64_t progressiveTraceInstCount;
+			futureCacheFile.read((char *) &progressiveTraceInstCount, sizeof(uint64_t));
+			uint64_t lastInstExitingCounter;
+			futureCacheFile.read((char *) &lastInstExitingCounter, sizeof(uint64_t));
+			uint64_t to;
+			futureCacheFile.read((char *) &to, sizeof(uint64_t));
+
+			cache.insert(cache.end(), std::make_pair(
+				key,
+				elemTy(gzCursor, byteFrom, instCount, progressiveTraceCursor, progressiveTraceInstCount, lastInstExitingCounter, to)
+			));
+		}
+
+		futureCacheFile.close();
+
+		return true;
+	}
+	else {
+		return false;
+	}
+}
+
+void FutureCache::save() {
+	std::ofstream futureCacheFile;
+
+	futureCacheFile.open(args.workDir + FILE_FUTURE_CACHE, std::ios::out | std::ios::binary);
+	if(futureCacheFile.is_open()) {
+		futureCacheFile.write(FILE_FUTURE_CACHE_MAGIC_STRING, std::string(FILE_FUTURE_CACHE_MAGIC_STRING).size());
+
+		/* Save cache size */
+		size_t mapSize = cache.size();
+		futureCacheFile.write((char *) &mapSize, sizeof(size_t));
+		/* Save all elements */
+		for(auto &it : cache) {
+			size_t keySize = it.first.size();
+			futureCacheFile.write((char *) &keySize, sizeof(size_t));
+
+			futureCacheFile.write(it.first.c_str(), keySize);
+
+			futureCacheFile.write((char *) &(it.second.gzCursor), sizeof(long int));
+			futureCacheFile.write((char *) &(it.second.byteFrom), sizeof(uint64_t));
+			futureCacheFile.write((char *) &(it.second.instCount), sizeof(uint64_t));
+			futureCacheFile.write((char *) &(it.second.progressiveTraceCursor), sizeof(long int));
+			futureCacheFile.write((char *) &(it.second.progressiveTraceInstCount), sizeof(uint64_t));
+			futureCacheFile.write((char *) &(it.second.lastInstExitingCounter), sizeof(uint64_t));
+			futureCacheFile.write((char *) &(it.second.to), sizeof(uint64_t));
+		}
+
+		futureCacheFile.close();
+	}
+	else {
+		// TODO assert here?
+	}
+}
+
+FutureCache::iterator FutureCache::find(
+	std::string wholeLoopName, unsigned datapathType,
+	long int progressiveTraceCursor, uint64_t progressiveTraceInstCount
+) {
+	FutureCache::iterator iter = cache.find(constructKey(wholeLoopName, datapathType, progressiveTraceCursor, progressiveTraceInstCount));
+
+	if(cache.end() == iter)
+		cacheMiss++;
+	else
+		cacheHit++;
+
+	return iter;
+}
+
+std::pair<FutureCache::iterator, bool> FutureCache::insert(
+	std::string wholeLoopName, unsigned datapathType,
+	long int progressiveTraceCursor, uint64_t progressiveTraceInstCount,
+	FutureCache::elemTy &elem
+) {
+	return cache.insert(std::make_pair(
+		constructKey(wholeLoopName, datapathType, progressiveTraceCursor, progressiveTraceInstCount),
+		elem
+	));
+}
+#endif
+
 ParsedTraceContainer::ParsedTraceContainer(std::string kernelName) : kernelName(kernelName) {
 	funcFileName = args.outWorkDir + kernelName + "_dynamicfuncid.gz";
 	instIDFileName = args.outWorkDir + kernelName + "_instid.gz";
@@ -676,6 +811,40 @@ intervalTy DDDGBuilder::getTraceLineFromToBeforeNestedLoop(gzFile &traceFile) {
 #else
 	gzrewind(traceFile);
 #endif
+
+#ifdef FUTURE_CACHE
+	if(args.futureCache) {
+		/* Will attempt to use cache to jump to the next DDDG start */
+
+		if(skipRuntimeLoopBound) {
+			VERBOSE_PRINT(errs() << "\t\tUsing future cache from previous executions\n");
+
+			FutureCache::iterator cacheHit = futureCache.find(wholeLoopName, DatapathType::NON_PERFECT_BEFORE, progressiveTraceCursor, progressiveTraceInstCount);
+			if(cacheHit != futureCache.end()) {
+				VERBOSE_PRINT(errs() << "\t\tCached cursor hit\n");
+				VERBOSE_PRINT(errs() << "\t\tSkipping further " << std::to_string(cacheHit->second.gzCursor - progressiveTraceCursor) << " bytes from trace\n");
+
+				gzseek(traceFile, cacheHit->second.gzCursor, SEEK_SET);
+				byteFrom = cacheHit->second.byteFrom;
+				instCount = cacheHit->second.instCount;
+				progressiveTraceCursor = cacheHit->second.progressiveTraceCursor;
+				progressiveTraceInstCount = cacheHit->second.progressiveTraceInstCount;
+
+				firstTraverseHeader = false;
+			}
+			else {
+				VERBOSE_PRINT(errs() << "\t\tCached cursor miss\n");
+			}
+		}
+		else {
+			// TODO Change from assert to warning!
+			assert(false && "Future cache activated with runtime loop bounds");
+			//VERBOSE_PRINT(errs() << "\t\tUnknown loop bounds, will be calculated from trace now\n");
+			//VERBOSE_PRINT(errs() << "\t\tWarning: Future cache is disabled due to runtime loop bound calculation!\n");
+		}
+	}
+#endif
+
 	while(!gzeof(traceFile)) {
 		if(Z_NULL == gzgets(traceFile, buffer, sizeof(buffer)))
 			continue;
@@ -706,6 +875,16 @@ intervalTy DDDGBuilder::getTraceLineFromToBeforeNestedLoop(gzFile &traceFile) {
 					instCount -= numInstInHeaderBB;
 					firstTraverseHeader = false;
 
+#ifdef FUTURE_CACHE
+					if(args.futureCache) {
+						// Save to cache
+						FutureCache::elemTy cacheElem(gztell(traceFile) - line.size(), byteFrom, instCount, byteFrom, instCount, 0, 0);
+						futureCache.insert(
+							wholeLoopName, DatapathType::NON_PERFECT_BEFORE, progressiveTraceCursor, progressiveTraceInstCount,
+							cacheElem
+						);
+					}
+#endif
 #ifdef PROGRESSIVE_TRACE_CURSOR
 					if(args.progressive) {
 						progressiveTraceCursor = byteFrom;
@@ -720,6 +899,7 @@ intervalTy DDDGBuilder::getTraceLineFromToBeforeNestedLoop(gzFile &traceFile) {
 			}
 
 			// Mark the last line right before another loop nest
+			// XXX maybe we should check that this does not execute when runtime loop bound check is being performed
 			if(!firstTraverseHeader && !lookaheadIsSameLoopLevel(traceFile, loopLevel)) {
 				to = count;
 
@@ -816,6 +996,37 @@ intervalTy DDDGBuilder::getTraceLineFromToAfterNestedLoop(gzFile &traceFile) {
 #else
 	gzrewind(traceFile);
 #endif
+
+#ifdef FUTURE_CACHE
+	std::string wholeLoopName = appendDepthToLoopName(loopName, loopLevel);
+	if(args.futureCache) {
+		/* Will attempt to use cache to jump to the next DDDG start */
+
+		VERBOSE_PRINT(errs() << "\t\tUsing future cache from previous executions\n");
+
+		FutureCache::iterator cacheHit = futureCache.find(wholeLoopName, DatapathType::NON_PERFECT_AFTER, progressiveTraceCursor, progressiveTraceInstCount);
+		if(cacheHit != futureCache.end()) {
+			VERBOSE_PRINT(errs() << "\t\tCached cursor hit\n");
+			VERBOSE_PRINT(errs() << "\t\tSkipping further " << std::to_string(cacheHit->second.gzCursor - progressiveTraceCursor) << " bytes from trace\n");
+
+			gzseek(traceFile, cacheHit->second.gzCursor, SEEK_SET);
+			byteFrom = cacheHit->second.byteFrom;
+			instCount = cacheHit->second.instCount;
+			progressiveTraceCursor = cacheHit->second.progressiveTraceCursor;
+			progressiveTraceInstCount = cacheHit->second.progressiveTraceInstCount;
+			to = cacheHit->second.to;
+
+			// TODO to be removed on release
+			assert(!to && "Value of \"to\" is not zero, this could likely be a bug");
+
+			firstTraverse = false;
+		}
+		else {
+			VERBOSE_PRINT(errs() << "\t\tCached cursor miss\n");
+		}
+	}
+#endif
+
 	while(!gzeof(traceFile)) {
 		if(Z_NULL == gzgets(traceFile, buffer, sizeof(buffer)))
 			continue;
@@ -856,6 +1067,16 @@ intervalTy DDDGBuilder::getTraceLineFromToAfterNestedLoop(gzFile &traceFile) {
 					instCount--;
 					firstTraverse = false;
 
+#ifdef FUTURE_CACHE
+					if(args.futureCache) {
+						// Save to cache
+						FutureCache::elemTy cacheElem(gztell(traceFile) - line.size(), byteFrom, instCount, byteFrom, instCount, 0, to);
+						futureCache.insert(
+							wholeLoopName, DatapathType::NON_PERFECT_AFTER, progressiveTraceCursor, progressiveTraceInstCount,
+							cacheElem
+						);
+					}
+#endif
 #ifdef PROGRESSIVE_TRACE_CURSOR
 					if(args.progressive) {
 						progressiveTraceCursor = byteFrom;
@@ -906,6 +1127,35 @@ intervalTy DDDGBuilder::getTraceLineFromToBetweenAfterAndBefore(gzFile &traceFil
 #else
 	gzrewind(traceFile);
 #endif
+
+#ifdef FUTURE_CACHE
+	std::string wholeLoopName = appendDepthToLoopName(loopName, loopLevel);
+	if(args.futureCache) {
+		/* Will attempt to use cache to jump to the next DDDG start */
+
+		VERBOSE_PRINT(errs() << "\t\tUsing future cache from previous executions\n");
+
+		FutureCache::iterator cacheHit = futureCache.find(wholeLoopName, DatapathType::NON_PERFECT_BETWEEN, progressiveTraceCursor, progressiveTraceInstCount);
+		if(cacheHit != futureCache.end()) {
+			VERBOSE_PRINT(errs() << "\t\tCached cursor hit\n");
+			VERBOSE_PRINT(errs() << "\t\tSkipping further " << std::to_string(cacheHit->second.gzCursor - progressiveTraceCursor) << " bytes from trace\n");
+
+			gzseek(traceFile, cacheHit->second.gzCursor, SEEK_SET);
+			byteFrom = cacheHit->second.byteFrom;
+			instCount = cacheHit->second.instCount;
+
+			// TODO to be removed on release
+			assert(progressiveTraceCursor == cacheHit->second.progressiveTraceCursor && "progressiveTraceCursor from past and now are different in a BETWEEN DDDG");
+			assert(progressiveTraceInstCount == cacheHit->second.progressiveTraceInstCount && "progressiveTraceInstCount from past and now are different in a BETWEEN DDDG");
+
+			firstTraverse = false;
+		}
+		else {
+			VERBOSE_PRINT(errs() << "\t\tCached cursor miss\n");
+		}
+	}
+#endif
+
 	while(!gzeof(traceFile)) {
 		if(Z_NULL == gzgets(traceFile, buffer, sizeof(buffer)))
 			continue;
@@ -945,6 +1195,17 @@ intervalTy DDDGBuilder::getTraceLineFromToBetweenAfterAndBefore(gzFile &traceFil
 					byteFrom = gztell(traceFile) - line.size();
 					instCount--;
 					firstTraverse = false;
+
+#ifdef FUTURE_CACHE
+					if(args.futureCache) {
+						// Save to cache
+						FutureCache::elemTy cacheElem(gztell(traceFile) - line.size(), byteFrom, instCount, progressiveTraceCursor, progressiveTraceInstCount, 0, 0);
+						futureCache.insert(
+							wholeLoopName, DatapathType::NON_PERFECT_BETWEEN, progressiveTraceCursor, progressiveTraceInstCount,
+							cacheElem
+						);
+					}
+#endif
 				}
 			}
 
@@ -1097,6 +1358,46 @@ intervalTy DDDGBuilder::getTraceLineFromTo(gzFile &traceFile) {
 #else
 	gzrewind(traceFile);
 #endif
+
+#ifdef FUTURE_CACHE
+	if(args.futureCache) {
+		/* Will attempt to use cache to jump to the next DDDG start */
+
+		if(skipRuntimeLoopBound) {
+			VERBOSE_PRINT(errs() << "\t\tUsing future cache from previous executions\n");
+
+			FutureCache::iterator cacheHit = futureCache.find(wholeLoopName, DatapathType::NORMAL_LOOP, progressiveTraceCursor, progressiveTraceInstCount);
+			if(cacheHit != futureCache.end()) {
+				VERBOSE_PRINT(errs() << "\t\tCached cursor hit\n");
+				VERBOSE_PRINT(errs() << "\t\tSkipping further " << std::to_string(cacheHit->second.gzCursor - progressiveTraceCursor) << " bytes from trace\n");
+
+				gzseek(traceFile, cacheHit->second.gzCursor, SEEK_SET);
+				byteFrom = cacheHit->second.byteFrom;
+				instCount = cacheHit->second.instCount;
+				progressiveTraceCursor = cacheHit->second.progressiveTraceCursor;
+				progressiveTraceInstCount = cacheHit->second.progressiveTraceInstCount;
+				lastInstExitingCounter = cacheHit->second.lastInstExitingCounter;
+				to = cacheHit->second.to;
+
+				// TODO to be removed on release
+				assert(!lastInstExitingCounter && "Value of \"lastInstExitingCounter\" is not zero, this could likely be a bug");
+				assert(!to && "Value of \"to\" is not zero, this could likely be a bug");
+
+				firstTraverseHeader = false;
+			}
+			else {
+				VERBOSE_PRINT(errs() << "\t\tCached cursor miss\n");
+			}
+		}
+		else {
+			// TODO change to warning on release
+			assert(false && "Future cache activated with runtime loop bounds");
+			//VERBOSE_PRINT(errs() << "\t\tUnknown loop bounds, will be calculated from trace now\n");
+			//VERBOSE_PRINT(errs() << "\t\tWarning: Future cache is disabled due to runtime loop bound calculation!\n");
+		}
+	}
+#endif
+
 	while(!gzeof(traceFile)) {
 		if(Z_NULL == gzgets(traceFile, buffer, sizeof(buffer)))
 			continue;
@@ -1127,6 +1428,16 @@ intervalTy DDDGBuilder::getTraceLineFromTo(gzFile &traceFile) {
 					instCount -= numInstInHeaderBB;
 					firstTraverseHeader = false;
 
+#ifdef FUTURE_CACHE
+					if(args.futureCache) {
+						// Save to cache
+						FutureCache::elemTy cacheElem(gztell(traceFile) - line.size(), byteFrom, instCount, byteFrom, instCount, lastInstExitingCounter, to);
+						futureCache.insert(
+							wholeLoopName, DatapathType::NORMAL_LOOP, progressiveTraceCursor, progressiveTraceInstCount,
+							cacheElem
+						);
+					}
+#endif
 #ifdef PROGRESSIVE_TRACE_CURSOR
 					if(args.progressive) {
 						progressiveTraceCursor = byteFrom;
@@ -1141,6 +1452,7 @@ intervalTy DDDGBuilder::getTraceLineFromTo(gzFile &traceFile) {
 			}
 
 			// Mark the last line of the last iteration of this loop
+			// XXX maybe we should check that this does not execute when runtime loop bound check is being performed
 			if(!instName.compare(lastInstExitingBB)) {
 				lastInstExitingCounter++;
 

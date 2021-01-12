@@ -13,7 +13,7 @@
 
 // Debug file: by activating this macro, a debug file will be available at the PWD after execution
 // you can fill this debug file by using DBG_DUMP
-#define DBG_FILE "debug.dump"
+//#define DBG_FILE "debug.dump"
 #ifdef DBG_FILE
 extern std::ofstream debugFile;
 #define DBG_DUMP(X) \
@@ -31,6 +31,12 @@ extern std::ofstream debugFile;
 // Thus, progressive trace cursor won't skip any valuable data from the trace analysis if the target loops are passed in a
 // monotonically crescent vector, which is enforced in validations performed at lin-profile.cpp 
 #define PROGRESSIVE_TRACE_CURSOR
+
+// Lina when used for DSE will be executed several times for the same code. This will generate a lot of data structures
+// that are similar in every execution, which is an overhead. Though lot can be optimised, the future cache is a simple
+// structure that saves some DDDG generation variables to be used in later executions of Lina.
+// You can see it working in DDDGBuilder.cpp
+#define FUTURE_CACHE
 
 // If enabled, sanity checks are performed in the multipath vector
 //#define CHECK_MULTIPATH_STATE
@@ -94,6 +100,7 @@ std::string generateInstID(unsigned opcode, std::vector<std::string> instIDList)
 
 unsigned nextPowerOf2(unsigned x);
 uint64_t nextPowerOf2(uint64_t x);
+uint64_t logNextPowerOf2(uint64_t x);
 
 typedef std::map<std::string, std::string> getElementPtrName2arrayNameMapTy;
 extern getElementPtrName2arrayNameMapTy getElementPtrName2arrayNameMap;
@@ -148,6 +155,16 @@ struct artificialNodeTy {
 	std::string currBB;
 };
 
+struct DatapathType {
+	enum {
+		NORMAL_LOOP,
+		PERFECT_LOOP,
+		NON_PERFECT_BEFORE,
+		NON_PERFECT_BETWEEN,
+		NON_PERFECT_AFTER
+	};
+};
+
 class ConfigurationManager {
 public:
 	struct pipeliningCfgTy {
@@ -183,7 +200,8 @@ public:
 		enum {
 			ARRAY_SCOPE_ARG,
 			ARRAY_SCOPE_ROVAR,
-			ARRAY_SCOPE_RWVAR
+			ARRAY_SCOPE_RWVAR,
+			ARRAY_SCOPE_NOCOUNT
 		};
 		uint64_t totalSize;
 		size_t wordSize;
@@ -275,11 +293,27 @@ public:
 };
 
 class Pack {
+public:
+	struct resourceNodeTy {
+		unsigned loopLevel;
+		unsigned datapathType;
+
+		unsigned fus;
+		unsigned dsps;
+		unsigned ffs;
+		unsigned luts;
+
+		resourceNodeTy(unsigned loopLevel, unsigned datapathType, unsigned fus, unsigned dsps, unsigned ffs, unsigned luts) : loopLevel(loopLevel), datapathType(datapathType), fus(fus), dsps(dsps), ffs(ffs), luts(luts) { }
+		resourceNodeTy(unsigned fus, unsigned dsps, unsigned ffs, unsigned luts) : loopLevel(0), datapathType(0), fus(fus), dsps(dsps), ffs(ffs), luts(luts) { }
+	};
+
+private:
 	std::vector<std::tuple<std::string, unsigned, unsigned>> structure;
 	std::unordered_map<std::string, std::vector<uint64_t>> unsignedContent;
 	std::unordered_map<std::string, std::vector<int64_t>> signedContent;
 	std::unordered_map<std::string, std::vector<float>> floatContent;
 	std::unordered_map<std::string, std::vector<std::string>> stringContent;
+	std::unordered_map<std::string, std::vector<resourceNodeTy>> resourceTreeContent;
 
 public:
 	enum {
@@ -287,14 +321,18 @@ public:
 		MERGE_MAX,
 		MERGE_MIN,
 		MERGE_SUM,
+		MERGE_MULSUM,
 		MERGE_EQUAL,
-		MERGE_SET
+		MERGE_SET,
+		MERGE_RESOURCETREEMAX,
+		MERGE_RESOURCELISTMAX
 	};
 	enum {
 		TYPE_UNSIGNED,
 		TYPE_SIGNED,
 		TYPE_FLOAT,
-		TYPE_STRING
+		TYPE_STRING,
+		TYPE_RESOURCENET
 	};
 
 	void addDescriptor(std::string name, unsigned mergeMode, unsigned type);

@@ -78,11 +78,11 @@ void DynamicDatapath::_DynamicDatapath(
 
 		builder = new DDDGBuilder(this, PC);
 		intervalTy interval;
-		if(NON_PERFECT_BEFORE == datapathType)
+		if(DatapathType::NON_PERFECT_BEFORE == datapathType)
 			interval = builder->getTraceLineFromToBeforeNestedLoop(traceFile);
-		else if(NON_PERFECT_BETWEEN == datapathType)
+		else if(DatapathType::NON_PERFECT_BETWEEN == datapathType)
 			interval = builder->getTraceLineFromToBetweenAfterAndBefore(traceFile);
-		else if(NON_PERFECT_AFTER == datapathType)
+		else if(DatapathType::NON_PERFECT_AFTER == datapathType)
 			interval = builder->getTraceLineFromToAfterNestedLoop(traceFile);
 		else
 			assert(false && "Invalid type of datapath passed to this type of dynamic datapath constructor");

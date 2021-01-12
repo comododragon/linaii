@@ -14,6 +14,59 @@
 #include "profile_h/auxiliary.h"
 #include "profile_h/opcodes.h"
 
+#ifdef FUTURE_CACHE
+#define FILE_FUTURE_CACHE "futurecache.db"
+#define FILE_FUTURE_CACHE_MAGIC_STRING "!BU"
+
+class FutureCache {
+public:
+	struct elemTy {
+		long int gzCursor;
+		uint64_t byteFrom;
+		uint64_t instCount;
+		long int progressiveTraceCursor;
+		uint64_t progressiveTraceInstCount;
+		uint64_t lastInstExitingCounter;
+		uint64_t to;
+
+		elemTy(
+			long int gzCursor, uint64_t byteFrom, uint64_t instCount,
+			long int progressiveTraceCursor, uint64_t progressiveTraceInstCount,
+			uint64_t lastInstExitingCounter, uint64_t to
+		) :
+			gzCursor(gzCursor), byteFrom(byteFrom), instCount(instCount),
+			progressiveTraceCursor(progressiveTraceCursor), progressiveTraceInstCount(progressiveTraceInstCount),
+			lastInstExitingCounter(lastInstExitingCounter), to(to) { }
+	};
+	typedef std::map<std::string, elemTy>::iterator iterator;
+
+private:
+	std::map<std::string, elemTy> cache;
+	unsigned cacheMiss;
+	unsigned cacheHit;
+
+	std::string constructKey(std::string wholeLoopName, unsigned datapathType, long int progressiveTraceCursor, uint64_t progressiveTraceInstCount);
+
+public:
+	FutureCache() : cacheMiss(0), cacheHit(0) { };
+	void dumpSummary(std::ofstream *summaryFile);
+
+	bool load();
+	void save();
+
+	iterator find(std::string wholeLoopName, unsigned datapathType, long int progressiveTraceCursor, uint64_t progressiveTraceInstCount);
+	std::pair<iterator, bool> insert(
+		std::string wholeLoopName, unsigned datapathTYpe,
+		long int progressiveTraceCursor, uint64_t progressiveTraceInstCount,
+		elemTy &elem
+	);
+	void clear() { cache.clear(); cacheMiss = 0; cacheHit = 0; }
+	iterator end() { return cache.end(); }
+};
+
+extern FutureCache futureCache;
+#endif
+
 typedef std::unordered_map<std::string, std::string> instName2bbNameMapTy;
 extern instName2bbNameMapTy instName2bbNameMap;
 

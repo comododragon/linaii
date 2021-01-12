@@ -41,6 +41,9 @@ typedef struct {
 #ifdef PROGRESSIVE_TRACE_CURSOR
 	bool progressive;
 #endif
+#ifdef FUTURE_CACHE
+	bool futureCache;
+#endif
 	double frequency;
 	double uncertainty;
 	bool memTrace;

@@ -27,113 +27,119 @@ const std::string helpMessage =
 	"    BYTECODEFILE is the optimised .bc file generated with the LLVM toolchain\n"
 	"    KERNELNAME is the kernel name (i.e. function name) to be analysed\n"
 	"    OPTION may be:\n"
-	"        -h       , --help             : this message\n"
-	"        -i PATH  , --workdir=PATH     : input working directory where trace should happen\n"
-	"                                        (e.g. containing files used by the application).\n"
-	"                                        Default is $CWD\n"
-	"        -o PATH  , --out-workdir=PATH : output working directory where temporary files\n"
-	"                                        will be written. Default is $CWD\n"
-	"        -c FILE  , --config-file=FILE : use FILE as the configuration file for this\n"
-	"                                        application. Default is workdir/config.cfg\n"
-	"        -m MODE  , --mode=MODE        : set execution mode to MODE, where MODE may be:\n"
-	"                                            all       : perform dynamic trace and cycle\n"
-	"                                                        estimation (DEFAULT)\n"
-	"                                            trace     : perform dynamic trace only,\n"
-	"                                                        generating dynamic_trace.gz\n"
-	"                                            estimation: perform cycle estimation only,\n"
-	"                                                        using provided dynamic_trace.gz\n"
-	"        -t TARGET, --target=TARGET    : select TARGET FPGA platform, where TARGET may be:\n"
-	"                                            ZC702 : Xilinx Zynq-7000 SoC (DEFAULT)\n"
-	"                                            ZCU102: Xilinx Zynq UltraScale+ SoC\n"
-	"                                            ZCU104: Xilinx Zynq UltraScale+ SoC\n"
-	"                                            VC707 : Xilinx Virtex-7 FPGA\n"
-	"        -v       , --verbose          : be verbose, print a lot of information\n"
-	"        -x       , --compressed       : use compressed files to reduce memory footprint\n"
+	"        -h       , --help              : this message\n"
+	"        -i PATH  , --workdir=PATH      : input working directory where trace should happen\n"
+	"                                         (e.g. containing files used by the application).\n"
+	"                                         Default is $CWD\n"
+	"        -o PATH  , --out-workdir=PATH  : output working directory where temporary files\n"
+	"                                         will be written. Default is $CWD\n"
+	"        -c FILE  , --config-file=FILE  : use FILE as the configuration file for this\n"
+	"                                         application. Default is workdir/config.cfg\n"
+	"        -m MODE  , --mode=MODE         : set execution mode to MODE, where MODE may be:\n"
+	"                                             all       : perform dynamic trace and cycle\n"
+	"                                                         estimation (DEFAULT)\n"
+	"                                             trace     : perform dynamic trace only,\n"
+	"                                                         generating dynamic_trace.gz\n"
+	"                                             estimation: perform cycle estimation only,\n"
+	"                                                         using provided dynamic_trace.gz\n"
+	"        -t TARGET, --target=TARGET     : select TARGET FPGA platform, where TARGET may be:\n"
+	"                                             ZC702 : Xilinx Zynq-7000 SoC (DEFAULT)\n"
+	"                                             ZCU102: Xilinx Zynq UltraScale+ SoC\n"
+	"                                             ZCU104: Xilinx Zynq UltraScale+ SoC\n"
+	"                                             VC707 : Xilinx Virtex-7 FPGA\n"
+	"        -v       , --verbose           : be verbose, print a lot of information\n"
+	"        -x       , --compressed        : use compressed files to reduce memory footprint\n"
 #ifdef PROGRESSIVE_TRACE_CURSOR
-	"        -p       , --progressive      : use progressive trace cursor when trace is\n"
-	"                                        analysed, reducing estimation time when several\n"
-	"                                        top loops are analysed. Loops defined with\n"
-	"                                        -l|--loops flag must be in crescent order\n"
+	"        -p       , --progressive       : use progressive trace cursor when trace is\n"
+	"                                         analysed, reducing estimation time when several\n"
+	"                                         top loops are analysed. Loops defined with\n"
+	"                                         -l|--loops flag must be in crescent order\n"
 #endif
 #ifdef FUTURE_CACHE
-	"        -C       , --future-cache     : use future cache. DDDG positions in the dynamic_trace.gz\n"
-	"                                        file are cached to be used in successive executions of Lina\n"
-	"                                        saving seek time. Only supported when progressive trace\n"
-	"                                        cursor is active with -p | --progressive. Future cache is\n"
-	"                                        disabled when runtime loop bound analysis is required.\n"
+	"        -C       , --future-cache      : use future cache. DDDG positions in the dynamic_trace.gz\n"
+	"                                         file are cached to be used in successive executions of Lina\n"
+	"                                         saving seek time. Only supported when progressive trace\n"
+	"                                         cursor is active with -p | --progressive. Future cache is\n"
+	"                                         disabled when runtime loop bound analysis is required.\n"
 #endif
-	"        -l LOOPS , --loops=LOOPS      : specify loops to be analysed comma-separated (e.g.\n"
-	"                                        --loops=2,3 only analyse loops 2 and 3)\n"
-	"                   --mem-trace        : obtain memory trace for access pattern analysis.\n"
-	"                                        Ignored if -m estimation | --mode=estimation is\n"
-	"                                        set.\n"
-	"                                        Can only be used with -m trace | --mode=trace\n"
-	"                   --show-cfg         : dump CFG with basic blocks\n"
-	"                   --show-detail-cfg  : dump detailed CFG with instructions\n"
-	"                   --show-pre-dddg    : dump DDDG before optimisation\n"
-	"                   --show-post-dddg   : dump DDDG after optimisation\n"
-	"                   --show-scheduling  : dump constrained-scheduling\n"
+	"        -l LOOPS , --loops=LOOPS       : specify loops to be analysed comma-separated (e.g.\n"
+	"                                         --loops=2,3 only analyse loops 2 and 3)\n"
+	"                   --mem-trace         : obtain memory trace for access pattern analysis.\n"
+	"                                         Ignored if -m estimation | --mode=estimation is\n"
+	"                                         set.\n"
+	"                                         Can only be used with -m trace | --mode=trace\n"
+	"                   --no-short-mem-trace: Disable generation of short binary memory trace. This is\n"
+	"                                         necessary if either the auto-generated kernel or instruction\n"
+	"                                         identifiers do not fit in 256 bytes. Activating this flag can\n"
+	"                                         potentially slow down the memory model analyis, use only if\n"
+	"                                         suggested by Lina during an error\n"
+	"                                         Has only effect if \"--mem-trace\" is enabled\n"
+	"                   --show-cfg          : dump CFG with basic blocks\n"
+	"                   --show-detail-cfg   : dump detailed CFG with instructions\n"
+	"                   --show-pre-dddg     : dump DDDG before optimisation\n"
+	"                   --show-post-dddg    : dump DDDG after optimisation\n"
+	"                   --show-scheduling   : dump constrained-scheduling\n"
 	"\n"
 	"Analysis enable/disable flags:\n"
-	"                   --f-npla           : enable non-perfect loop analysis\n"
-	"                   --fno-tcs          : disable timing-constrained scheduling\n"
-	"                   --fno-mma          : disable memory model analysis\n"
+	"                   --f-npla            : enable non-perfect loop analysis\n"
+	"                   --fno-tcs           : disable timing-constrained scheduling\n"
+	"                   --fno-mma           : disable memory model analysis\n"
 	"\n"
 	"Timing-constrained flags (ignored if \"--fno-tcs\" is set):\n"
-	"        -f FREQ  , --frequency=FREQ   : specify the target clock (in MHz)\n"
-	"        -u UNCTY , --uncertainty=UNCTY: specify the clock uncertainty (in %)\n"
+	"        -f FREQ  , --frequency=FREQ    : specify the target clock (in MHz)\n"
+	"        -u UNCTY , --uncertainty=UNCTY : specify the clock uncertainty (in %)\n"
 	"\n"
 	"Memory model tuning flags (ignored if \"--fno-mma\" is set):\n"
-	"                   --f-burstaggr      : enable burst aggregation: sequential operations inside a\n"
-	"                                        DDDG are grouped together to form bursts.\n"
-	"                   --f-burstmix       : if enabled, burst aggregation can mix arrays. Option ignored\n"
-	"                                        if global parameter \"ddrbanking\" is enabled or if \"--f-burstaggr\"\n"
-	"                                        is disabled\n"
-	"                   --f-vec            : enable array vectorisation analysis, which tries to find a\n"
-	"                                        suitable SIMD type for the off-chip arrays. This analysis is\n"
-	"                                        automatically disabled when \"--mma-mode=off\". Requires\n"
-	"                                        \"--f-burstaggr\"\n"
-	"        -d LEVEL , --ddrsched=LEVEL   : specify the DDR scheduling policy:\n"
-	"                                            0: DDR transactions of same type (read/write) cannot\n"
-	"                                               overlap (i.e. once a transaction starts, it must end\n"
-	"                                               before others of same type can start, DEFAULT)\n"
-	"                                            1: DDR transactions can overlap if their memory spaces\n"
-	"                                               are disjoint\n"
-	"                   --mma-mode=MODE    : select Lina execution model according to MMA mode. MODE may\n"
-	"                                        be:\n"
-	"                                            off: run Lina normally (DEFAULT)\n"
-	"                                            gen: perform memory model analysis, generate a context\n"
-	"                                                 import file and stop execution\n"
-	"                                            use: skip profiling and DDDG generation, proceed\n"
-	"                                                 directly to memory model analysis. In this mode, a\n"
-	"                                                 context import file is used to generate the DDDG\n"
-	"                                                 and other data. The context-import should have been\n"
-	"                                                 generated with a previous execution of Lina with\n"
-	"                                                 \"--mma-mode=GEN\". Performing memory model analysis\n"
-	"                                                 based on a context-import opens the possibility for\n"
-	"                                                 improved memory optimisations. Please note that Lina\n"
-	"                                                 fails if this mode is set without a present context\n"
-	"                                                 import\n"
-	"                                        Please note that this argument is ignored if \"-m trace\" |\n"
-	"                                        \"--mode=trace\" is set\n"
+	"                   --f-burstaggr       : enable burst aggregation: sequential operations inside a\n"
+	"                                         DDDG are grouped together to form bursts.\n"
+	"                   --f-burstmix        : if enabled, burst aggregation can mix arrays. Option ignored\n"
+	"                                         if global parameter \"ddrbanking\" is enabled or if \"--f-burstaggr\"\n"
+	"                                         is disabled\n"
+	"                   --f-vec             : enable array vectorisation analysis, which tries to find a\n"
+	"                                         suitable SIMD type for the off-chip arrays. This analysis is\n"
+	"                                         automatically disabled when \"--mma-mode=off\". Requires\n"
+	"                                         \"--f-burstaggr\"\n"
+	"        -d LEVEL , --ddrsched=LEVEL    : specify the DDR scheduling policy:\n"
+	"                                             0: DDR transactions of same type (read/write) cannot\n"
+	"                                                overlap (i.e. once a transaction starts, it must end\n"
+	"                                                before others of same type can start, DEFAULT)\n"
+	"                                             1: DDR transactions can overlap if their memory spaces\n"
+	"                                                are disjoint\n"
+	"                   --mma-mode=MODE     : select Lina execution model according to MMA mode. MODE may\n"
+	"                                         be:\n"
+	"                                             off: run Lina normally (DEFAULT)\n"
+	"                                             gen: perform memory model analysis, generate a context\n"
+	"                                                  import file and stop execution\n"
+	"                                             use: skip profiling and DDDG generation, proceed\n"
+	"                                                  directly to memory model analysis. In this mode, a\n"
+	"                                                  context import file is used to generate the DDDG\n"
+	"                                                  and other data. The context-import should have been\n"
+	"                                                  generated with a previous execution of Lina with\n"
+	"                                                  \"--mma-mode=GEN\". Performing memory model analysis\n"
+	"                                                  based on a context-import opens the possibility for\n"
+	"                                                  improved memory optimisations. Please note that Lina\n"
+	"                                                  fails if this mode is set without a present context\n"
+	"                                                  import\n"
+	"                                         Please note that this argument is ignored if \"-m trace\" |\n"
+	"                                         \"--mode=trace\" is set\n"
 	"\n"
 	"Lin-Analyzer flags:\n"
-	"                   --fno-sb           : disable store-buffer optimisation\n"
-	"                   --f-slr            : enable shared-load-removal optimisation\n"
-	"                   --fno-slr          : disable shared-load-removal optimisation. If\n"
-	"                                        either --f-slr and --fno-slr are omitted, the\n"
-	"                                        decision will be left to the estimator\n"
-	"                   --fno-rsr          : disable repeated-store-removal optimisation\n"
-	"                   --f-thr-float      : enable tree-height-reduction for floating point\n"
-	"                                        operations\n"
-	"                   --f-thr-int        : enable tree-height-reduction for integer\n"
-	"                                        operations\n"
-	"                   --f-md             : enable memory-disambiguation optimisation\n"
-	"                   --fno-ft           : disable FPU threshold optimisation\n"
-	"                   --f-es             : enable extra-scalar\n"
-	"                   --f-rwrwm          : enable RWRW memory\n"
+	"                   --fno-sb            : disable store-buffer optimisation\n"
+	"                   --f-slr             : enable shared-load-removal optimisation\n"
+	"                   --fno-slr           : disable shared-load-removal optimisation. If\n"
+	"                                         either --f-slr and --fno-slr are omitted, the\n"
+	"                                         decision will be left to the estimator\n"
+	"                   --fno-rsr           : disable repeated-store-removal optimisation\n"
+	"                   --f-thr-float       : enable tree-height-reduction for floating point\n"
+	"                                         operations\n"
+	"                   --f-thr-int         : enable tree-height-reduction for integer\n"
+	"                                         operations\n"
+	"                   --f-md              : enable memory-disambiguation optimisation\n"
+	"                   --fno-ft            : disable FPU threshold optimisation\n"
+	"                   --f-es              : enable extra-scalar\n"
+	"                   --f-rwrwm           : enable RWRW memory\n"
 	"Other flags:\n"
-	"                   --f-argres         : consider resource used by function arguments\n"
+	"                   --f-argres          : consider resource used by function arguments\n"
 	"\n"
 	"For bug reporting, please file a github issue at https://github.com/comododragon/linaii\n";
 
@@ -246,6 +252,7 @@ void parseInputArguments(int argc, char **argv) {
 	args.verbose = false;
 	args.ddrSched = args.DDR_POLICY_CANNOT_OVERLAP;
 	args.memTrace = false;
+	args.shortMemTrace = true;
 	args.showCFG = false;
 	args.showCFGDetailed = false;
 	args.showPreOptDDDG = false;
@@ -295,29 +302,30 @@ void parseInputArguments(int argc, char **argv) {
 			{"loops", required_argument, 0, 'l'},
 			{"ddrsched", required_argument, 0, 'd'},
 			{"mem-trace", no_argument, 0, 0xF00},
-			{"show-cfg", no_argument, 0, 0xF01},
-			{"show-detail-cfg", no_argument, 0, 0xF02},
-			{"show-pre-dddg", no_argument, 0, 0xF03},
-			{"show-post-dddg", no_argument, 0, 0xF04},
-			{"show-scheduling", no_argument, 0, 0xF05},
-			{"f-npla", no_argument, 0, 0xF06},
-			{"fno-tcs", no_argument, 0, 0xF07},
-			{"fno-mma", no_argument, 0, 0xF08},
-			{"f-burstaggr", no_argument, 0, 0xF09},
-			{"f-burstmix", no_argument, 0, 0xF0A},
-			{"f-vec", no_argument, 0, 0xF0B},
-			{"mma-mode", required_argument, 0, 0xF0C},
-			{"fno-sb", no_argument, 0, 0xF0D},
-			{"f-slr", no_argument, 0, 0xF0E},
-			{"fno-slr", no_argument, 0, 0xF0F},
-			{"fno-rsr", no_argument, 0, 0xF10},
-			{"f-thr-float", no_argument, 0, 0xF11},
-			{"f-thr-int", no_argument, 0, 0xF12},
-			{"f-md", no_argument, 0, 0xF13},
-			{"fno-ft", no_argument, 0, 0xF14},
-			{"f-es", no_argument, 0, 0xF15},
-			{"f-rwrwm", no_argument, 0, 0xF16},
-			{"f-argres", no_argument, 0, 0xF17},
+			{"no-short-mem-trace", no_argument, 0, 0xF01},
+			{"show-cfg", no_argument, 0, 0xF02},
+			{"show-detail-cfg", no_argument, 0, 0xF03},
+			{"show-pre-dddg", no_argument, 0, 0xF04},
+			{"show-post-dddg", no_argument, 0, 0xF05},
+			{"show-scheduling", no_argument, 0, 0xF06},
+			{"f-npla", no_argument, 0, 0xF07},
+			{"fno-tcs", no_argument, 0, 0xF08},
+			{"fno-mma", no_argument, 0, 0xF09},
+			{"f-burstaggr", no_argument, 0, 0xF0A},
+			{"f-burstmix", no_argument, 0, 0xF0B},
+			{"f-vec", no_argument, 0, 0xF0C},
+			{"mma-mode", required_argument, 0, 0xF0D},
+			{"fno-sb", no_argument, 0, 0xF0E},
+			{"f-slr", no_argument, 0, 0xF0F},
+			{"fno-slr", no_argument, 0, 0xF10},
+			{"fno-rsr", no_argument, 0, 0xF11},
+			{"f-thr-float", no_argument, 0, 0xF12},
+			{"f-thr-int", no_argument, 0, 0xF13},
+			{"f-md", no_argument, 0, 0xF14},
+			{"fno-ft", no_argument, 0, 0xF15},
+			{"f-es", no_argument, 0, 0xF16},
+			{"f-rwrwm", no_argument, 0, 0xF17},
+			{"f-argres", no_argument, 0, 0xF18},
 			{0, 0, 0, 0}
 		};
 		int optionIndex = 0;
@@ -413,39 +421,42 @@ void parseInputArguments(int argc, char **argv) {
 				args.memTrace = true;
 				break;
 			case 0xF01:
-				args.showCFG = true;
+				args.shortMemTrace = false;
 				break;
 			case 0xF02:
-				args.showCFGDetailed = true;
+				args.showCFG = true;
 				break;
 			case 0xF03:
-				args.showPreOptDDDG = true;
+				args.showCFGDetailed = true;
 				break;
 			case 0xF04:
-				args.showPostOptDDDG = true;
+				args.showPreOptDDDG = true;
 				break;
 			case 0xF05:
-				args.showScheduling = true;
+				args.showPostOptDDDG = true;
 				break;
 			case 0xF06:
-				args.fNPLA = true;
+				args.showScheduling = true;
 				break;
 			case 0xF07:
-				args.fNoTCS = true;
+				args.fNPLA = true;
 				break;
 			case 0xF08:
-				args.fNoMMA = true;
+				args.fNoTCS = true;
 				break;
 			case 0xF09:
-				args.fBurstAggr = true;
+				args.fNoMMA = true;
 				break;
 			case 0xF0A:
-				args.fBurstMix = true;
+				args.fBurstAggr = true;
 				break;
 			case 0xF0B:
-				args.fVec = true;
+				args.fBurstMix = true;
 				break;
 			case 0xF0C:
+				args.fVec = true;
+				break;
+			case 0xF0D:
 				optargStr = optarg;
 				if(!optargStr.compare("off"))
 					args.mmaMode = args.MMA_MODE_OFF;
@@ -454,37 +465,37 @@ void parseInputArguments(int argc, char **argv) {
 				else if(!optargStr.compare("use"))
 					args.mmaMode = args.MMA_MODE_USE;
 				break;
-			case 0xF0D:
+			case 0xF0E:
 				args.fSBOpt = false;
 				break;
-			case 0xF0E:
+			case 0xF0F:
 				args.fSLROpt = true;
 				break;
-			case 0xF0F:
+			case 0xF10:
 				args.fNoSLROpt = true;
 				break;
-			case 0xF10:
+			case 0xF11:
 				args.fRSROpt = false;
 				break;
-			case 0xF11:
+			case 0xF12:
 				args.fTHRFloatOpt = true;
 				break;
-			case 0xF12:
+			case 0xF13:
 				args.fTHRIntOpt = true;
 				break;
-			case 0xF13:
+			case 0xF14:
 				args.fMemDisambuigOpt = true;
 				break;
-			case 0xF14:
+			case 0xF15:
 				args.fNoFPUThresOpt = true;
 				break;
-			case 0xF15:
+			case 0xF16:
 				args.fExtraScalar = true;
 				break;
-			case 0xF16:
+			case 0xF17:
 				args.fRWRWMem = true;
 				break;
-			case 0xF17:
+			case 0xF18:
 				args.fArgRes = true;
 				break;
 		}

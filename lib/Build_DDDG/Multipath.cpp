@@ -329,6 +329,8 @@ void Multipath::recursiveLookup(unsigned currLoopLevel, unsigned finalLoopLevel)
 		return;
 	}
 	else {
+// XXX Different generations of NPLA logic, remove!
+#if 1
 		std::string wholeLoopName = appendDepthToLoopName(loopName, currLoopLevel);
 		wholeloopName2loopBoundMapTy::iterator found = wholeloopName2loopBoundMap.find(wholeLoopName);
 		assert(found != wholeloopName2loopBoundMap.end() && "Could not find loop in wholeloopName2loopBoundMap");
@@ -340,6 +342,19 @@ void Multipath::recursiveLookup(unsigned currLoopLevel, unsigned finalLoopLevel)
 		bool calculateBefore = true;
 		bool calculateAfter = true;
 		if(!calculateBefore && !calculateAfter) {
+#else
+		std::string wholeLoopName = appendDepthToLoopName(loopName, currLoopLevel);
+		wholeloopName2perfectOrNotMapTy::iterator found = wholeloopName2perfectOrNotMap.find(wholeLoopName);
+		assert(found != wholeloopName2perfectOrNotMap.end() && "Could not find loop in wholeloopName2perfectOrNotMap");
+		wholeloopName2loopBoundMapTy::iterator found2 = wholeloopName2loopBoundMap.find(wholeLoopName);
+		assert(found2 != wholeloopName2loopBoundMap.end() && "Could not find loop in wholeloopName2loopBoundMap");
+		bool currIsPerfect = found->second;
+		uint64_t currLoopBound = found2->second;
+		unsigned currUnrollFactor = unrolls.at(currLoopLevel - 1);
+		unsigned targetUnrollFactor = (currLoopBound < currUnrollFactor && currLoopBound)? currLoopBound : currUnrollFactor;
+
+		if(currIsPerfect) {
+#endif
 			VERBOSE_PRINT(errs() << "[][][][multipath][" << std::to_string(currLoopLevel) << "] This loop nest is perfect. Proceeding to next level\n");
 
 			recursiveLookup(currLoopLevel + 1, finalLoopLevel);

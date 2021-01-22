@@ -47,6 +47,7 @@ typedef struct {
 	double frequency;
 	double uncertainty;
 	bool memTrace;
+	bool shortMemTrace;
 	bool showCFG;
 	bool showCFGDetailed;
 	bool showPreOptDDDG;

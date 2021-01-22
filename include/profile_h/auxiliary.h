@@ -66,6 +66,7 @@ extern std::ofstream debugFile;
 #define FILE_TRACE_SUFFIX "_trace.bc"
 #define FILE_DYNAMIC_TRACE "dynamic_trace.gz"
 #define FILE_MEM_TRACE "mem_trace.txt"
+#define FILE_MEM_TRACE_SHORT "mem_trace_short.bin"
 #define FILE_SUMMARY_SUFFIX "_summary.log"
 
 // XXX: For now, I'm using the old separators as defined in the original lin-analyzer to simplify correctness comparison and also portability

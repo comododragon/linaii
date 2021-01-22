@@ -395,16 +395,25 @@ void InstrumentForDDDG::extractMemoryTraceForAccessPattern() {
 
 	std::string fileName = args.workDir + FILE_MEM_TRACE;
 	std::string traceFileName = args.workDir + FILE_DYNAMIC_TRACE;
+	std::string shortFileName = args.workDir + FILE_MEM_TRACE_SHORT;
 	std::ofstream memTraceFile;
 	gzFile traceFile;
+	std::ofstream memTraceShortFile;
 	bool traceEntry = false;
 	int opcode = -1;
+	std::string bufferedWholeLoopName = "";
+	unsigned char zero = 0;
 
 	memTraceFile.open(fileName);
 	assert(memTraceFile.is_open() && "Could not open memory trace output file");
 
 	traceFile = gzopen(traceFileName.c_str(), "r");
 	assert(traceFile != Z_NULL && "Could not open trace input file");
+
+	if(args.shortMemTrace) {
+		memTraceShortFile.open(shortFileName, std::ios::binary);
+		assert(memTraceShortFile.is_open() && "Could not open short memory trace output file");
+	}
 
 	std::pair<std::string, std::string> wholeLoopNameInstNamePair;
 
@@ -449,6 +458,24 @@ void InstrumentForDDDG::extractMemoryTraceForAccessPattern() {
 
 					memTraceFile << wholeLoopName << "," << numLevels << "," << instName << ",";
 
+					if(args.shortMemTrace) {
+						if(bufferedWholeLoopName != wholeLoopName) { 
+							bufferedWholeLoopName = wholeLoopName;
+							assert(wholeLoopName.length() < 256 && "wholeLoopName has a length larger than 256, short trace file cannot be generated. For this kernel, please rerun this command all further commands with flag \"--no-short-mem-trace\"");
+							unsigned char wholeLoopNameLength = wholeLoopName.length();
+							memTraceShortFile.write((char *) &wholeLoopNameLength, sizeof(unsigned char));
+							memTraceShortFile.write(wholeLoopName.c_str(), wholeLoopNameLength);
+						}
+						else {
+							memTraceShortFile.write((char *) &zero, sizeof(unsigned char));
+						}
+
+						assert(instName.length() < 256 && "instName has a length larger than 256, short trace file cannot be generated. For this kernel, please rerun this command all further commands with flag \"--no-short-mem-trace\"");
+						unsigned char instNameLength = instName.length();
+						memTraceShortFile.write((char *) &instNameLength, sizeof(unsigned char));
+						memTraceShortFile.write(instName.c_str(), instNameLength);
+					}
+
 					wholeLoopNameInstNamePair = std::make_pair(wholeLoopName, instName);
 
 					if(isLoadOp(opcode))
@@ -467,6 +494,9 @@ void InstrumentForDDDG::extractMemoryTraceForAccessPattern() {
 			sscanf(rest.c_str(), "%*d,%lu,%*d,%*s\n", &addr);
 			memTraceFile << addr << ",";
 
+			if(args.shortMemTrace)
+				memTraceShortFile.write((char *) &addr, sizeof(uint64_t));
+
 			memoryTraceMap[wholeLoopNameInstNamePair].push_back(addr);
 		}
 		// Print result value of this load/store
@@ -481,6 +511,9 @@ void InstrumentForDDDG::extractMemoryTraceForAccessPattern() {
 
 	gzclose(traceFile);
 	memTraceFile.close();
+
+	if(args.shortMemTrace)
+		memTraceShortFile.close();
 
 	memoryTraceGenerated = true;
 
@@ -915,6 +948,8 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 			enablePipelining = found3 != pipelineLoopLevelVec.end();
 		}
 
+// XXX Different generations of NPLA logic, remove!
+#if 1
 		unsigned firstNonPerfectLoopLevel = 1;
 
 		VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Target loop: " << targetWholeLoopName << "\n");
@@ -926,6 +961,33 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 
 		// There used to be logic to control NPLA here, but for now it is always active as long --f-npla is set
 		if(args.fNPLA) {
+#else
+		int firstNonPerfectLoopLevel = -1;
+
+		// If non-perfect loop analysis is enabled, find the first loop to be non-perfect
+		if(args.fNPLA) {
+			for(unsigned i = 0; i < levelUnrollVec.size(); i++) {
+				std::string wholeLoopName = appendDepthToLoopName(loopName, i + 1);
+
+				wholeloopName2perfectOrNotMapTy::iterator found2 = wholeloopName2perfectOrNotMap.find(wholeLoopName);
+				assert(found2 != wholeloopName2perfectOrNotMap.end() && "Could not find loop in wholeloopName2perfectOrNotMap");
+
+				if(!(found2->second)) {
+					firstNonPerfectLoopLevel = i + 1;
+					break;
+				}
+			}
+		}
+
+		VERBOSE_PRINT(errs() << "[][loopBasedTraceAnalysis] Target loop: " << targetWholeLoopName << "\n");
+		VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Target unroll factor: " << targetUnrollFactor << "\n");
+		VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Target loop bound: " << targetLoopBound << "\n");
+		VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Pipelining: " << (enablePipelining? "enabled" : "disabled") << "\n");
+
+		unsigned unrollFactor = (targetLoopBound < targetUnrollFactor && targetLoopBound)? targetLoopBound : targetUnrollFactor;
+
+		if(args.fNPLA && firstNonPerfectLoopLevel != -1) {
+#endif
 			VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Non-perfect loop analysis triggered: building multipaths\n");
 
 			if(enablePipelining) {

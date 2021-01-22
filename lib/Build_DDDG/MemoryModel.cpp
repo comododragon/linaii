@@ -1031,27 +1031,64 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 
 	// If memory trace map was not constructed yet, try to generate it from "mem_trace.txt"
 	if(!memoryTraceGenerated) {
-		std::string line;
-		std::string traceFileName = args.workDir + FILE_MEM_TRACE;
-		std::ifstream traceFile;
+		if(args.shortMemTrace) {
+			std::string traceShortFileName = args.workDir + FILE_MEM_TRACE_SHORT;
+			std::ifstream traceShortFile;
+			std::string bufferedWholeLoopName = "";
 
-		traceFile.open(traceFileName);
-		assert(traceFile.is_open() && "No memory trace found. Please run Lina with \"--mem-trace\" flag (leave it enabled) and any mode other than \"--mode=estimation\" (only once is needed) to generate it; or deactivate inter-iteration burst analysis with \"--fno-mmaburst\"");
+			traceShortFile.open(traceShortFileName, std::ios::binary);
+			assert(traceShortFile.is_open() && "No short memory trace found. Please run Lina with \"--mem-trace\" flag (leave it enabled) and any mode other than \"--mode=estimation\" (only once is needed) to generate it; or deactivate inter-iteration burst analysis with \"--fno-mmaburst\"");
 
-		while(true) {
-			std::getline(traceFile, line);
-			if(traceFile.eof())
-				break;
+			while(!(traceShortFile.eof())) {
+				unsigned char bufferSz;
+				char buffer[BUFF_STR_SZ];
+				char buffer2[BUFF_STR_SZ];
+				uint64_t address;
 
-			char buffer[BUFF_STR_SZ];
-			char buffer2[BUFF_STR_SZ];
-			uint64_t address;
-			sscanf(line.c_str(), "%[^,],%*d,%[^,],%*[^,],%*d,%lu,%*d", buffer, buffer2, &address);
-			std::pair<std::string, std::string> wholeLoopNameInstNamePair = std::make_pair(std::string(buffer), std::string(buffer2));
-			memoryTraceMap[wholeLoopNameInstNamePair].push_back(address);
+				traceShortFile.read((char *) &bufferSz, sizeof(unsigned char));
+				// XXX We do not check if bufferSz >= BUFF_STR_SZ anymore since bufferSz may not be larger than 256 and BUFF_STR_SZ is currently larger than that
+				if(bufferSz) {
+					traceShortFile.read(buffer, bufferSz);
+					buffer[bufferSz] = '\0';
+					bufferedWholeLoopName.assign(buffer);
+				}
+
+				traceShortFile.read((char *) &bufferSz, sizeof(unsigned char));
+				traceShortFile.read(buffer, bufferSz);
+				buffer[bufferSz] = '\0';
+
+				traceShortFile.read((char *) &address, sizeof(uint64_t));
+
+				std::pair<std::string, std::string> wholeLoopNameInstNamePair = std::make_pair(std::string(bufferedWholeLoopName), std::string(buffer));
+				memoryTraceMap[wholeLoopNameInstNamePair].push_back(address);
+			}
+
+			traceShortFile.close();
+		}
+		else {
+			std::string line;
+			std::string traceFileName = args.workDir + FILE_MEM_TRACE;
+			std::ifstream traceFile;
+
+			traceFile.open(traceFileName);
+			assert(traceFile.is_open() && "No memory trace found. Please run Lina with \"--mem-trace\" flag (leave it enabled) and any mode other than \"--mode=estimation\" (only once is needed) to generate it; or deactivate inter-iteration burst analysis with \"--fno-mmaburst\"");
+
+			while(true) {
+				std::getline(traceFile, line);
+				if(traceFile.eof())
+					break;
+
+				char buffer[BUFF_STR_SZ];
+				char buffer2[BUFF_STR_SZ];
+				uint64_t address;
+				sscanf(line.c_str(), "%[^,],%*d,%[^,],%*[^,],%*d,%lu,%*d", buffer, buffer2, &address);
+				std::pair<std::string, std::string> wholeLoopNameInstNamePair = std::make_pair(std::string(buffer), std::string(buffer2));
+				memoryTraceMap[wholeLoopNameInstNamePair].push_back(address);
+			}
+
+			traceFile.close();
 		}
 
-		traceFile.close();
 		memoryTraceGenerated = true;
 	}
 

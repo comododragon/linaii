@@ -22,7 +22,7 @@ void TraceLogger::initialiseDefaults(Module &M) {
 
 	log0 = cast<Function>(
 		M.getOrInsertFunction(
-			"trace_logger_log0",
+			(args.memTrace || args.shortMemTrace)? "trace_logger_log0_m" : "trace_logger_log0",
 			Type::getVoidTy(C),
 			Type::getInt64Ty(C),
 			Type::getInt8PtrTy(C),
@@ -35,7 +35,7 @@ void TraceLogger::initialiseDefaults(Module &M) {
 
 	logInt = cast<Function>(
 		M.getOrInsertFunction(
-			"trace_logger_log_int",
+			(args.memTrace || args.shortMemTrace)? "trace_logger_log_int_m" : "trace_logger_log_int",
 			Type::getVoidTy(C),
 			Type::getInt64Ty(C),
 			Type::getInt64Ty(C),
@@ -48,7 +48,7 @@ void TraceLogger::initialiseDefaults(Module &M) {
 
 	logDouble = cast<Function>(
 		M.getOrInsertFunction(
-			"trace_logger_log_double",
+			(args.memTrace || args.shortMemTrace)? "trace_logger_log_double_m" : "trace_logger_log_double",
 			Type::getVoidTy(C),
 			Type::getInt64Ty(C),
 			Type::getInt64Ty(C),
@@ -61,7 +61,7 @@ void TraceLogger::initialiseDefaults(Module &M) {
 
 	logIntNoReg = cast<Function>(
 		M.getOrInsertFunction(
-			"trace_logger_log_int_noreg",
+			(args.memTrace || args.shortMemTrace)? "trace_logger_log_int_noreg_m" : "trace_logger_log_int_noreg",
 			Type::getVoidTy(C),
 			Type::getInt64Ty(C),
 			Type::getInt64Ty(C),
@@ -73,7 +73,7 @@ void TraceLogger::initialiseDefaults(Module &M) {
 
 	logDoubleNoReg = cast<Function>(
 		M.getOrInsertFunction(
-			"trace_logger_log_double_noreg",
+			(args.memTrace || args.shortMemTrace)? "trace_logger_log_double_noreg_m" : "trace_logger_log_double_noreg",
 			Type::getVoidTy(C),
 			Type::getInt64Ty(C),
 			Type::getInt64Ty(C),
@@ -543,14 +543,15 @@ bool InstrumentForDDDG::runOnModule(Module &M) {
 			/// Finished Profiling
 			VERBOSE_PRINT(errs() << "[instrumentForDDDG] Profiling finished\n");
 
-		if(args.memTrace) {
+		// TODO deactivated, memory trace is being generated in TraceFunctions.cpp
+		/*if(args.memTrace) {
 			errs() << "========================================================\n";
 			errs() << "Starting memory trace extraction\n";
 
 			VERBOSE_PRINT(errs() << "[instrumentForDDDG] Starting memory trace extraction\n");
 			extractMemoryTraceForAccessPattern();
 			VERBOSE_PRINT(errs() << "[instrumentForDDDG] Memory trace extraction finished\n");
-		}
+		}*/
 
 		if(args.MODE_TRACE_ONLY == args.mode)
 			return result;
@@ -1091,11 +1092,20 @@ void ProfilingEngine::runOnProfiler() {
 	assert(EE && "ExecutionEngine was not constructed");
 
 	VERBOSE_PRINT(errs() << "[][profilingEngine] Mapping trace logger functions\n");
-	EE->addGlobalMapping(TL.log0, reinterpret_cast<void *>(trace_logger_log0));
-	EE->addGlobalMapping(TL.logInt, reinterpret_cast<void *>(trace_logger_log_int));
-	EE->addGlobalMapping(TL.logDouble, reinterpret_cast<void *>(trace_logger_log_double));
-	EE->addGlobalMapping(TL.logIntNoReg, reinterpret_cast<void *>(trace_logger_log_int_noreg));
-	EE->addGlobalMapping(TL.logDoubleNoReg, reinterpret_cast<void *>(trace_logger_log_double_noreg));
+	if(args.memTrace || args.shortMemTrace) {
+		EE->addGlobalMapping(TL.log0, reinterpret_cast<void *>(trace_logger_log0_m));
+		EE->addGlobalMapping(TL.logInt, reinterpret_cast<void *>(trace_logger_log_int_m));
+		EE->addGlobalMapping(TL.logDouble, reinterpret_cast<void *>(trace_logger_log_double_m));
+		EE->addGlobalMapping(TL.logIntNoReg, reinterpret_cast<void *>(trace_logger_log_int_noreg_m));
+		EE->addGlobalMapping(TL.logDoubleNoReg, reinterpret_cast<void *>(trace_logger_log_double_noreg_m));
+	}
+	else {
+		EE->addGlobalMapping(TL.log0, reinterpret_cast<void *>(trace_logger_log0));
+		EE->addGlobalMapping(TL.logInt, reinterpret_cast<void *>(trace_logger_log_int));
+		EE->addGlobalMapping(TL.logDouble, reinterpret_cast<void *>(trace_logger_log_double));
+		EE->addGlobalMapping(TL.logIntNoReg, reinterpret_cast<void *>(trace_logger_log_int_noreg));
+		EE->addGlobalMapping(TL.logDoubleNoReg, reinterpret_cast<void *>(trace_logger_log_double_noreg));
+	}
 
 	Function *entryF = M.getFunction("main");
 
@@ -1123,7 +1133,10 @@ void ProfilingEngine::runOnProfiler() {
 	VERBOSE_PRINT(errs() << "[][profilingEngine] Code executed. It's good to be back\n");
 	VERBOSE_PRINT(errs() << "[][profilingEngine] Performing cleanup\n");
 
-	trace_logger_fin();
+	if(args.memTrace || args.shortMemTrace)
+		trace_logger_fin_m();
+	else
+		trace_logger_fin();
 	EE->runStaticConstructorsDestructors(true);
 }
 

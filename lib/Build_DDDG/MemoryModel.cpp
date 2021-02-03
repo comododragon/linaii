@@ -1037,30 +1037,34 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 			std::string bufferedWholeLoopName = "";
 
 			traceShortFile.open(traceShortFileName, std::ios::binary);
-			assert(traceShortFile.is_open() && "No short memory trace found. Please run Lina with \"--mem-trace\" flag (leave it enabled) and any mode other than \"--mode=estimation\" (only once is needed) to generate it; or deactivate inter-iteration burst analysis with \"--fno-mmaburst\"");
+			assert(traceShortFile.is_open() && "No short memory trace found. Please run Lina with \"--short-mem-trace\" or \"--mem-trace\" (short mem trace is recommended) flag (leave it enabled) and any mode other than \"--mode=estimation\" (only once is needed) to generate it; or deactivate inter-iteration burst analysis with \"--fno-mmaburst\"");
 
 			while(!(traceShortFile.eof())) {
-				unsigned char bufferSz;
+				size_t bufferSz;
 				char buffer[BUFF_STR_SZ];
-				char buffer2[BUFF_STR_SZ];
-				uint64_t address;
+				std::vector<uint64_t> addrVec;
+				size_t addrVecSize;
 
-				traceShortFile.read((char *) &bufferSz, sizeof(unsigned char));
-				// XXX We do not check if bufferSz >= BUFF_STR_SZ anymore since bufferSz may not be larger than 256 and BUFF_STR_SZ is currently larger than that
-				if(bufferSz) {
-					traceShortFile.read(buffer, bufferSz);
-					buffer[bufferSz] = '\0';
-					bufferedWholeLoopName.assign(buffer);
-				}
+				if(!(traceShortFile.read((char *) &bufferSz, sizeof(size_t))))
+					break;
+				assert(bufferSz < BUFF_STR_SZ && "String buffer not big enough to allocate key read from memory trace binary file. Please change BUFF_STR_SZ");
+				traceShortFile.read(buffer, bufferSz);
+				buffer[bufferSz] = '\0';
+				bufferedWholeLoopName.assign(buffer);
 
-				traceShortFile.read((char *) &bufferSz, sizeof(unsigned char));
+				if(!(traceShortFile.read((char *) &bufferSz, sizeof(size_t))))
+					break;
+				assert(bufferSz < BUFF_STR_SZ && "String buffer not big enough to allocate key read from memory trace binary file. Please change BUFF_STR_SZ");
 				traceShortFile.read(buffer, bufferSz);
 				buffer[bufferSz] = '\0';
 
-				traceShortFile.read((char *) &address, sizeof(uint64_t));
+				traceShortFile.read((char *) &addrVecSize, sizeof(size_t));
+				addrVec.resize(addrVecSize);
 
 				std::pair<std::string, std::string> wholeLoopNameInstNamePair = std::make_pair(std::string(bufferedWholeLoopName), std::string(buffer));
-				memoryTraceMap[wholeLoopNameInstNamePair].push_back(address);
+				// TODO: THIS DOES NOT SEEM TO BE A GOOD IDEA
+				traceShortFile.read((char *) addrVec.data(), addrVecSize * sizeof(uint64_t));
+				memoryTraceMap.insert(std::make_pair(wholeLoopNameInstNamePair, addrVec));
 			}
 
 			traceShortFile.close();
@@ -1071,7 +1075,7 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 			std::ifstream traceFile;
 
 			traceFile.open(traceFileName);
-			assert(traceFile.is_open() && "No memory trace found. Please run Lina with \"--mem-trace\" flag (leave it enabled) and any mode other than \"--mode=estimation\" (only once is needed) to generate it; or deactivate inter-iteration burst analysis with \"--fno-mmaburst\"");
+			assert(traceFile.is_open() && "No memory trace found. Please run Lina with \"--short-mem-trace\" or \"--mem-trace\" (short mem trace is recommended) flag (leave it enabled) and any mode other than \"--mode=estimation\" (only once is needed) to generate it; or deactivate inter-iteration burst analysis with \"--fno-mmaburst\"");
 
 			while(true) {
 				std::getline(traceFile, line);

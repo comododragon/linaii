@@ -23,5 +23,12 @@ void trace_logger_log_int(int line, int size, int64_t value, int is_reg, char *l
 void trace_logger_log_double(int line, int size, double value, int is_reg, char *label);
 void trace_logger_log_int_noreg(int line, int size, int64_t value, int is_reg);
 void trace_logger_log_double_noreg(int line, int size, double value, int is_reg);
+void trace_logger_fin_m();
+void trace_logger_init_m();
+void trace_logger_log0_m(int line_number, char *name, char *bbid, char *instid, int opcode);
+void trace_logger_log_int_m(int line, int size, int64_t value, int is_reg, char *label);
+void trace_logger_log_double_m(int line, int size, double value, int is_reg, char *label);
+void trace_logger_log_int_noreg_m(int line, int size, int64_t value, int is_reg);
+void trace_logger_log_double_noreg_m(int line, int size, double value, int is_reg);
 
 #endif // End of TRACEFUNCTIONS_H

@@ -90,7 +90,6 @@ class InstrumentForDDDG : public ModulePass {
 	std::vector<std::string> pipelineLoopLevelVec;
 	std::ofstream summaryFile;
 
-	void extractMemoryTraceForAccessPattern();
 	int shouldTrace(std::string call);
 
 #ifdef DBG_PRINT_ALL

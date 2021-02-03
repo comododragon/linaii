@@ -6,27 +6,11 @@ FILE *shortMemTraceFile;
 
 bool initp = false;
 int instCount = 0;
-#if 0
-#define LINE_0 0x80000000
-#define LINE_R 0xC0000000
-#define LINE_F 0xA0000000
-#define LINE_D 0xE0000000
-char buffRepeat[2];
-char buffName[BUFF_STR_SZ];
-char buffBB[BUFF_STR_SZ];
-char buffInst[BUFF_STR_SZ];
-#endif
 
 void trace_logger_init() {
 	std::string traceFileName = args.workDir + FILE_DYNAMIC_TRACE;
 	std::string popenComm("gzip -1 - > " + traceFileName);
 	fullTraceFile = popen(popenComm.c_str(), "w");
-
-	//strncpy(buffRepeat, "~", 2);
-	//buffRepeat[0] = '\0';
-	/*buffName[0] = '\0';
-	buffBB[0] = '\0';
-	buffInst[0] = '\0';*/
 
 	assert(fullTraceFile != Z_NULL && "Could not open trace output file");
 }
@@ -41,195 +25,52 @@ void trace_logger_log0(int line_number, char *name, char *bbid, char *instid, in
 		initp = true;
 	}
 
-#if 0
-	unsigned int pack = LINE_0 | line_number;
-	fwrite(&pack, 1, sizeof(unsigned int), fullTraceFile);
-	bytesWritten += 1 * sizeof(unsigned int);
-	unsigned char strLen = strlen(name);
-	fwrite(&strLen, 1, sizeof(unsigned char), fullTraceFile);
-	fwrite(name, strLen, sizeof(char), fullTraceFile);
-	bytesWritten += 1 * sizeof(unsigned char) + strLen * sizeof(char);
-	strLen = strlen(bbid);
-	fwrite(&strLen, 1, sizeof(unsigned char), fullTraceFile);
-	fwrite(bbid, strLen, sizeof(char), fullTraceFile);
-	bytesWritten += 1 * sizeof(unsigned char) + strLen * sizeof(char);
-	strLen = strlen(instid);
-	fwrite(&strLen, 1, sizeof(unsigned char), fullTraceFile);
-	fwrite(instid, strLen, sizeof(char), fullTraceFile);
-	bytesWritten += 1 * sizeof(unsigned char) + strLen * sizeof(char);
-	fwrite(&opcode, 1, sizeof(int), fullTraceFile);
-	bytesWritten += 1 * sizeof(int);
-	fwrite(&instCount, 1, sizeof(int), fullTraceFile);
-	bytesWritten += 1 * sizeof(int);
-#else
-	/*char *nameToWrite = buffRepeat;
-	if(strncmp(buffName, name, BUFF_STR_SZ)) {
-		strncpy(buffName, name, BUFF_STR_SZ);
-		buffName[BUFF_STR_SZ - 1] = '\0';
-		nameToWrite = buffName;
-	}
-	char *bbToWrite = buffRepeat;
-	if(strncmp(buffBB, bbid, BUFF_STR_SZ)) {
-		strncpy(buffBB, bbid, BUFF_STR_SZ);
-		buffBB[BUFF_STR_SZ - 1] = '\0';
-		bbToWrite = buffBB;
-	}
-	char *instToWrite = buffRepeat;
-	if(strncmp(buffInst, instid, BUFF_STR_SZ)) {
-		strncpy(buffInst, instid, BUFF_STR_SZ);
-		buffInst[BUFF_STR_SZ - 1] = '\0';
-		instToWrite = buffInst;
-	}
-	bytesWritten += fprintf(fullTraceFile, "\n0,%d,%s,%s,%s,%d,%d\n", line_number, nameToWrite, bbToWrite, instToWrite, opcode, instCount);*/
 	fprintf(fullTraceFile, "\n0,%d,%s,%s,%s,%d,%d\n", line_number, name, bbid, instid, opcode, instCount);
-#endif
 	instCount++;
 }
 
 void trace_logger_log_int(int line, int size, int64_t value, int is_reg, char *label) {
 	assert(initp && "Trace Logger functions were not initialised correctly");
 
-#if 0
-	if(RESULT_LINE == line) {
-		unsigned int pack = LINE_R | size;
-		fwrite(&pack, 1, sizeof(unsigned int), fullTraceFile);
-		bytesWritten += 1 * sizeof(unsigned int);
-	}
-	else if(FORWARD_LINE == line) {
-		unsigned int pack = LINE_F | size;
-		fwrite(&pack, 1, sizeof(unsigned int), fullTraceFile);
-		bytesWritten += 1 * sizeof(unsigned int);
-	}
-	else {
-		fwrite(&line, 1, sizeof(int), fullTraceFile);
-		bytesWritten += 1 * sizeof(int);
-		fwrite(&size, 1, sizeof(int), fullTraceFile);
-		bytesWritten += 1 * sizeof(int);
-	}
-	fwrite(&value, 1, sizeof(int64_t), fullTraceFile);
-	bytesWritten += 1 * sizeof(int64_t);
-	fwrite(&is_reg, 1, sizeof(unsigned char), fullTraceFile);
-	bytesWritten += 1 * sizeof(unsigned char);
-	unsigned char strLen = strlen(label);
-	fwrite(&strLen, 1, sizeof(unsigned char), fullTraceFile);
-	fwrite(label, strLen, sizeof(char), fullTraceFile);
-	bytesWritten += 1 * sizeof(unsigned char) + strLen * sizeof(char);
-#else
 	if(RESULT_LINE == line)
 		fprintf(fullTraceFile, "r,%d,%ld,%d,%s\n", size, value, is_reg, label);
 	else if(FORWARD_LINE == line)
 		fprintf(fullTraceFile, "f,%d,%ld,%d,%s\n", size, value, is_reg, label);
 	else
 		fprintf(fullTraceFile, "%d,%d,%ld,%d,%s\n", line, size, value, is_reg, label);
-#endif
 }
 
 void trace_logger_log_double(int line, int size, double value, int is_reg, char *label) {
 	assert(initp && "Trace Logger functions were not initialised correctly");
 
-#if 0
-	if(RESULT_LINE == line) {
-		unsigned int pack = LINE_R | size;
-		fwrite(&pack, 1, sizeof(unsigned int), fullTraceFile);
-		bytesWritten += 1 * sizeof(unsigned int);
-	}
-	else if(FORWARD_LINE == line) {
-		unsigned int pack = LINE_F | size;
-		fwrite(&pack, 1, sizeof(unsigned int), fullTraceFile);
-		bytesWritten += 1 * sizeof(unsigned int);
-	}
-	else {
-		fwrite(&line, 1, sizeof(int), fullTraceFile);
-		bytesWritten += 1 * sizeof(int);
-		fwrite(&size, 1, sizeof(int), fullTraceFile);
-		bytesWritten += 1 * sizeof(int);
-	}
-	float fValue = (float) value;
-	fwrite(&fValue, 1, sizeof(float), fullTraceFile);
-	bytesWritten += 1 * sizeof(float);
-	fwrite(&is_reg, 1, sizeof(unsigned char), fullTraceFile);
-	bytesWritten += 1 * sizeof(unsigned char);
-	unsigned char strLen = strlen(label);
-	fwrite(&strLen, 1, sizeof(unsigned char), fullTraceFile);
-	fwrite(label, strLen, sizeof(char), fullTraceFile);
-	bytesWritten += 1 * sizeof(unsigned char) + strLen * sizeof(char);
-#else
 	if(RESULT_LINE == line)
 		fprintf(fullTraceFile, "r,%d,%f,%d,%s\n", size, value, is_reg, label);
 	else if(FORWARD_LINE == line)
 		fprintf(fullTraceFile, "f,%d,%f,%d,%s\n", size, value, is_reg, label);
 	else
 		fprintf(fullTraceFile, "%d,%d,%f,%d,%s\n", line, size, value, is_reg, label);
-#endif
 }
 
 void trace_logger_log_int_noreg(int line, int size, int64_t value, int is_reg) {
 	assert(initp && "Trace Logger functions were not initialised correctly");
 
-#if 0
-	if(RESULT_LINE == line) {
-		unsigned int pack = LINE_R | size;
-		fwrite(&pack, 1, sizeof(unsigned int), fullTraceFile);
-		bytesWritten += 1 * sizeof(unsigned int);
-	}
-	else if(FORWARD_LINE == line) {
-		unsigned int pack = LINE_F | size;
-		fwrite(&pack, 1, sizeof(unsigned int), fullTraceFile);
-		bytesWritten += 1 * sizeof(unsigned int);
-	}
-	else {
-		fwrite(&line, 1, sizeof(int), fullTraceFile);
-		bytesWritten += 1 * sizeof(int);
-		fwrite(&size, 1, sizeof(int), fullTraceFile);
-		bytesWritten += 1 * sizeof(int);
-	}
-	fwrite(&value, 1, sizeof(uint64_t), fullTraceFile);
-	bytesWritten += 1 * sizeof(uint64_t);
-	fwrite(&is_reg, 1, sizeof(unsigned char), fullTraceFile);
-	bytesWritten += 1 * sizeof(unsigned char);
-#else
 	if(RESULT_LINE == line)
 		fprintf(fullTraceFile, "r,%d,%ld,%d\n", size, value, is_reg);
 	else if(FORWARD_LINE == line)
 		fprintf(fullTraceFile, "f,%d,%ld,%d\n", size, value, is_reg);
 	else
 		fprintf(fullTraceFile, "%d,%d,%ld,%d\n", line, size, value, is_reg);
-#endif
 }
 
 void trace_logger_log_double_noreg(int line, int size, double value, int is_reg) {
 	assert(initp && "Trace Logger functions were not initialised correctly");
 
-#if 0
-	if(RESULT_LINE == line) {
-		unsigned int pack = LINE_R | size;
-		fwrite(&pack, 1, sizeof(unsigned int), fullTraceFile);
-		bytesWritten += 1 * sizeof(unsigned int);
-	}
-	else if(FORWARD_LINE == line) {
-		unsigned int pack = LINE_F | size;
-		fwrite(&pack, 1, sizeof(unsigned int), fullTraceFile);
-		bytesWritten += 1 * sizeof(unsigned int);
-	}
-	else {
-		fwrite(&line, 1, sizeof(int), fullTraceFile);
-		bytesWritten += 1 * sizeof(int);
-		fwrite(&size, 1, sizeof(int), fullTraceFile);
-		bytesWritten += 1 * sizeof(int);
-	}
-	float fValue = (float) value;
-	fwrite(&fValue, 1, sizeof(float), fullTraceFile);
-	bytesWritten += 1 * sizeof(float);
-	fwrite(&is_reg, 1, sizeof(unsigned char), fullTraceFile);
-	bytesWritten += 1 * sizeof(unsigned char);
-#else
 	if(RESULT_LINE == line)
 		fprintf(fullTraceFile, "r,%d,%f,%d\n", size, value, is_reg);
 	else if(FORWARD_LINE == line)
 		fprintf(fullTraceFile, "f,%d,%f,%d\n", size, value, is_reg);
 	else
 		fprintf(fullTraceFile, "%d,%d,%f,%d\n", line, size, value, is_reg);
-#endif
 }
 
 bool traceEntry;
@@ -238,7 +79,6 @@ char buffBB2[BUFF_STR_SZ];
 std::string buffWholeLoopName;
 unsigned buffNumLevels;
 std::pair<std::string, std::string> buffWholeLoopNameInstNamePair;
-//unsigned char zero = 0;
 int buffOpcode;
 
 extern memoryTraceMapTy memoryTraceMap;
@@ -289,7 +129,6 @@ void trace_logger_fin_m() {
 		fclose(shortMemTraceFile);
 	}
 
-	// TODO after cleaning all up, we can use memoryTraceMap2 as memoryTraceMap! Rename it accordingly and set memoryTraceGenerated = true here!
 	memoryTraceGenerated = true;
 
 	trace_logger_fin();

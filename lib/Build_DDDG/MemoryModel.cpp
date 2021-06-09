@@ -71,35 +71,35 @@ std::string Reporter::translateDatapathType(unsigned datapathType) {
 }
 
 void Reporter::infoReadOutBurstFound(std::string arrayName) {
-	rptFile << "\n[INFO] Found possibility of read burst between loop iterations\n";
-	rptFile << "       for array " << arrayName << "\n";
-	rptFile << "       at loop level " << loopLevel << "\n";
-	rptFile << "       " << translateDatapathType(datapathType) << "\n";
+	rptFile << "\n[INFO-001] Found possibility of read burst between loop iterations\n";
+	rptFile << "           for array " << arrayName << "\n";
+	rptFile << "           at loop level " << loopLevel << "\n";
+	rptFile << "           " << translateDatapathType(datapathType) << "\n";
 }
 
 void Reporter::infoWriteOutBurstFound(std::string arrayName) {
-	rptFile << "\n[INFO] Found possibility of write burst between loop iterations\n";
-	rptFile << "       for array " << arrayName << "\n";
-	rptFile << "       at loop level " << loopLevel << "\n";
-	rptFile << "       " << translateDatapathType(datapathType) << "\n";
+	rptFile << "\n[INFO-002] Found possibility of write burst between loop iterations\n";
+	rptFile << "           for array " << arrayName << "\n";
+	rptFile << "           at loop level " << loopLevel << "\n";
+	rptFile << "           " << translateDatapathType(datapathType) << "\n";
 }
 
 void Reporter::infoPackAttempt(std::string arrayName, unsigned sz) {
-	rptFile << "\n[INFO] Vectorisation attempt successful\n";
-	rptFile << "       for array " << arrayName << "\n";
-	rptFile << "       with " << sz << " elements vectorised\n";
+	rptFile << "\n[INFO-003] Vectorisation attempt successful\n";
+	rptFile << "           for array " << arrayName << "\n";
+	rptFile << "           with " << sz << " elements vectorised\n";
 }
 
 void Reporter::infoInBurstFound(std::string arrayName, uint64_t offset, std::vector<unsigned> &participants) {
 	const std::vector<int> &lineNoList = PC->getLineNoList();
 	std::string type = (LLVM_IR_DDRRead == microops->at(participants[0]))? "read" : "write";
 
-	rptFile << "\n[INFO] Found possibility of " << type << " burst inside this loop iteration\n";
-	rptFile << "       for array " << arrayName << "\n";
-	rptFile << "       at loop level " << loopLevel << "\n";
-	rptFile << "       " << translateDatapathType(datapathType) << "\n";
-	rptFile << "       # of merged transactions: " << (offset + 1) << "\n";
-	rptFile << "       participants:\n";
+	rptFile << "\n[INFO-004] Found possibility of " << type << " burst inside this loop iteration\n";
+	rptFile << "           for array " << arrayName << "\n";
+	rptFile << "           at loop level " << loopLevel << "\n";
+	rptFile << "           " << translateDatapathType(datapathType) << "\n";
+	rptFile << "           # of merged transactions: " << (offset + 1) << "\n";
+	rptFile << "           participants:\n";
 	for(auto &it : participants)
 		rptFile << "                     line " << lineNoList.at(it) << "\n";
 }
@@ -108,32 +108,34 @@ void Reporter::warnPackAttemptFailed(
 	std::string arrayName, unsigned sz, unsigned warnReason,
 	unsigned lmisalign, unsigned rmisalign, unsigned otherLoopLevel, unsigned otherDatapathType
 ) {
-	rptFile << "\n[WARN] Vectorisation attempt failed\n";
-	rptFile << "       for array " << arrayName << "\n";
-	rptFile << "       with " << sz << " elements vectorised\n";
-	rptFile << "       Reason: " << warnReasonMap[warnReason] << "\n";
+	// XXX warnReason + 4 will generate a separate WARN-00X ID for every reason
+	rptFile << "\n[WARN-" << stringFormat<unsigned>(warnReason + 4, 3) << "] Vectorisation attempt failed\n";
+	rptFile << "           for array " << arrayName << "\n";
+	rptFile << "           with " << sz << " elements vectorised\n";
+	rptFile << "           Reason: " << warnReasonMap[warnReason] << "\n";
 	if(lmisalign || rmisalign) {
 		if(lmisalign)
-			rptFile << "               due to " << lmisalign << " unused element(s) before\n";
+			rptFile << "                   due to " << lmisalign << " unused element(s) before\n";
 		if(rmisalign)
-			rptFile << "               due to " << rmisalign << " unused element(s) after\n";
-		rptFile << "               at loop level " << otherLoopLevel << "\n";
-		rptFile << "               " << translateDatapathType(otherDatapathType) << "\n";
+			rptFile << "                   due to " << rmisalign << " unused element(s) after\n";
+		rptFile << "                   at loop level " << otherLoopLevel << "\n";
+		rptFile << "                   " << translateDatapathType(otherDatapathType) << "\n";
 	}
 }
 
 void Reporter::warnOutBurstFailed(std::string arrayName, unsigned warnReason, unsigned otherLoopLevel, unsigned otherDatapathType) {
-	rptFile << "\n[WARN] Burst possibility between loop iterations failed\n";
-	rptFile << "       for array " << arrayName << "\n";
-	rptFile << "       at loop level " << loopLevel << "\n";
-	rptFile << "       " << translateDatapathType(datapathType) << "\n";
-	rptFile << "       Reason: " << warnReasonMap[warnReason] << "\n";
-	rptFile << "               at loop level " << otherLoopLevel << "\n";
-	rptFile << "               " << translateDatapathType(otherDatapathType) << "\n";
+	// XXX warnReason + 11 will generate a separate WARN-0XX ID for every reason while not overlapping with the ones defined above
+	rptFile << "\n[WARN-" << stringFormat<unsigned>(warnReason + 11, 3) << "] Burst possibility between loop iterations failed\n";
+	rptFile << "           for array " << arrayName << "\n";
+	rptFile << "           at loop level " << loopLevel << "\n";
+	rptFile << "           " << translateDatapathType(datapathType) << "\n";
+	rptFile << "           Reason: " << warnReasonMap[warnReason] << "\n";
+	rptFile << "                   at loop level " << otherLoopLevel << "\n";
+	rptFile << "                   " << translateDatapathType(otherDatapathType) << "\n";
 }
 
 void Reporter::warnOutBurstNotPossible(std::string arrayName) {
-	rptFile << "\n[WARN] Burst possibility between loop iterations likely not possible\n";
+	rptFile << "\n[WARN-001] Burst possibility between loop iterations likely not possible\n";
 	rptFile << "       for array " << arrayName << "\n";
 	rptFile << "       at loop level " << loopLevel << "\n";
 	rptFile << "       " << translateDatapathType(datapathType) << "\n";
@@ -147,7 +149,7 @@ void Reporter::warnOutBurstNotPossible(std::string arrayName) {
 void Reporter::warnReadAfterWrite(std::string readArrayName, unsigned readNode, std::string writeArrayName, unsigned writeNode) {
 	const std::vector<int> &lineNoList = PC->getLineNoList();
 
-	rptFile << "\n[WARN] Detected read after a write transaction\n";
+	rptFile << "\n[WARN-002] Detected read after a write transaction\n";
 	rptFile << "       Vivado will likely serialise these transactions and severely hurt performance\n";
 	rptFile << "       Read at array " << readArrayName << " at line " << lineNoList.at(readNode) << "\n";
 	rptFile << "       after write at array " << writeArrayName << " at line " << lineNoList.at(writeNode) << "\n";
@@ -158,7 +160,7 @@ void Reporter::warnReadAfterWrite(std::string readArrayName, unsigned readNode, 
 }
 
 void Reporter::warnReadAfterWriteDueUnroll() {
-	rptFile << "\n[WARN] Detected reads and writes transactions in an unrolled code segment\n";
+	rptFile << "\n[WARN-003] Detected reads and writes transactions in an unrolled code segment\n";
 	rptFile << "       Vivado will likely replicate the code and put reads after writes,\n";
 	rptFile << "       potentially hurting performance due to serialisation\n";
 	rptFile << "       Consider (if possible) manually implementing the loop unroll and explicitly\n";
@@ -839,11 +841,28 @@ std::unordered_map<std::string, outBurstInfoTy> XilinxZCUMemoryModel::findOutBur
 			std::vector<unsigned> burstedNodesVec = burstedNode.participants;
 
 			for(auto &it2 : burstedNodesVec) {
-				std::pair<std::string, std::string> wholeLoopNameInstNamePair = std::make_pair(wholeLoopName, instIDList[it2]);
+				//std::pair<std::string, std::string> wholeLoopNameInstNamePair = std::make_pair(wholeLoopName, instIDList[it2]);
 
 				// Check if all instances of this instruction are well behaved in the memory trace
 				// XXX: We do not sort the list here like when searching for inner bursts, since we do not support loop reordering
-				std::vector<uint64_t> addresses = memoryTraceMap.at(wholeLoopNameInstNamePair);
+				// XXX: Memory trace map is generated with no optimisations. This means that an instruction that is originally
+				// located at the i-th loop level, if the loop level is fully unrolled, it will not be located in i-th anymore
+				// but in i-1-th. In this case wholeLoopName will be inconsistent with the instruction.
+				// Below is a quick fix that should work as long that EVERY instruction in LLVM IR has a different ID regardless
+				// of loop level (which we hope that --instnamer guarantees). Perhaps we should find a better way of doing this,
+				// maybe not even here!
+				std::string loopName = datapath->getTargetLoopName();
+				unsigned numLevels = LpName2numLevelMap.at(loopName);
+				memoryTraceMapTy::iterator found2;
+				for(unsigned i = datapath->getTargetLoopLevel(); i <= numLevels; i++) {
+					std::pair<std::string, std::string> wholeLoopNameInstNamePair = std::make_pair(appendDepthToLoopName(loopName, i), instIDList[it2]);
+					found2 = memoryTraceMap.find(wholeLoopNameInstNamePair);
+					if(found2 != memoryTraceMap.end())
+						break;
+				}
+				assert(found2 != memoryTraceMap.end() && "Could not find the respective loop level of the instruction in memory trace map");
+				std::vector<uint64_t> addresses = found2->second;
+				//std::vector<uint64_t> addresses = memoryTraceMap.at(wholeLoopNameInstNamePair);
 #ifdef VAR_WSIZE
 				uint64_t nextAddress = addresses[0] + wordSize * (offset / adjustFactor);
 #else
@@ -1905,6 +1924,44 @@ void XilinxZCUMemoryModel::release(unsigned node, int opcode) {
 bool XilinxZCUMemoryModel::canOutBurstsOverlap() {
 	return MemoryModel::canOutBurstsOverlap(nodesToBeforeDDDG, nodesToAfterDDDG);
 }
+
+#if 1
+unsigned XilinxZCUMemoryModel::getCoalescedReadsFrom(unsigned nodeID) {
+	std::unordered_map<unsigned, burstInfoTy>::iterator found = burstedLoads.find(nodeID);
+
+	if(burstedLoads.end() == found)
+		return 0;
+
+	// Offset + 1 determines the size of the burst, but does also consider the silent read/writes! So we subtract them
+	// We could simply count how many read/writes are not silent and that's it, however redundant nodes are not being
+	// silenced for now and that could affect the count, thus we do this way instead
+	unsigned notSilentOnes = 0;
+	for(unsigned nodeID : found->second.participants) {
+		if(LLVM_IR_DDRRead == microops.at(nodeID))
+			notSilentOnes++;
+	}
+
+	return (notSilentOnes < (found->second.offset + 1))? notSilentOnes : (found->second.offset + 1);
+}
+
+unsigned XilinxZCUMemoryModel::getCoalescedWritesFrom(unsigned nodeID) {
+	std::unordered_map<unsigned, burstInfoTy>::iterator found = burstedStores.find(nodeID);
+
+	if(burstedStores.end() == found)
+		return 0;
+
+	// Offset + 1 determines the size of the burst, but does also consider the silent read/writes! So we subtract them
+	// We could simply count how many read/writes are not silent and that's it, however redundant nodes are not being
+	// silenced for now and that could affect the count, thus we do this way instead
+	unsigned notSilentOnes = 0;
+	for(unsigned nodeID : found->second.participants) {
+		if(LLVM_IR_DDRWrite == microops.at(nodeID))
+			notSilentOnes++;
+	}
+
+	return (notSilentOnes < (found->second.offset + 1))? notSilentOnes : (found->second.offset + 1);
+}
+#endif
 
 void XilinxZCUMemoryModel::setUp(ContextManager &CtxM) {
 	std::string loopName = datapath->getTargetLoopName();

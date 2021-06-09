@@ -4,6 +4,9 @@
 
 #include "profile_h/opcodes.h"
 
+#include <iomanip>
+#include <sstream>
+
 using namespace llvm;
 
 #ifdef DBG_FILE
@@ -171,6 +174,15 @@ uint64_t logNextPowerOf2(uint64_t x) {
 	}
 
 	return foundMoreOne? onePos + 1 : onePos;
+}
+
+template<> std::string stringFormat<unsigned>(unsigned val, unsigned leading) {
+	std::string str;
+	std::stringstream sstr(str);
+
+	sstr << std::setfill('0') << std::setw(leading) << val;
+
+	return str;
 }
 
 ConfigurationManager::ConfigurationManager(std::string kernelName) : kernelName(kernelName) { }

@@ -1618,6 +1618,27 @@ std::tuple<std::string, uint64_t> BaseDatapath::calculateResIIMemPort() {
 			std::string arrayName = partitionName.substr(0, partitionName.find(GLOBAL_SEPARATOR));
 #endif
 
+#if 1
+			if(isLoadOp(opcode)) {
+				// Complete partitioning, no need to analyse
+				if(!(std::get<0>(arrayConfig.at(arrayName))))
+					continue;
+
+				arrayPartitionToNumOfReads[partitionName]++;
+			}
+			if(isDDRLoad(opcode))
+				arrayPartitionToNumOfReads[partitionName] += memmodel->getCoalescedReadsFrom(it2);
+
+			if(isStoreOp(opcode)) {
+				// Complete partitioning, no need to analyse
+				if(!(std::get<0>(arrayConfig.at(arrayName))))
+					continue;
+
+				arrayPartitionToNumOfWrites[partitionName]++;
+			}
+			if(isDDRStore(opcode))
+				arrayPartitionToNumOfWrites[partitionName] += memmodel->getCoalescedWritesFrom(it2);
+#else
 			if(isLoadOp(opcode) || isDDRLoad(opcode)) {
 				// Complete partitioning, no need to analyse
 				if(!(isArrayOffchip.at(partitionName) || std::get<0>(arrayConfig.at(arrayName))))
@@ -1633,33 +1654,92 @@ std::tuple<std::string, uint64_t> BaseDatapath::calculateResIIMemPort() {
 
 				arrayPartitionToNumOfWrites[partitionName]++;
 			}
+#endif
 		}
 	}
 
-	for(auto &it : arrayPartitionToResII) {
-		std::string partitionName = it.first;
+	if(CM.getGlobalCfg<bool>(ConfigurationManager::globalCfgTy::GLOBAL_DDRBANKING)) {
+		// With DDR banking, each off-chip array have its own interface, therefore we count it the same way as on-chip array partitions
+		for(auto &it : arrayPartitionToResII) {
+			std::string partitionName = it.first;
 
-		// Analyse for read
-		uint64_t readII = 0;
-		std::map<std::string, uint64_t>::iterator found = arrayPartitionToNumOfReads.find(partitionName);
-		if(found != arrayPartitionToNumOfReads.end()) {
-			uint64_t numReads = found->second;
-			uint64_t numReadPorts = isArrayOffchip.at(partitionName)? memmodel->getNumOfReadPorts() : profile->arrayGetPartitionReadPorts(partitionName);
+			// Analyse for read
+			uint64_t readII = 0;
+			std::map<std::string, uint64_t>::iterator found = arrayPartitionToNumOfReads.find(partitionName);
+			if(found != arrayPartitionToNumOfReads.end()) {
+				uint64_t numReads = found->second;
+				uint64_t numReadPorts = isArrayOffchip.at(partitionName)? memmodel->getNumOfReadPorts() : profile->arrayGetPartitionReadPorts(partitionName);
 
-			readII = std::ceil(numReads / (double) numReadPorts);
+				readII = std::ceil(numReads / (double) numReadPorts);
+			}
+
+			// Analyse for write
+			uint64_t writeII = 0;
+			std::map<std::string, uint64_t>::iterator found3 = arrayPartitionToNumOfWrites.find(partitionName);
+			if(found3 != arrayPartitionToNumOfWrites.end()) {
+				uint64_t numWrites = found3->second;
+				uint64_t numWritePorts = isArrayOffchip.at(partitionName)? memmodel->getNumOfWritePorts() : profile->arrayGetPartitionWritePorts(partitionName);
+
+				writeII = std::ceil(numWrites / (double) numWritePorts);
+			}
+
+			it.second = (readII > writeII)? readII : writeII;
+		}
+	}
+	else {
+		// Without DDR banking, all off-chip arrays reads use the same interface (likewise for write), thus we count them together
+		uint64_t accumulatedOffchipReads = 0;
+		uint64_t accumulatedOffchipWrites = 0;
+
+		for(auto &it : arrayPartitionToResII) {
+			std::string partitionName = it.first;
+
+			// Analyse for read
+			uint64_t readII = 0;
+			std::map<std::string, uint64_t>::iterator found = arrayPartitionToNumOfReads.find(partitionName);
+			if(found != arrayPartitionToNumOfReads.end()) {
+				if(isArrayOffchip.at(partitionName)) {
+					accumulatedOffchipReads += found->second;
+
+					// We set readII to 0 to make it irrelevant through the max search
+					readII = 0;
+				}
+				else {
+					uint64_t numReads = found->second;
+					uint64_t numReadPorts = profile->arrayGetPartitionReadPorts(partitionName);
+
+					readII = std::ceil(numReads / (double) numReadPorts);
+				}
+			}
+
+			// Analyse for write
+			uint64_t writeII = 0;
+			std::map<std::string, uint64_t>::iterator found3 = arrayPartitionToNumOfWrites.find(partitionName);
+			if(found3 != arrayPartitionToNumOfWrites.end()) {
+				if(isArrayOffchip.at(partitionName)) {
+					accumulatedOffchipWrites += found->second;
+
+					// We set writeII to 0 to make it irrelevant through the max search
+					writeII = 0;
+				}
+				else {
+					uint64_t numWrites = found3->second;
+					uint64_t numWritePorts = profile->arrayGetPartitionWritePorts(partitionName);
+
+					writeII = std::ceil(numWrites / (double) numWritePorts);
+				}
+			}
+
+			it.second = (readII > writeII)? readII : writeII;
 		}
 
-		// Analyse for write
-		uint64_t writeII = 0;
-		std::map<std::string, uint64_t>::iterator found3 = arrayPartitionToNumOfWrites.find(partitionName);
-		if(found3 != arrayPartitionToNumOfWrites.end()) {
-			uint64_t numWrites = found3->second;
-			uint64_t numWritePorts = isArrayOffchip.at(partitionName)? memmodel->getNumOfWritePorts() : profile->arrayGetPartitionWritePorts(partitionName);
+		// If any offchip read or write was counted, we insert an additional candidate for resIIMem considering the offchip interface
+		if(accumulatedOffchipReads || accumulatedOffchipWrites) {
+			uint64_t readII = std::ceil(accumulatedOffchipReads / (double) memmodel->getNumOfReadPorts());
+			uint64_t writeII = std::ceil(accumulatedOffchipWrites / (double) memmodel->getNumOfWritePorts());
 
-			writeII = std::ceil(numWrites / (double) numWritePorts);
+			arrayPartitionToResII.insert(std::make_pair("(gmem)", (readII > writeII)? readII : writeII));
 		}
-
-		it.second = (readII > writeII)? readII : writeII;
 	}
 
 	std::map<std::string, uint64_t>::iterator maxIt = std::max_element(arrayPartitionToResII.begin(), arrayPartitionToResII.end(), prioritiseLargerResIIMem);

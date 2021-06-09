@@ -102,6 +102,7 @@ std::string generateInstID(unsigned opcode, std::vector<std::string> instIDList)
 unsigned nextPowerOf2(unsigned x);
 uint64_t nextPowerOf2(uint64_t x);
 uint64_t logNextPowerOf2(uint64_t x);
+template<typename T> std::string stringFormat(T val, unsigned leading);
 
 typedef std::map<std::string, std::string> getElementPtrName2arrayNameMapTy;
 extern getElementPtrName2arrayNameMapTy getElementPtrName2arrayNameMap;

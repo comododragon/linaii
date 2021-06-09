@@ -235,6 +235,10 @@ public:
 	virtual bool canOutBurstsOverlap() = 0;
 	virtual unsigned getNumOfReadPorts() = 0;
 	virtual unsigned getNumOfWritePorts() = 0;
+#if 1
+	virtual unsigned getCoalescedReadsFrom(unsigned nodeID) = 0;
+	virtual unsigned getCoalescedWritesFrom(unsigned nodeID) = 0;
+#endif
 
 	virtual void setUp(ContextManager &CtxM) = 0;
 	virtual void save(ContextManager &CtxM) = 0;
@@ -323,6 +327,10 @@ public:
 	bool canOutBurstsOverlap();
 	unsigned getNumOfReadPorts() { return 1; }
 	unsigned getNumOfWritePorts() { return 1; }
+#if 1
+	unsigned getCoalescedReadsFrom(unsigned nodeID);
+	unsigned getCoalescedWritesFrom(unsigned nodeID);
+#endif
 
 	void setUp(ContextManager &CtxM);
 	void save(ContextManager &CtxM);

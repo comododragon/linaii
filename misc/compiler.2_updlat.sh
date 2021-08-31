@@ -63,24 +63,31 @@ rm boost_1_57_0.tar.gz
 echo -e "\u001b[1m\u001b[92m--> Preparing build folder...\u001b[0m"
 mkdir build
 
+ZLIBPATH=/usr/lib/libz.so
+if [ ! -e $ZLIBPATH ]; then
+	echo -ne "\u001b[1m\u001b[92m--> ZLIB not found at /usr/lib/libz.so. Please set an alternate path: \u001b[0m"
+	read ZLIBPATH
+fi
+
 echo -e "\u001b[1m\u001b[92m--> Running CMAKE...\u001b[0m"
 cd build
-cmake ../llvm -DBOOST_INCLUDE_DIR=../boost -DZLIB_INCLUDE_DIRS=/usr/include -DZLIB_LIBRARY=/usr/lib/libz.so -DLLVM_ENABLE_RTTI:BOOL=ON
+cmake ../llvm -DBOOST_INCLUDE_DIR=../boost -DZLIB_INCLUDE_DIRS=/usr/include -DZLIB_LIBRARY=$ZLIBPATH -DLLVM_ENABLE_RTTI:BOOL=ON
 cd ..
 
 echo -e "\u001b[1m\u001b[92m--> Applying patches...\u001b[0m"
 echo -e "New versions of GCC can have some trouble compiling old codes such as LLVM 3.5.0"
 echo -e "We can apply some patches to make the compilation go smooth"
-echo -e "(if you are unsure, just press ENTER to not patch. We will ask again if compilation goes wrong)"
-echo -ne "\u001b[1m\u001b[92m--> Apply patches? [y/N] \u001b[0m"
+echo -e "(you will probably need these patches if you are using an updated operating system, however you may"
+echo -e "skip if you are unsure. We will ask again if compilation goes wrong)"
+echo -ne "\u001b[1m\u001b[92m--> Apply patches? [Y/n] \u001b[0m"
 read INPUT
 
-PATCHESAPPLIED=false
-if [ "y" == "$INPUT" ]; then
-	applyPatches
-	PATCHESAPPLIED=true
-else
+PATCHESAPPLIED=true
+if [ "n" == "$INPUT" ]; then
 	echo -e "\u001b[1m\u001b[92m--> Patch aborted\u001b[0m"
+	PATCHESAPPLIED=false
+else
+	applyPatches
 fi
 
 echo -e "\u001b[1m\u001b[93m--> Everything is set!\u001b[0m"

@@ -1,0 +1,23 @@
+ifeq ($(VERBOSE), yes)
+    _VERBOSE=-v
+else
+    _VERBOSE=
+endif
+ifeq ($(VECTORISE), yes)
+    _VECTORISE=--f-burstaggr --f-vec
+else
+    _VECTORISE=
+endif
+ifeq ($(CACHE), yes)
+    _CACHE=-C
+else
+    _CACHE=
+endif
+
+ARGS=$(_VERBOSE) -p $(_CACHE) -c config.cfg -l $(LOOPID) -t $(PLATFORM) -f $(FREQ) -u $(UNC)\
+    --short-mem-trace --f-argres --f-npla --mode estimation $(_VECTORISE) --ddrsched $(DDRPOLICY)
+
+.PHONY: estimate
+estimate: dynamic_trace.gz mem_trace_short.bin linked_opt.bc
+	lina $(ARGS) --mma-mode gen linked_opt.bc $(KERNEL)
+	lina $(ARGS) --mma-mode use linked_opt.bc $(KERNEL)

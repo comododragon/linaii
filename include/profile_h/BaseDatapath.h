@@ -220,6 +220,7 @@ private:
 	ConfigurationManager &CM;
 	ContextManager &CtxM;
 	std::ostream *summaryFile;
+	SharedDynamicTrace &traceFile;
 	std::string loopName;
 	unsigned loopLevel;
 	uint64_t loopUnrollFactor;
@@ -231,13 +232,13 @@ private:
 
 public:
 	BaseDatapath(
-		std::string kernelName, ConfigurationManager &CM, ContextManager &CtxM, std::ofstream *summaryFile,
+		std::string kernelName, ConfigurationManager &CM, ContextManager &CtxM, std::ofstream *summaryFile, SharedDynamicTrace &traceFile,
 		std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
 		bool enablePipelining, uint64_t asapII
 	);
 
 	BaseDatapath(
-		std::string kernelName, ConfigurationManager &CM, ContextManager &CtxM, std::ofstream *summaryFile,
+		std::string kernelName, ConfigurationManager &CM, ContextManager &CtxM, std::ofstream *summaryFile, SharedDynamicTrace &traceFile,
 		std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor, unsigned datapathType
 	);
 

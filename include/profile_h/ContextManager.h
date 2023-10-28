@@ -1,7 +1,15 @@
 #ifndef __CONTEXTMANAGER_H__
 #define __CONTEXTMANAGER_H__
 
+// If using GCC, these pragmas will stop GCC from outputting the annoying misleading indentation warning for this include
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
 #include <boost/functional/hash.hpp>
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif
 
 #include "profile_h/auxiliary.h"
 #include "profile_h/DDDGBuilder.h"

@@ -297,8 +297,7 @@ template<typename K, typename E> size_t ContextManager::writeElement(std::string
 template<> size_t ContextManager::writeElement<ParsedTraceContainer>(std::stringstream &ss, ParsedTraceContainer &elem) {
 	size_t writtenSize = 0;
 
-// TODO Cleanup
-#if 1//DBG_PRINT_ALL
+#if DBG_PRINT_ALL
 	DBG_DUMP("Dump of ParsedTraceContainer\n");
 	DBG_DUMP("-- funcList:\n");
 	for(auto const &x : elem.getFuncList())
@@ -582,8 +581,7 @@ template<> void ContextManager::readElement<ParsedTraceContainer>(std::fstream &
 		elem.appendToResultSizeList(ee, ff);
 	}
 
-// TODO Cleanup
-#if 1//DBG_PRINT_ALL
+#if DBG_PRINT_ALL
 	DBG_DUMP("Dump of ParsedTraceContainer\n");
 	DBG_DUMP("-- funcList:\n");
 	for(auto const &x : elem.getFuncList())
@@ -613,15 +611,13 @@ template<> void ContextManager::readElement<ParsedTraceContainer>(std::fstream &
 }
 
 template<> void ContextManager::readElement<BaseDatapath>(std::fstream &fs, BaseDatapath &elem) {
-// TODO Cleanup
-#if 1//DBG_PRINT_ALL
+#if DBG_PRINT_ALL
 	DBG_DUMP("Dump of DDDG:\n");
 #endif
 
 	elem.setForDDDGImport();
 
-// TODO Cleanup
-#if 1//DBG_PRINT_ALL
+#if DBG_PRINT_ALL
 	DBG_DUMP("-- edgeTables.first:\n");
 #endif
 	size_t edgeListFirstSize;
@@ -632,15 +628,13 @@ template<> void ContextManager::readElement<BaseDatapath>(std::fstream &fs, Base
 		edgeNodeInfo ee;
 		readElement<edgeNodeInfo>(fs, ee);
 
-// TODO Cleanup
-#if 1//DBG_PRINT_ALL
+#if DBG_PRINT_ALL
 		DBG_DUMP("---- " << kk << ": <" << ee.sink << ", " << ee.paramID << ">\n");
 #endif
 		elem.insertDDDGEdge(kk, ee.sink, ee.paramID);
 	}
 
-// TODO Cleanup
-#if 1//DBG_PRINT_ALL
+#if DBG_PRINT_ALL
 	DBG_DUMP("-- edgeTables.second:\n");
 #endif
 	size_t edgeListSecondSize;
@@ -651,15 +645,13 @@ template<> void ContextManager::readElement<BaseDatapath>(std::fstream &fs, Base
 		edgeNodeInfo ee;
 		readElement<edgeNodeInfo>(fs, ee);
 
-// TODO Cleanup
-#if 1//DBG_PRINT_ALL
+#if DBG_PRINT_ALL
 		DBG_DUMP("---- " << kk << ": <" << ee.sink << ", " << ee.paramID << ">\n");
 #endif
 		elem.insertDDDGEdge(kk, ee.sink, ee.paramID);
 	}
 
-// TODO Cleanup
-#if 1//DBG_PRINT_ALL
+#if DBG_PRINT_ALL
 	DBG_DUMP("-- microops:\n");
 #endif
 	size_t microopsSize;
@@ -668,8 +660,7 @@ template<> void ContextManager::readElement<BaseDatapath>(std::fstream &fs, Base
 		int ee;
 		readElement<int>(fs, ee);
 
-// TODO Cleanup
-#if 1//DBG_PRINT_ALL
+#if DBG_PRINT_ALL
 		DBG_DUMP("---- " << ee << "\n");
 #endif
 		elem.insertMicroop(ee);
@@ -776,8 +767,7 @@ void ContextManager::getProgressiveTraceInfo(long int *cursor, uint64_t *instCou
 void ContextManager::saveLoopBoundInfo(wholeloopName2loopBoundMapTy &wholeloopName2loopBoundMap) {
 	assert(!readOnly && "Attempt to save loop bound info on a read-only context manager");
 
-// TODO Cleanup
-#if 1//DBG_PRINT_ALL
+#if DBG_PRINT_ALL
 	DBG_DUMP("Dump of wholeloopName2loopBoundMap:\n");
 	for(auto const &x : wholeloopName2loopBoundMap)
 		DBG_DUMP("-- " << x.first << ": " << x.second << "\n");
@@ -796,8 +786,7 @@ void ContextManager::getLoopBoundInfo(wholeloopName2loopBoundMapTy *wholeloopNam
 	skipElement<size_t>(contextFile);
 	readElement<std::string, uint64_t>(contextFile, *wholeloopName2loopBoundMap);
 
-// TODO Cleanup
-#if 1//DBG_PRINT_ALL
+#if DBG_PRINT_ALL
 	DBG_DUMP("Dump of wholeloopName2loopBoundMap:\n");
 	for(auto const &x : *wholeloopName2loopBoundMap)
 		DBG_DUMP("-- " << x.first << ": " << x.second << "\n");
@@ -830,8 +819,7 @@ void ContextManager::saveDDDG(std::string wholeLoopName, unsigned datapathType, 
 	assert(!readOnly && "Attempt to save DDDG on a read-only context manager");
 	uint64_t code = ((((uint64_t) unrollFactor) << 32) & 0xffffffff00000000) | (datapathType & 0x00000000ffffffff);
 
-// TODO Cleanup
-#if 1//DBG_PRINT_ALL
+#if DBG_PRINT_ALL
 	DBG_DUMP("Dump of DDDG:\n");
 	DBG_DUMP("-- edgeTables.first:\n");
 	for(auto const &x : builder.getEdgeTables().first)
@@ -866,8 +854,7 @@ void ContextManager::getDDDG(std::string wholeLoopName, unsigned datapathType, u
 void ContextManager::saveGlobalOutBurstsInfo(std::unordered_map<std::string, std::vector<globalOutBurstsInfoTy>> &globalOutBurstsInfo) {
 	assert(!readOnly && "Attempt to save global out-bursts info on a read-only context manager");
 
-// TODO Cleanup
-#if 1//DBG_PRINT_ALL
+#if DBG_PRINT_ALL
 	DBG_DUMP("Dump of globalOutBurstsInfo:\n");
 	for(auto const &x : globalOutBurstsInfo) {
 		DBG_DUMP("-- " << x.first << ":\n");
@@ -912,8 +899,7 @@ void ContextManager::getGlobalOutBurstsInfo(std::unordered_map<std::string, std:
 	skipElement<size_t>(contextFile);
 	readElement<std::string, globalOutBurstsInfoTy>(contextFile, *globalOutBurstsInfo);
 
-// TODO Cleanup
-#if 1//DBG_PRINT_ALL
+#if DBG_PRINT_ALL
 	DBG_DUMP("Dump of globalOutBurstsInfo:\n");
 	for(auto const &x : *globalOutBurstsInfo) {
 		DBG_DUMP("-- " << x.first << ":\n");
@@ -951,8 +937,7 @@ void ContextManager::getGlobalOutBurstsInfo(std::unordered_map<std::string, std:
 void ContextManager::saveGlobalDDRMap(std::unordered_map<std::string, std::vector<ddrInfoTy>> &globalDDRMap) {
 	assert(!readOnly && "Attempt to save global DDR map on a read-only context manager");
 
-// TODO Cleanup
-#if 1//DBG_PRINT_ALL
+#if DBG_PRINT_ALL
 	DBG_DUMP("Dump of globalDDRMap:\n");
 	for(auto const &x : globalDDRMap) {
 		DBG_DUMP("-- " << x.first << "\n");
@@ -981,8 +966,7 @@ void ContextManager::getGlobalDDRMap(std::unordered_map<std::string, std::vector
 	skipElement<size_t>(contextFile);
 	readElement<std::string, ddrInfoTy>(contextFile, *globalDDRMap);
 
-// TODO Cleanup
-#if 1//DBG_PRINT_ALL
+#if DBG_PRINT_ALL
 	DBG_DUMP("Dump of globalDDRMap:\n");
 	for(auto const &x : *globalDDRMap) {
 		DBG_DUMP("-- " << x.first << "\n");
@@ -1004,8 +988,7 @@ void ContextManager::getGlobalDDRMap(std::unordered_map<std::string, std::vector
 void ContextManager::saveGlobalPackInfo(std::unordered_map<arrayPackSzPairTy, std::vector<packInfoTy>, boost::hash<arrayPackSzPairTy>> &globalPackInfo) {
 	assert(!readOnly && "Attempt to save global pack info on a read-only context manager");
 
-// TODO Cleanup
-#if 1//DBG_PRINT_ALL
+#if DBG_PRINT_ALL
 	DBG_DUMP("Dump of globalPackInfo:\n");
 	for(auto const &x : globalPackInfo) {
 		DBG_DUMP("-- <" << x.first.first << ", " << x.first.second << ">\n");
@@ -1034,8 +1017,7 @@ void ContextManager::getGlobalPackInfo(std::unordered_map<arrayPackSzPairTy, std
 	skipElement<size_t>(contextFile);
 	readElement<std::string, unsigned, packInfoTy>(contextFile, *globalPackInfo);
 
-// TODO Cleanup
-#if 1//DBG_PRINT_ALL
+#if DBG_PRINT_ALL
 	DBG_DUMP("Dump of globalPackInfo:\n");
 	for(auto const &x : *globalPackInfo) {
 		DBG_DUMP("-- <" << x.first.first << ", " << x.first.second << ">\n");

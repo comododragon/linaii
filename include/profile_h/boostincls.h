@@ -7,6 +7,7 @@
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #pragma GCC diagnostic ignored "-Wdeprecated-copy"
 #pragma GCC diagnostic ignored "-Wparentheses"
+#pragma GCC diagnostic ignored "-Wnonnull"
 #endif
 #include <boost/config.hpp>
 #include <boost/functional/hash.hpp>

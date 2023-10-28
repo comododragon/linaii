@@ -867,12 +867,15 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 		else {
 			unsigned recII = 0;
 
+			/* Use shared dynamic trace via linad in order to reduce IO bottleneck from GZIP files */
+			SharedDynamicTrace traceFile(args.workDir + FILE_DYNAMIC_TRACE, args.workDir + FILE_FUTURE_CACHE);
+
 			// Get recurrence-constrained II
 			if(enablePipelining) {
 				VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Building dynamic datapath for recurrence-constrained II calculation\n");
 
 				unsigned actualUnrollFactor = (targetLoopBound < (targetUnrollFactor << 1) && targetLoopBound)? targetLoopBound : (targetUnrollFactor << 1);
-				DynamicDatapath DD(kernelName, CM, CtxM, &summaryFile, loopName, targetLoopLevel, actualUnrollFactor);
+				DynamicDatapath DD(kernelName, CM, CtxM, &summaryFile, traceFile, loopName, targetLoopLevel, actualUnrollFactor);
 				recII = DD.getASAPII();
 
 				if(args.fNoMMA || ArgPack::MMA_MODE_GEN != args.mmaMode)
@@ -880,7 +883,7 @@ void InstrumentForDDDG::loopBasedTraceAnalysis() {
 			}
 
 			VERBOSE_PRINT(errs() << "[][][" << targetWholeLoopName << "] Building dynamic datapath\n");
-			DynamicDatapath DD(kernelName, CM, CtxM, &summaryFile, loopName, targetLoopLevel, unrollFactor, enablePipelining, recII);
+			DynamicDatapath DD(kernelName, CM, CtxM, &summaryFile, traceFile, loopName, targetLoopLevel, unrollFactor, enablePipelining, recII);
 
 			if(args.fNoMMA || ArgPack::MMA_MODE_GEN != args.mmaMode)
 				errs() << "[][][" << targetWholeLoopName << "] Estimated cycles: " << std::to_string(DD.getCycles()) << "\n";

@@ -30,11 +30,11 @@ void BaseDatapath::findMinimumRankPair(std::pair<unsigned, unsigned> &pair, std:
 }
 
 BaseDatapath::BaseDatapath(
-	std::string kernelName, ConfigurationManager &CM, ContextManager &CtxM, std::ofstream *summaryFile,
+	std::string kernelName, ConfigurationManager &CM, ContextManager &CtxM, std::ofstream *summaryFile, SharedDynamicTrace &traceFile,
 	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
 	bool enablePipelining, uint64_t asapII
 ) :
-	kernelName(kernelName), CM(CM), CtxM(CtxM), summaryFile(summaryFile),
+	kernelName(kernelName), CM(CM), CtxM(CtxM), summaryFile(summaryFile), traceFile(traceFile),
 	loopName(loopName), loopLevel(loopLevel), loopUnrollFactor(loopUnrollFactor), datapathType(DatapathType::NORMAL_LOOP),
 	enablePipelining(enablePipelining), asapII(asapII), PC(kernelName)
 {
@@ -53,7 +53,7 @@ BaseDatapath::BaseDatapath(
 		VERBOSE_PRINT(errs() << "\tBuild initial DDDG\n");
 
 		builder = new DDDGBuilder(this, PC);
-		builder->buildInitialDDDG();
+		builder->buildInitialDDDG(traceFile);
 
 		if(ArgPack::MMA_MODE_GEN == args.mmaMode) {
 			VERBOSE_PRINT(errs() << "\tSaving context for later use\n");
@@ -97,10 +97,10 @@ BaseDatapath::BaseDatapath(
 // This constructor does not perform DDDG generation. It should be generated externally via
 // child classes (e.g. DynamicDatapath)
 BaseDatapath::BaseDatapath(
-	std::string kernelName, ConfigurationManager &CM, ContextManager &CtxM, std::ofstream *summaryFile,
+	std::string kernelName, ConfigurationManager &CM, ContextManager &CtxM, std::ofstream *summaryFile, SharedDynamicTrace &traceFile,
 	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor, unsigned datapathType
 ) :
-	kernelName(kernelName), CM(CM), CtxM(CtxM), summaryFile(summaryFile),
+	kernelName(kernelName), CM(CM), CtxM(CtxM), summaryFile(summaryFile), traceFile(traceFile),
 	loopName(loopName), loopLevel(loopLevel), loopUnrollFactor(loopUnrollFactor), datapathType(datapathType),
 	enablePipelining(false), asapII(0), PC(kernelName)
 {

@@ -74,6 +74,9 @@ bool FutureCache::load() {
 		return true;
 	}
 	else {
+		// Save empty cache file just to create file and make realpath() calls happy
+		save();
+
 		return false;
 	}
 }
@@ -130,10 +133,14 @@ std::pair<FutureCache::iterator, bool> FutureCache::insert(
 	long int progressiveTraceCursor, uint64_t progressiveTraceInstCount,
 	FutureCache::elemTy &elem
 ) {
-	return cache.insert(std::make_pair(
+	std::pair<FutureCache::iterator, bool> insertRetVal = cache.insert(std::make_pair(
 		constructKey(wholeLoopName, datapathType, progressiveTraceCursor, progressiveTraceInstCount),
 		elem
 	));
+
+	save();
+
+	return insertRetVal;
 }
 #endif
 
@@ -747,7 +754,7 @@ DDDGBuilder::DDDGBuilder(BaseDatapath *datapath, ParsedTraceContainer &PC) : dat
 	numOfMemDeps = 0;
 }
 
-intervalTy DDDGBuilder::getTraceLineFromToBeforeNestedLoop(gzFile &traceFile) {
+intervalTy DDDGBuilder::getTraceLineFromToBeforeNestedLoop(SharedDynamicTrace &traceFile) {
 	std::string loopName = datapath->getTargetLoopName();
 	unsigned loopLevel = datapath->getTargetLoopLevel();
 	std::string functionName = std::get<0>(parseLoopName(loopName));
@@ -803,13 +810,13 @@ intervalTy DDDGBuilder::getTraceLineFromToBeforeNestedLoop(gzFile &traceFile) {
 #ifdef PROGRESSIVE_TRACE_CURSOR
 	if(args.progressive) {
 		VERBOSE_PRINT(errs() << "\t\tUsing progressive trace cursor, skipping " << std::to_string(progressiveTraceCursor) << " bytes from trace\n");
-		gzseek(traceFile, progressiveTraceCursor, SEEK_SET);
+		traceFile.seek(progressiveTraceCursor, SEEK_SET);
 	}
 	else {
-		gzrewind(traceFile);
+		traceFile.rewind();
 	}
 #else
-	gzrewind(traceFile);
+	traceFile.rewind();
 #endif
 
 #ifdef FUTURE_CACHE
@@ -824,7 +831,8 @@ intervalTy DDDGBuilder::getTraceLineFromToBeforeNestedLoop(gzFile &traceFile) {
 				VERBOSE_PRINT(errs() << "\t\tCached cursor hit\n");
 				VERBOSE_PRINT(errs() << "\t\tSkipping further " << std::to_string(cacheHit->second.gzCursor - progressiveTraceCursor) << " bytes from trace\n");
 
-				gzseek(traceFile, cacheHit->second.gzCursor, SEEK_SET);
+				traceFile.attach(FutureCache::constructKey(wholeLoopName, DatapathType::NON_PERFECT_BEFORE, progressiveTraceCursor, progressiveTraceInstCount));
+
 				byteFrom = cacheHit->second.byteFrom;
 				instCount = cacheHit->second.instCount;
 				progressiveTraceCursor = cacheHit->second.progressiveTraceCursor;
@@ -845,8 +853,8 @@ intervalTy DDDGBuilder::getTraceLineFromToBeforeNestedLoop(gzFile &traceFile) {
 	}
 #endif
 
-	while(!gzeof(traceFile)) {
-		if(Z_NULL == gzgets(traceFile, buffer, sizeof(buffer)))
+	while(!(traceFile.eof())) {
+		if(Z_NULL == traceFile.gets(buffer, sizeof(buffer)))
 			continue;
 
 		std::string line(buffer);
@@ -877,8 +885,8 @@ intervalTy DDDGBuilder::getTraceLineFromToBeforeNestedLoop(gzFile &traceFile) {
 
 #ifdef FUTURE_CACHE
 					if(args.futureCache) {
-						// Save to cache
-						FutureCache::elemTy cacheElem(gztell(traceFile) - line.size(), byteFrom, instCount, byteFrom, instCount, 0, 0);
+						// Save to cache.
+						FutureCache::elemTy cacheElem(traceFile.tell() - line.size(), byteFrom, instCount, byteFrom, instCount, 0, 0);
 						futureCache.insert(
 							wholeLoopName, DatapathType::NON_PERFECT_BEFORE, progressiveTraceCursor, progressiveTraceInstCount,
 							cacheElem
@@ -894,7 +902,7 @@ intervalTy DDDGBuilder::getTraceLineFromToBeforeNestedLoop(gzFile &traceFile) {
 				}
 				else {
 					// Save this line byte offset
-					lineByteOffset.push(gztell(traceFile) - line.size());
+					lineByteOffset.push(traceFile.tell() - line.size());
 				}
 			}
 
@@ -957,7 +965,7 @@ intervalTy DDDGBuilder::getTraceLineFromToBeforeNestedLoop(gzFile &traceFile) {
 	return std::make_tuple(byteFrom, to, instCount);
 }
 
-intervalTy DDDGBuilder::getTraceLineFromToAfterNestedLoop(gzFile &traceFile) {
+intervalTy DDDGBuilder::getTraceLineFromToAfterNestedLoop(SharedDynamicTrace &traceFile) {
 	std::string loopName = datapath->getTargetLoopName();
 	int loopLevel = datapath->getTargetLoopLevel();
 	int prevLoopLevel = 0, currLoopLevel = 0;
@@ -988,13 +996,13 @@ intervalTy DDDGBuilder::getTraceLineFromToAfterNestedLoop(gzFile &traceFile) {
 #ifdef PROGRESSIVE_TRACE_CURSOR
 	if(args.progressive) {
 		VERBOSE_PRINT(errs() << "\t\tUsing progressive trace cursor, skipping " << std::to_string(progressiveTraceCursor) << " bytes from trace\n");
-		gzseek(traceFile, progressiveTraceCursor, SEEK_SET);
+		traceFile.seek(progressiveTraceCursor, SEEK_SET);
 	}
 	else {
-		gzrewind(traceFile);
+		traceFile.rewind();
 	}
 #else
-	gzrewind(traceFile);
+	traceFile.rewind();
 #endif
 
 #ifdef FUTURE_CACHE
@@ -1009,7 +1017,8 @@ intervalTy DDDGBuilder::getTraceLineFromToAfterNestedLoop(gzFile &traceFile) {
 			VERBOSE_PRINT(errs() << "\t\tCached cursor hit\n");
 			VERBOSE_PRINT(errs() << "\t\tSkipping further " << std::to_string(cacheHit->second.gzCursor - progressiveTraceCursor) << " bytes from trace\n");
 
-			gzseek(traceFile, cacheHit->second.gzCursor, SEEK_SET);
+			traceFile.attach(FutureCache::constructKey(wholeLoopName, DatapathType::NON_PERFECT_AFTER, progressiveTraceCursor, progressiveTraceInstCount));
+
 			byteFrom = cacheHit->second.byteFrom;
 			instCount = cacheHit->second.instCount;
 			progressiveTraceCursor = cacheHit->second.progressiveTraceCursor;
@@ -1027,8 +1036,8 @@ intervalTy DDDGBuilder::getTraceLineFromToAfterNestedLoop(gzFile &traceFile) {
 	}
 #endif
 
-	while(!gzeof(traceFile)) {
-		if(Z_NULL == gzgets(traceFile, buffer, sizeof(buffer)))
+	while(!(traceFile.eof())) {
+		if(Z_NULL == traceFile.gets(buffer, sizeof(buffer)))
 			continue;
 
 		std::string line(buffer);
@@ -1063,14 +1072,14 @@ intervalTy DDDGBuilder::getTraceLineFromToAfterNestedLoop(gzFile &traceFile) {
 				// Recall that consecutive loops are not allowed out of the top-level body of the function. So this logic works without problems
 				if(currLoopLevel < prevLoopLevel && currLoopLevel == loopLevel) {
 					// Save in byteFrom the amount of bytes between beginning of trace of file and first instruction after the nested loop
-					byteFrom = gztell(traceFile) - line.size();
+					byteFrom = traceFile.tell() - line.size();
 					instCount--;
 					firstTraverse = false;
 
 #ifdef FUTURE_CACHE
 					if(args.futureCache) {
 						// Save to cache
-						FutureCache::elemTy cacheElem(gztell(traceFile) - line.size(), byteFrom, instCount, byteFrom, instCount, 0, to);
+						FutureCache::elemTy cacheElem(traceFile.tell() - line.size(), byteFrom, instCount, byteFrom, instCount, 0, to);
 						futureCache.insert(
 							wholeLoopName, DatapathType::NON_PERFECT_AFTER, progressiveTraceCursor, progressiveTraceInstCount,
 							cacheElem
@@ -1099,7 +1108,7 @@ intervalTy DDDGBuilder::getTraceLineFromToAfterNestedLoop(gzFile &traceFile) {
 	return std::make_tuple(byteFrom, to, instCount);
 }
 
-intervalTy DDDGBuilder::getTraceLineFromToBetweenAfterAndBefore(gzFile &traceFile) {
+intervalTy DDDGBuilder::getTraceLineFromToBetweenAfterAndBefore(SharedDynamicTrace &traceFile) {
 	std::string loopName = datapath->getTargetLoopName();
 	int loopLevel = datapath->getTargetLoopLevel();
 	int prevLoopLevel = 0, currLoopLevel = 0;
@@ -1119,13 +1128,13 @@ intervalTy DDDGBuilder::getTraceLineFromToBetweenAfterAndBefore(gzFile &traceFil
 #ifdef PROGRESSIVE_TRACE_CURSOR
 	if(args.progressive) {
 		VERBOSE_PRINT(errs() << "\t\tUsing progressive trace cursor, skipping " << std::to_string(progressiveTraceCursor) << " bytes from trace\n");
-		gzseek(traceFile, progressiveTraceCursor, SEEK_SET);
+		traceFile.seek(progressiveTraceCursor, SEEK_SET);
 	}
 	else {
-		gzrewind(traceFile);
+		traceFile.rewind();
 	}
 #else
-	gzrewind(traceFile);
+	traceFile.rewind();
 #endif
 
 #ifdef FUTURE_CACHE
@@ -1140,7 +1149,8 @@ intervalTy DDDGBuilder::getTraceLineFromToBetweenAfterAndBefore(gzFile &traceFil
 			VERBOSE_PRINT(errs() << "\t\tCached cursor hit\n");
 			VERBOSE_PRINT(errs() << "\t\tSkipping further " << std::to_string(cacheHit->second.gzCursor - progressiveTraceCursor) << " bytes from trace\n");
 
-			gzseek(traceFile, cacheHit->second.gzCursor, SEEK_SET);
+			traceFile.attach(FutureCache::constructKey(wholeLoopName, DatapathType::NON_PERFECT_BETWEEN, progressiveTraceCursor, progressiveTraceInstCount));
+
 			byteFrom = cacheHit->second.byteFrom;
 			instCount = cacheHit->second.instCount;
 
@@ -1156,8 +1166,8 @@ intervalTy DDDGBuilder::getTraceLineFromToBetweenAfterAndBefore(gzFile &traceFil
 	}
 #endif
 
-	while(!gzeof(traceFile)) {
-		if(Z_NULL == gzgets(traceFile, buffer, sizeof(buffer)))
+	while(!(traceFile.eof())) {
+		if(Z_NULL == traceFile.gets(buffer, sizeof(buffer)))
 			continue;
 
 		std::string line(buffer);
@@ -1192,14 +1202,14 @@ intervalTy DDDGBuilder::getTraceLineFromToBetweenAfterAndBefore(gzFile &traceFil
 				// Recall that consecutive loops are not allowed out of the top-level body of the function. So this logic works without problems
 				if(currLoopLevel < prevLoopLevel && currLoopLevel == loopLevel) {
 					// Save in byteFrom the amount of bytes between beginning of trace of file and first instruction after the nested loop
-					byteFrom = gztell(traceFile) - line.size();
+					byteFrom = traceFile.tell() - line.size();
 					instCount--;
 					firstTraverse = false;
 
 #ifdef FUTURE_CACHE
 					if(args.futureCache) {
 						// Save to cache
-						FutureCache::elemTy cacheElem(gztell(traceFile) - line.size(), byteFrom, instCount, progressiveTraceCursor, progressiveTraceInstCount, 0, 0);
+						FutureCache::elemTy cacheElem(traceFile.tell() - line.size(), byteFrom, instCount, progressiveTraceCursor, progressiveTraceInstCount, 0, 0);
 						futureCache.insert(
 							wholeLoopName, DatapathType::NON_PERFECT_BETWEEN, progressiveTraceCursor, progressiveTraceInstCount,
 							cacheElem
@@ -1222,13 +1232,7 @@ intervalTy DDDGBuilder::getTraceLineFromToBetweenAfterAndBefore(gzFile &traceFil
 	return std::make_tuple(byteFrom, to, instCount);
 }
 
-void DDDGBuilder::buildInitialDDDG() {
-	std::string traceFileName = args.workDir + FILE_DYNAMIC_TRACE;
-	gzFile traceFile;
-
-	traceFile = gzopen(traceFileName.c_str(), "r");
-	assert(traceFile != Z_NULL && "Could not open trace input file");
-
+void DDDGBuilder::buildInitialDDDG(SharedDynamicTrace &traceFile) {
 	VERBOSE_PRINT(errs() << "\t\tStarted build of initial DDDG\n");
 
 	intervalTy interval = getTraceLineFromTo(traceFile);
@@ -1245,15 +1249,11 @@ void DDDGBuilder::buildInitialDDDG() {
 	VERBOSE_PRINT(errs() << "\t\tNumber of register dependencies: " << std::to_string(getNumOfRegisterDependencies()) << "\n");
 	VERBOSE_PRINT(errs() << "\t\tNumber of memory dependencies: " << std::to_string(getNumOfMemoryDependencies()) << "\n");
 	VERBOSE_PRINT(errs() << "\t\tDDDG build finished\n");
+
+	traceFile.release();
 }
 
-void DDDGBuilder::buildInitialDDDG(intervalTy interval) {
-	std::string traceFileName = args.workDir + FILE_DYNAMIC_TRACE;
-	gzFile traceFile;
-
-	traceFile = gzopen(traceFileName.c_str(), "r");
-	assert(traceFile != Z_NULL && "Could not open trace input file");
-
+void DDDGBuilder::buildInitialDDDG(SharedDynamicTrace &traceFile, intervalTy interval) {
 	VERBOSE_PRINT(errs() << "\t\tStarted build of initial DDDG\n");
 
 	VERBOSE_PRINT(errs() << "\t\tSkipping " << std::to_string(std::get<0>(interval)) << " bytes from trace\n");
@@ -1268,6 +1268,8 @@ void DDDGBuilder::buildInitialDDDG(intervalTy interval) {
 	VERBOSE_PRINT(errs() << "\t\tNumber of register dependencies: " << std::to_string(getNumOfRegisterDependencies()) << "\n");
 	VERBOSE_PRINT(errs() << "\t\tNumber of memory dependencies: " << std::to_string(getNumOfMemoryDependencies()) << "\n");
 	VERBOSE_PRINT(errs() << "\t\tDDDG build finished\n");
+
+	traceFile.release();
 }
 
 unsigned DDDGBuilder::getNumOfRegisterDependencies() {
@@ -1282,7 +1284,7 @@ std::pair<const u2eMMap, const u2eMMap> DDDGBuilder::getEdgeTables() {
 	return std::make_pair(registerEdgeTable, memoryEdgeTable);
 }
 
-intervalTy DDDGBuilder::getTraceLineFromTo(gzFile &traceFile) {
+intervalTy DDDGBuilder::getTraceLineFromTo(SharedDynamicTrace &traceFile) {
 	std::string loopName = datapath->getTargetLoopName();
 	unsigned loopLevel = datapath->getTargetLoopLevel();
 	uint64_t unrollFactor = datapath->getTargetLoopUnrollFactor();
@@ -1350,13 +1352,13 @@ intervalTy DDDGBuilder::getTraceLineFromTo(gzFile &traceFile) {
 #ifdef PROGRESSIVE_TRACE_CURSOR
 	if(args.progressive) {
 		VERBOSE_PRINT(errs() << "\t\tUsing progressive trace cursor, skipping " << std::to_string(progressiveTraceCursor) << " bytes from trace\n");
-		gzseek(traceFile, progressiveTraceCursor, SEEK_SET);
+		traceFile.seek(progressiveTraceCursor, SEEK_SET);
 	}
 	else {
-		gzrewind(traceFile);
+		traceFile.rewind();
 	}
 #else
-	gzrewind(traceFile);
+	traceFile.rewind();
 #endif
 
 #ifdef FUTURE_CACHE
@@ -1371,7 +1373,8 @@ intervalTy DDDGBuilder::getTraceLineFromTo(gzFile &traceFile) {
 				VERBOSE_PRINT(errs() << "\t\tCached cursor hit\n");
 				VERBOSE_PRINT(errs() << "\t\tSkipping further " << std::to_string(cacheHit->second.gzCursor - progressiveTraceCursor) << " bytes from trace\n");
 
-				gzseek(traceFile, cacheHit->second.gzCursor, SEEK_SET);
+				traceFile.attach(FutureCache::constructKey(wholeLoopName, DatapathType::NORMAL_LOOP, progressiveTraceCursor, progressiveTraceInstCount));
+
 				byteFrom = cacheHit->second.byteFrom;
 				instCount = cacheHit->second.instCount;
 				progressiveTraceCursor = cacheHit->second.progressiveTraceCursor;
@@ -1398,8 +1401,8 @@ intervalTy DDDGBuilder::getTraceLineFromTo(gzFile &traceFile) {
 	}
 #endif
 
-	while(!gzeof(traceFile)) {
-		if(Z_NULL == gzgets(traceFile, buffer, sizeof(buffer)))
+	while(!(traceFile.eof())) {
+		if(Z_NULL == traceFile.gets(buffer, sizeof(buffer)))
 			continue;
 
 		std::string line(buffer);
@@ -1431,7 +1434,7 @@ intervalTy DDDGBuilder::getTraceLineFromTo(gzFile &traceFile) {
 #ifdef FUTURE_CACHE
 					if(args.futureCache) {
 						// Save to cache
-						FutureCache::elemTy cacheElem(gztell(traceFile) - line.size(), byteFrom, instCount, byteFrom, instCount, lastInstExitingCounter, to);
+						FutureCache::elemTy cacheElem(traceFile.tell() - line.size(), byteFrom, instCount, byteFrom, instCount, lastInstExitingCounter, to);
 						futureCache.insert(
 							wholeLoopName, DatapathType::NORMAL_LOOP, progressiveTraceCursor, progressiveTraceInstCount,
 							cacheElem
@@ -1447,7 +1450,7 @@ intervalTy DDDGBuilder::getTraceLineFromTo(gzFile &traceFile) {
 				}
 				else {
 					// Save this line byte offset
-					lineByteOffset.push(gztell(traceFile) - line.size());
+					lineByteOffset.push(traceFile.tell() - line.size());
 				}
 			}
 
@@ -1514,7 +1517,7 @@ intervalTy DDDGBuilder::getTraceLineFromTo(gzFile &traceFile) {
 	return std::make_tuple(byteFrom, to, instCount);
 }
 
-void DDDGBuilder::parseTraceFile(gzFile &traceFile, intervalTy interval) {
+void DDDGBuilder::parseTraceFile(SharedDynamicTrace &traceFile, intervalTy interval) {
 	PC.openAndClearAllFiles();
 
 	uint64_t from = std::get<0>(interval), to = std::get<1>(interval);
@@ -1523,9 +1526,9 @@ void DDDGBuilder::parseTraceFile(gzFile &traceFile, intervalTy interval) {
 	char buffer[BUFF_STR_SZ];
 
 	// Iterate through dynamic trace, but only process the specified interval
-	gzseek(traceFile, from, SEEK_SET);
-	while(!gzeof(traceFile)) {
-		if(Z_NULL == gzgets(traceFile, buffer, sizeof(buffer)))
+	traceFile.seek(from, SEEK_SET);
+	while(!(traceFile.eof())) {
+		if(Z_NULL == traceFile.gets(buffer, sizeof(buffer)))
 			continue;
 
 		std::string line(buffer);
@@ -1878,13 +1881,13 @@ void DDDGBuilder::parseParameter(int param) {
 	}
 }
 
-bool DDDGBuilder::lookaheadIsSameLoopLevel(gzFile &traceFile, unsigned loopLevel) {
+bool DDDGBuilder::lookaheadIsSameLoopLevel(SharedDynamicTrace &traceFile, unsigned loopLevel) {
 	size_t rollbackBytes = 0;
 	char buffer[BUFF_STR_SZ];
 	bool result = false;
 
-	while(!gzeof(traceFile)) {
-		if(Z_NULL == gzgets(traceFile, buffer, sizeof(buffer)))
+	while(!(traceFile.eof())) {
+		if(Z_NULL == traceFile.gets(buffer, sizeof(buffer)))
 			continue;
 
 		std::string line(buffer);
@@ -1918,7 +1921,7 @@ bool DDDGBuilder::lookaheadIsSameLoopLevel(gzFile &traceFile, unsigned loopLevel
 	}
 
 	// Rollback
-	gzseek(traceFile, -rollbackBytes, SEEK_CUR);
+	traceFile.seek(-rollbackBytes, SEEK_CUR);
 
 	return result;
 }

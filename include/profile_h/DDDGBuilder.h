@@ -13,6 +13,7 @@
 
 #include "profile_h/auxiliary.h"
 #include "profile_h/opcodes.h"
+#include "profile_h/SharedDynamicTrace.h"
 
 #ifdef FUTURE_CACHE
 #define FILE_FUTURE_CACHE "futurecache.db"
@@ -45,8 +46,6 @@ private:
 	unsigned cacheMiss;
 	unsigned cacheHit;
 
-	std::string constructKey(std::string wholeLoopName, unsigned datapathType, long int progressiveTraceCursor, uint64_t progressiveTraceInstCount);
-
 public:
 	FutureCache() : cacheMiss(0), cacheHit(0) { };
 	void dumpSummary(std::ofstream *summaryFile);
@@ -54,6 +53,7 @@ public:
 	bool load();
 	void save();
 
+	static std::string constructKey(std::string wholeLoopName, unsigned datapathType, long int progressiveTraceCursor, uint64_t progressiveTraceInstCount);
 	iterator find(std::string wholeLoopName, unsigned datapathType, long int progressiveTraceCursor, uint64_t progressiveTraceInstCount);
 	std::pair<iterator, bool> insert(
 		std::string wholeLoopName, unsigned datapathTYpe,
@@ -202,26 +202,26 @@ class DDDGBuilder {
 	unsigned numOfRegDeps, numOfMemDeps;
 	i642uMap addressLastWritten;
 
-	intervalTy getTraceLineFromTo(gzFile &traceFile);
-	void parseTraceFile(gzFile &traceFile, intervalTy interval);
+	intervalTy getTraceLineFromTo(SharedDynamicTrace &traceFile);
+	void parseTraceFile(SharedDynamicTrace &traceFile, intervalTy interval);
 	void parseInstructionLine();
 	void parseResult();
 	void parseForward();
 	void parseParameter(int param);
 
-	bool lookaheadIsSameLoopLevel(gzFile &traceFile, unsigned loopLevel);
+	bool lookaheadIsSameLoopLevel(SharedDynamicTrace &traceFile, unsigned loopLevel);
 
 	void writeDDDG();
 
 public:
 	DDDGBuilder(BaseDatapath *datapath, ParsedTraceContainer &PC);
 
-	intervalTy getTraceLineFromToBeforeNestedLoop(gzFile &traceFile);
-	intervalTy getTraceLineFromToAfterNestedLoop(gzFile &traceFile);
-	intervalTy getTraceLineFromToBetweenAfterAndBefore(gzFile &traceFile);
+	intervalTy getTraceLineFromToBeforeNestedLoop(SharedDynamicTrace &traceFile);
+	intervalTy getTraceLineFromToAfterNestedLoop(SharedDynamicTrace &traceFile);
+	intervalTy getTraceLineFromToBetweenAfterAndBefore(SharedDynamicTrace &traceFile);
 
-	void buildInitialDDDG();
-	void buildInitialDDDG(intervalTy interval);
+	void buildInitialDDDG(SharedDynamicTrace &traceFile);
+	void buildInitialDDDG(SharedDynamicTrace &traceFile, intervalTy interval);
 
 	unsigned getNumOfRegisterDependencies();
 	unsigned getNumOfMemoryDependencies();

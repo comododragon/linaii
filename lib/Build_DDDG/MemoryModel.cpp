@@ -1,6 +1,7 @@
 #include "profile_h/MemoryModel.h"
 
 #include "profile_h/BaseDatapath.h"
+#include "profile_h/SharedMemoryTraceMap.h"
 
 extern memoryTraceMapTy memoryTraceMap;
 extern bool memoryTraceGenerated;
@@ -777,6 +778,9 @@ std::unordered_map<std::string, outBurstInfoTy> XilinxZCUMemoryModel::findOutBur
 	const std::vector<std::string> &instIDList,
 	bool (XilinxZCUMemoryModel::*analyseOutBurstFeasability)(unsigned, std::string)
 ) {
+	// TODO Improve this logic
+	boost::interprocess::managed_shared_memory segment(boost::interprocess::open_only, SHARED_MEMORY_NAME_0);
+
 	std::unordered_map<std::string, outBurstInfoTy> canOutBurst;
 
 	// This is a local search. It will decide whether out-burst or not solely
@@ -853,24 +857,25 @@ std::unordered_map<std::string, outBurstInfoTy> XilinxZCUMemoryModel::findOutBur
 				// maybe not even here!
 				std::string loopName = datapath->getTargetLoopName();
 				unsigned numLevels = LpName2numLevelMap.at(loopName);
-				memoryTraceMapTy::iterator found2;
+
+				MemoryTraceElementTy *addresses;
 				for(unsigned i = datapath->getTargetLoopLevel(); i <= numLevels; i++) {
-					std::pair<std::string, std::string> wholeLoopNameInstNamePair = std::make_pair(appendDepthToLoopName(loopName, i), instIDList[it2]);
-					found2 = memoryTraceMap.find(wholeLoopNameInstNamePair);
-					if(found2 != memoryTraceMap.end())
+					std::string wholeLoopNameInstNamePair = appendDepthToLoopName(loopName, i) + KEY_SEPARATOR + instIDList[it2];
+					addresses = segment.find<MemoryTraceElementTy>(wholeLoopNameInstNamePair.c_str()).first;
+					if(addresses)
 						break;
 				}
-				assert(found2 != memoryTraceMap.end() && "Could not find the respective loop level of the instruction in memory trace map");
-				std::vector<uint64_t> addresses = found2->second;
+				assert(addresses && "Could not find the respective loop level of the instruction in memory trace map");
+
 				//std::vector<uint64_t> addresses = memoryTraceMap.at(wholeLoopNameInstNamePair);
 #ifdef VAR_WSIZE
-				uint64_t nextAddress = addresses[0] + wordSize * (offset / adjustFactor);
+				uint64_t nextAddress = addresses->at(0) + wordSize * (offset / adjustFactor);
 #else
 				// XXX: As always, assuming 32-bit
-				uint64_t nextAddress = addresses[0] + 4 * (offset / adjustFactor);
+				uint64_t nextAddress = addresses->at(0) + 4 * (offset / adjustFactor);
 #endif
-				for(unsigned i = 1; i < addresses.size(); i++) {
-					if(nextAddress != addresses[i]) {
+				for(unsigned i = 1; i < addresses->size(); i++) {
+					if(nextAddress != addresses->at(i)) {
 						canOutBurst[arrayName].canOutBurst = false;
 						break;
 					}
@@ -893,9 +898,9 @@ std::unordered_map<std::string, outBurstInfoTy> XilinxZCUMemoryModel::findOutBur
 					if(info.isRegistered) {
 						// If not, this is also an irregular out-burst
 #ifdef VAR_WSIZE
-						if((burstedNode.baseAddress != info.baseAddress) || ((addresses.size() - 1) != info.offset) || (wordSize != info.wordSize)) {
+						if((burstedNode.baseAddress != info.baseAddress) || ((addresses->size() - 1) != info.offset) || (wordSize != info.wordSize)) {
 #else
-						if((burstedNode.baseAddress != info.baseAddress) || ((addresses.size() - 1) != info.offset)) {
+						if((burstedNode.baseAddress != info.baseAddress) || ((addresses->size() - 1) != info.offset)) {
 #endif
 							canOutBurst[arrayName].canOutBurst = false;
 							break;
@@ -903,7 +908,7 @@ std::unordered_map<std::string, outBurstInfoTy> XilinxZCUMemoryModel::findOutBur
 					}
 					else {
 						info.baseAddress = burstedNode.baseAddress;
-						info.offset = addresses.size() - 1;
+						info.offset = addresses->size() - 1;
 #ifdef VAR_WIZE
 						info.wordSize = wordSize;
 #endif
@@ -1050,67 +1055,7 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 
 	// If memory trace map was not constructed yet, try to generate it from "mem_trace.txt"
 	if(!memoryTraceGenerated) {
-		if(args.shortMemTrace) {
-			std::string traceShortFileName = args.workDir + FILE_MEM_TRACE_SHORT;
-			std::ifstream traceShortFile;
-			std::string bufferedWholeLoopName = "";
-
-			traceShortFile.open(traceShortFileName, std::ios::binary);
-			assert(traceShortFile.is_open() && "No short memory trace found. Please run Lina with \"--short-mem-trace\" or \"--mem-trace\" (short mem trace is recommended) flag (leave it enabled) and any mode other than \"--mode=estimation\" (only once is needed) to generate it; or deactivate inter-iteration burst analysis with \"--fno-mmaburst\"");
-
-			while(!(traceShortFile.eof())) {
-				size_t bufferSz;
-				char buffer[BUFF_STR_SZ];
-				std::vector<uint64_t> addrVec;
-				size_t addrVecSize;
-
-				if(!(traceShortFile.read((char *) &bufferSz, sizeof(size_t))))
-					break;
-				assert(bufferSz < BUFF_STR_SZ && "String buffer not big enough to allocate key read from memory trace binary file. Please change BUFF_STR_SZ");
-				traceShortFile.read(buffer, bufferSz);
-				buffer[bufferSz] = '\0';
-				bufferedWholeLoopName.assign(buffer);
-
-				if(!(traceShortFile.read((char *) &bufferSz, sizeof(size_t))))
-					break;
-				assert(bufferSz < BUFF_STR_SZ && "String buffer not big enough to allocate key read from memory trace binary file. Please change BUFF_STR_SZ");
-				traceShortFile.read(buffer, bufferSz);
-				buffer[bufferSz] = '\0';
-
-				traceShortFile.read((char *) &addrVecSize, sizeof(size_t));
-				addrVec.resize(addrVecSize);
-
-				std::pair<std::string, std::string> wholeLoopNameInstNamePair = std::make_pair(std::string(bufferedWholeLoopName), std::string(buffer));
-				// TODO: THIS DOES NOT SEEM TO BE A GOOD IDEA
-				traceShortFile.read((char *) addrVec.data(), addrVecSize * sizeof(uint64_t));
-				memoryTraceMap.insert(std::make_pair(wholeLoopNameInstNamePair, addrVec));
-			}
-
-			traceShortFile.close();
-		}
-		else {
-			std::string line;
-			std::string traceFileName = args.workDir + FILE_MEM_TRACE;
-			std::ifstream traceFile;
-
-			traceFile.open(traceFileName);
-			assert(traceFile.is_open() && "No memory trace found. Please run Lina with \"--short-mem-trace\" or \"--mem-trace\" (short mem trace is recommended) flag (leave it enabled) and any mode other than \"--mode=estimation\" (only once is needed) to generate it; or deactivate inter-iteration burst analysis with \"--fno-mmaburst\"");
-
-			while(true) {
-				std::getline(traceFile, line);
-				if(traceFile.eof())
-					break;
-
-				char buffer[BUFF_STR_SZ];
-				char buffer2[BUFF_STR_SZ];
-				uint64_t address;
-				sscanf(line.c_str(), "%[^,],%*d,%[^,],%*[^,],%*d,%lu,%*d", buffer, buffer2, &address);
-				std::pair<std::string, std::string> wholeLoopNameInstNamePair = std::make_pair(std::string(buffer), std::string(buffer2));
-				memoryTraceMap[wholeLoopNameInstNamePair].push_back(address);
-			}
-
-			traceFile.close();
-		}
+		// Using shared memory map via linad, no need to generate anything
 
 		memoryTraceGenerated = true;
 	}

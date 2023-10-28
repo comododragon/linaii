@@ -1,9 +1,9 @@
 #include "profile_h/DynamicDatapath.h"
 
 DynamicDatapath::DynamicDatapath(
-	std::string kernelName, ConfigurationManager &CM, ContextManager &CtxM, std::ofstream *summaryFile,
+	std::string kernelName, ConfigurationManager &CM, ContextManager &CtxM, std::ofstream *summaryFile, SharedDynamicTrace &traceFile,
 	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor
-) : BaseDatapath(kernelName, CM, CtxM, summaryFile, loopName, loopLevel, loopUnrollFactor, false, 0) {
+) : BaseDatapath(kernelName, CM, CtxM, summaryFile, traceFile, loopName, loopLevel, loopUnrollFactor, false, 0) {
 	VERBOSE_PRINT(errs() << "[][][][dynamicDatapath] Analysing DDDG for loop \"" << loopName << "\"\n");
 
 	initBaseAddress();
@@ -19,10 +19,10 @@ DynamicDatapath::DynamicDatapath(
 }
 
 DynamicDatapath::DynamicDatapath(
-	std::string kernelName, ConfigurationManager &CM, ContextManager &CtxM, std::ofstream *summaryFile,
+	std::string kernelName, ConfigurationManager &CM, ContextManager &CtxM, std::ofstream *summaryFile, SharedDynamicTrace &traceFile,
 	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
 	bool enablePipelining, uint64_t asapII
-) : BaseDatapath(kernelName, CM, CtxM, summaryFile, loopName, loopLevel, loopUnrollFactor, enablePipelining, asapII) {
+) : BaseDatapath(kernelName, CM, CtxM, summaryFile, traceFile, loopName, loopLevel, loopUnrollFactor, enablePipelining, asapII) {
 	VERBOSE_PRINT(errs() << "[][][][dynamicDatapath] Analysing DDDG for loop \"" << loopName << "\"\n");
 
 	initBaseAddress();
@@ -43,35 +43,29 @@ DynamicDatapath::DynamicDatapath(
 
 // Constructor with no nodes to import
 DynamicDatapath::DynamicDatapath(
-	std::string kernelName, ConfigurationManager &CM, ContextManager &CtxM, std::ofstream *summaryFile,
+	std::string kernelName, ConfigurationManager &CM, ContextManager &CtxM, std::ofstream *summaryFile, SharedDynamicTrace &traceFile,
 	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
 	unsigned datapathType
-) : BaseDatapath(kernelName, CM, CtxM, summaryFile, loopName, loopLevel, loopUnrollFactor, datapathType) {
-	_DynamicDatapath(kernelName, CM, CtxM, summaryFile, loopName, loopLevel, loopUnrollFactor, nullptr, datapathType);
+) : BaseDatapath(kernelName, CM, CtxM, summaryFile, traceFile, loopName, loopLevel, loopUnrollFactor, datapathType) {
+	_DynamicDatapath(kernelName, CM, CtxM, summaryFile, traceFile, loopName, loopLevel, loopUnrollFactor, nullptr, datapathType);
 }
 
 // Constructor with nodes to import
 DynamicDatapath::DynamicDatapath(
-	std::string kernelName, ConfigurationManager &CM, ContextManager &CtxM, std::ofstream *summaryFile,
+	std::string kernelName, ConfigurationManager &CM, ContextManager &CtxM, std::ofstream *summaryFile, SharedDynamicTrace &traceFile,
 	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
 	std::vector<MemoryModel::nodeExportTy> &nodesToImport, unsigned datapathType
-) : BaseDatapath(kernelName, CM, CtxM, summaryFile, loopName, loopLevel, loopUnrollFactor, datapathType) {
-	_DynamicDatapath(kernelName, CM, CtxM, summaryFile, loopName, loopLevel, loopUnrollFactor, &nodesToImport, datapathType);
+) : BaseDatapath(kernelName, CM, CtxM, summaryFile, traceFile, loopName, loopLevel, loopUnrollFactor, datapathType) {
+	_DynamicDatapath(kernelName, CM, CtxM, summaryFile, traceFile, loopName, loopLevel, loopUnrollFactor, &nodesToImport, datapathType);
 }
 
 // Inner logic for non-perfect loop nest constructor
 void DynamicDatapath::_DynamicDatapath(
-	std::string kernelName, ConfigurationManager &CM, ContextManager &CtxM, std::ofstream *summaryFile,
+	std::string kernelName, ConfigurationManager &CM, ContextManager &CtxM, std::ofstream *summaryFile, SharedDynamicTrace &traceFile,
 	std::string loopName, unsigned loopLevel, uint64_t loopUnrollFactor,
 	std::vector<MemoryModel::nodeExportTy> *nodesToImport, unsigned datapathType
 ) {
 	VERBOSE_PRINT(errs() << "\tBuild initial DDDG\n");
-
-	std::string traceFileName = args.workDir + FILE_DYNAMIC_TRACE;
-	gzFile traceFile;
-
-	traceFile = gzopen(traceFileName.c_str(), "r");
-	assert(traceFile != Z_NULL && "Could not open trace input file");
 
 	if(args.fNoMMA || args.mmaMode != ArgPack::MMA_MODE_USE) {
 		VERBOSE_PRINT(errs() << "\tBuild initial DDDG\n");
@@ -87,7 +81,7 @@ void DynamicDatapath::_DynamicDatapath(
 		else
 			assert(false && "Invalid type of datapath passed to this type of dynamic datapath constructor");
 
-		builder->buildInitialDDDG(interval);
+		builder->buildInitialDDDG(traceFile, interval);
 
 		if(ArgPack::MMA_MODE_GEN == args.mmaMode) {
 			VERBOSE_PRINT(errs() << "\tSaving context for later use\n");

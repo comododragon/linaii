@@ -304,7 +304,7 @@ void Multipath::recursiveLookup(unsigned currLoopLevel, unsigned finalLoopLevel)
 		if(enablePipelining) {
 			VERBOSE_PRINT(errs() << "[][][][multipath][" << std::to_string(finalLoopLevel) << "] Building dynamic datapath for recurrence-constrained II calculation\n");
 
-			DynamicDatapath DD(kernelName, CM, CtxM, summaryFile, loopName, finalLoopLevel, actualLoopUnrollFactor);
+			DynamicDatapath DD(kernelName, CM, CtxM, summaryFile, traceFile, loopName, finalLoopLevel, actualLoopUnrollFactor);
 			recII = DD.getASAPII();
 
 			VERBOSE_PRINT(errs() << "[][][][multipath][" << std::to_string(finalLoopLevel) << "] Recurrence-constrained II: " << recII << "\n");
@@ -312,7 +312,7 @@ void Multipath::recursiveLookup(unsigned currLoopLevel, unsigned finalLoopLevel)
 
 		VERBOSE_PRINT(errs() << "[][][][multipath][" << std::to_string(finalLoopLevel) << "] Building dynamic datapath\n");
 
-		DynamicDatapath DD(kernelName, CM, CtxM, summaryFile, loopName, finalLoopLevel, loopUnrollFactor, enablePipelining, recII);
+		DynamicDatapath DD(kernelName, CM, CtxM, summaryFile, traceFile, loopName, finalLoopLevel, loopUnrollFactor, enablePipelining, recII);
 
 		VERBOSE_PRINT(errs() << "[][][][multipath][" << std::to_string(finalLoopLevel) << "] Estimated cycles (might include bursts outside this loop): " << std::to_string(DD.getCycles()) << "\n");
 		VERBOSE_PRINT(errs() << "[][][][multipath][" << std::to_string(finalLoopLevel) << "] Finished\n");
@@ -380,7 +380,7 @@ void Multipath::recursiveLookup(unsigned currLoopLevel, unsigned finalLoopLevel)
 			// XXX: If was commented since for now calculateBefore is always true (uncommenting the if will cause some scope errors that i did not solve)
 			//if(calculateBefore) {
 				VERBOSE_PRINT(errs() << "[][][][multipath][" << std::to_string(currLoopLevel) << "] Building dynamic datapath for the region before the nested loop\n");
-				DynamicDatapath DD(kernelName, CM, CtxM, summaryFile, loopName, currLoopLevel, targetUnrollFactor, nodesToBeforeDDDG, DatapathType::NON_PERFECT_BEFORE);
+				DynamicDatapath DD(kernelName, CM, CtxM, summaryFile, traceFile, loopName, currLoopLevel, targetUnrollFactor, nodesToBeforeDDDG, DatapathType::NON_PERFECT_BEFORE);
 				latencies.push_back(std::make_tuple(currLoopLevel, DatapathType::NON_PERFECT_BEFORE, DD.getRCIL(), 0));
 				P.merge(DD.getPack());
 			//}
@@ -393,7 +393,7 @@ void Multipath::recursiveLookup(unsigned currLoopLevel, unsigned finalLoopLevel)
 			// XXX: If was commented since for now calculateAfter is always true (uncommenting the if will cause some scope errors that i did not solve)
 			//if(calculateAfter) {
 				VERBOSE_PRINT(errs() << "[][][][multipath][" << std::to_string(currLoopLevel) << "] Building dynamic datapath for the region after the nested loop\n");
-				DynamicDatapath DD2(kernelName, CM, CtxM, summaryFile, loopName, currLoopLevel, targetUnrollFactor, nodesToAfterDDDG, DatapathType::NON_PERFECT_AFTER);
+				DynamicDatapath DD2(kernelName, CM, CtxM, summaryFile, traceFile, loopName, currLoopLevel, targetUnrollFactor, nodesToAfterDDDG, DatapathType::NON_PERFECT_AFTER);
 				latencies.push_back(std::make_tuple(currLoopLevel, DatapathType::NON_PERFECT_AFTER, DD2.getRCIL(), 0));
 				P.merge(DD2.getPack());
 			//}
@@ -410,7 +410,7 @@ void Multipath::recursiveLookup(unsigned currLoopLevel, unsigned finalLoopLevel)
 
 				if(ddRCIL || dd2RCIL) {
 					VERBOSE_PRINT(errs() << "[][][][multipath][" << std::to_string(currLoopLevel) << "] Building dynamic datapath for the region between the unrolled nested loops\n");
-					DynamicDatapath DD3(kernelName, CM, CtxM, summaryFile, loopName, currLoopLevel, targetUnrollFactor, nodesToImport, DatapathType::NON_PERFECT_BETWEEN);
+					DynamicDatapath DD3(kernelName, CM, CtxM, summaryFile, traceFile, loopName, currLoopLevel, targetUnrollFactor, nodesToImport, DatapathType::NON_PERFECT_BETWEEN);
 					latencies.push_back(std::make_tuple(currLoopLevel, DatapathType::NON_PERFECT_BETWEEN, DD3.getRCIL(), 0));
 					P.merge(DD3.getPack());
 				}
@@ -439,6 +439,7 @@ Multipath::Multipath(
 	uint64_t loopUnrollFactor, std::vector<unsigned> &unrolls, uint64_t actualLoopUnrollFactor
 ) :
 	kernelName(kernelName), CM(CM), CtxM(CtxM), summaryFile(summaryFile),
+	traceFile(args.workDir + FILE_DYNAMIC_TRACE, args.workDir + FILE_FUTURE_CACHE),
 	loopName(loopName), loopLevel(loopLevel), firstNonPerfectLoopLevel(firstNonPerfectLoopLevel),
 	loopUnrollFactor(loopUnrollFactor), unrolls(unrolls), actualLoopUnrollFactor(actualLoopUnrollFactor),
 	enablePipelining(true)
@@ -452,6 +453,7 @@ Multipath::Multipath(
 	uint64_t loopUnrollFactor, std::vector<unsigned> &unrolls
 ) :
 	kernelName(kernelName), CM(CM), CtxM(CtxM), summaryFile(summaryFile),
+	traceFile(args.workDir + FILE_DYNAMIC_TRACE, args.workDir + FILE_FUTURE_CACHE),
 	loopName(loopName), loopLevel(loopLevel), firstNonPerfectLoopLevel(firstNonPerfectLoopLevel),
 	loopUnrollFactor(loopUnrollFactor), unrolls(unrolls),
 	enablePipelining(false)

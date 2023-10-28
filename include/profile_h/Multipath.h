@@ -2,6 +2,7 @@
 #define MULTIPATH_H
 
 #include "profile_h/lin-profile.h"
+#include "profile_h/SharedDynamicTrace.h"
 
 using namespace llvm;
 
@@ -13,6 +14,7 @@ class Multipath {
 	ConfigurationManager &CM;
 	ContextManager &CtxM;
 	std::ofstream *summaryFile;
+	SharedDynamicTrace traceFile;
 	std::string loopName;
 	unsigned loopLevel;
 	unsigned firstNonPerfectLoopLevel;

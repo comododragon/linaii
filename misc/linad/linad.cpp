@@ -58,218 +58,40 @@ typedef boost::interprocess::vector<uint64_t, ShmAllocator> MemoryTraceElementTy
 /*Shared memory regions used for dynamic trace cache connections */
 typedef boost::interprocess::allocator<char, boost::interprocess::managed_shared_memory::segment_manager> ByteShmAllocator;
 typedef boost::interprocess::vector<char, ByteShmAllocator> ConnectionRegionTy;
+typedef boost::interprocess::vector<char, ByteShmAllocator> DynamicTraceRegionTy;
 
 
-/* Buffered GZ File */
-/* This class opens a GZ file, and keeps on memory all regions that have been read for fast access */
-/* That is, it is better to keep each instance of this class only reading small regions of the file, otherwise the buffer may be huge! */
-class BufferedGzFile {
-	/* The region from GZ file to be buffered */
-	char *buffer;
-
-	/* Base cursor: this class supplies a special method that rewinds the buffer to the base cursor whenever called */
-	z_off_t baseCursor;
-	/* Lower bound cursor of the buffered region */
-	z_off_t lowerCursor;
-	/* Upper bound cursor of the buffered region */
-	z_off_t higherCursor;
-	/* Current cursor: points to the next character to be read from buffer or GZ file */
-	z_off_t curCursor;
-	/* Proposed cursor: either points to current cursor, or to an arbitrary position defined via rewind(), seek() or seekToBase() */
-	z_off_t proposedCursor;
-
-	/* True if EOF is on buffered region */
-	bool eofFound;
-
-	/* The so famous GZ file */
-	gzFile file;
-
-	/* When called, it forces invalidation of the buffer, forcing the next gets() call to refresh the buffer (i.e. read from GZ file) */
-	void _invalidateBuffer() {
-		if(buffer)
-			free(buffer);
-		buffer = NULL;
-		eofFound = false;
-	}
-
-	/* Internal gets() method. This method assumes that all needed data is already on buffered cache */
-	/* Then it just proceeds as a normal gets() call would */
-	char *_gets(char *buf, int len) {
-		// The beginning of gets() call guarantees that proposedCursor will be within the buffered region
-		// That is, proposedCursor should never be above higherCursor
-		if(proposedCursor >= higherCursor) {
-			_invalidateBuffer();
-			return Z_NULL;
-		}
-
-		// Also the logic before this call guarantees that there will be enough characters in buffer
-		// to fulfill this function
-		z_off_t idx;
-		for(idx = proposedCursor; idx < higherCursor && (idx - proposedCursor) < (len - 1); idx++) {
-			// If a newline was found, we found our match
-			if('\n' == buffer[idx - lowerCursor]) {
-				idx++;
-				break;
-			}
-		}
-
-		// Copy content and close string
-		memcpy(buf, &buffer[proposedCursor - lowerCursor], idx - proposedCursor);
-		buf[idx - proposedCursor] = '\0';
-
-		// Update cursors
-		proposedCursor = idx;
-		curCursor = idx;
-
-		return buf;
-	}
-
-public:
-
-	const unsigned defaultBufferSize = 131072;
-
-	BufferedGzFile(std::string path, z_off_t baseCursor) {
-		buffer = NULL;
-
-		this->baseCursor = baseCursor;
-		curCursor = 0;
-		proposedCursor = 0;
-
-		eofFound = false;
-
-		file = gzopen(path.c_str(), "r");
-	}
-
-	/* File is closed on object destruction. Beware of local instances and scoping! */
-	~BufferedGzFile() {
-		if(file)
-			gzclose(file);
-		if(buffer)
-			free(buffer);
-	}
-
-	bool isOpen() {
-		return file;
-	}
-
-	std::pair<z_off_t, z_off_t> bufferBounds() {
-		if(buffer)
-			return std::make_pair(lowerCursor, higherCursor);
-		else
-			return std::make_pair(0, 0);
-	}
-
-	z_off_t bufferSize() {
-		return buffer? (higherCursor - lowerCursor) : 0;
-	}
-
-	z_off_t seek(z_off_t cursor, int whence) {
-		if(whence != SEEK_SET && whence != SEEK_CUR)
-			return -1;
-
-		if(SEEK_CUR == whence)
-			proposedCursor += cursor;
-		else
-			proposedCursor = cursor;
-
-		return proposedCursor;
-	}
-
-	z_off_t seekToBase() {
-		return seek(baseCursor, SEEK_SET);
-	}
-
-	int rewind() {
-		proposedCursor = 0;
-		return 0;
-	}
-
-	int eof() {
-		return eofFound? (curCursor >= higherCursor) : 0;
-	}
-
-	z_off_t tell() {
-		return proposedCursor;
-	}
-
-	char *gets(char *buf, int len) {
-		if(buffer) {
-			bool readjustBuffer = false;
-			if(proposedCursor != curCursor) {
-				// If proposed cursor is out of bounds of buffer, readjust buffer
-				if(proposedCursor < lowerCursor) {
-					lowerCursor = proposedCursor;
-					readjustBuffer = true;
-				}
-				// Only readjust up if EOF has not been reached
-				if(!eofFound && (proposedCursor > higherCursor)) {
-					higherCursor = proposedCursor;
-					readjustBuffer = true;
-				}
-			}
-			// If buffer has no remaining len-1 elements to be read, readjust buffer
-			// Only readjust up if EOF has not been reached
-			if(!eofFound && ((proposedCursor + (len - 1)) > higherCursor)) {
-				higherCursor = proposedCursor + defaultBufferSize;
-				readjustBuffer = true;
-			}
-
-			// If buffer must be readjusted, re-read everything
-			// XXX Perhaps implement this a better way if needed...
-			if(readjustBuffer) {
-				char *newBuffer = (char *) realloc(buffer, higherCursor - lowerCursor);
-				if(!newBuffer) {
-					_invalidateBuffer();
-					return Z_NULL;
-				}
-				buffer = newBuffer;
-				// Adjust the true cursor before reading
-				int retVal = gzseek(file, lowerCursor, SEEK_SET);
-				if(-1 == retVal) {
-					_invalidateBuffer();
-					return Z_NULL;
-				}
-				retVal = gzread(file, buffer, higherCursor - lowerCursor);
-				if(-1 == retVal) {
-					_invalidateBuffer();
-					return Z_NULL;
-				}
-				else if(retVal < (higherCursor - lowerCursor)) {
-					eofFound = true;
-					higherCursor = proposedCursor + retVal;
-				}
-				curCursor = proposedCursor;
-			}
-
-			return _gets(buf, len);
-		}
-		/* No buffered data yet or it has been invalidated. Refresh buffer */
-		else {
-			buffer = (char *) malloc(defaultBufferSize);
-			if(!buffer)
-				return Z_NULL;
-			// Adjust the true cursor before reading
-			int retVal = gzseek(file, proposedCursor, SEEK_SET);
-			if(-1 == retVal) {
-				_invalidateBuffer();
-				return Z_NULL;
-			}
-			retVal = gzread(file, buffer, defaultBufferSize);
-			if(-1 == retVal) {
-				_invalidateBuffer();
-				return Z_NULL;
-			}
-			else if(retVal < defaultBufferSize) {
-				eofFound = true;
-			}
-			lowerCursor = proposedCursor;
-			higherCursor = proposedCursor + (eofFound? retVal : defaultBufferSize);
-			curCursor = proposedCursor;
-
-			return _gets(buf, len);
-		}
-	}
-};
+#define DYNAMIC_TRACE_DEFAULT_BUFFER_SIZE 131072
+#define DYNAMIC_TRACE_GET0_ISINIT(traceRegion) (((bool *) (traceRegion->data()))[0])
+#define DYNAMIC_TRACE_GET1_EOFFOUND(traceRegion) (((bool *) (traceRegion->data()))[1])
+#define DYNAMIC_TRACE_GET2_LOWER(traceRegion) *((z_off_t *) (&(traceRegion->data())[sizeof(bool) + sizeof(bool)]))
+#define DYNAMIC_TRACE_GET3_HIGHER(traceRegion) *((z_off_t *) (&(traceRegion->data())[sizeof(bool) + sizeof(bool) + sizeof(z_off_t)]))
+#define DYNAMIC_TRACE_GET4_DATA(traceRegion) (&(traceRegion->data())[sizeof(bool) + sizeof(bool) + sizeof(z_off_t) + sizeof(z_off_t)])
+#define DYNAMIC_TRACE_SET0_ISINIT(traceRegion, isInit) do {\
+	bool _isInit = isInit;\
+	memcpy(traceRegion->data(), &_isInit, sizeof(bool));\
+} while(0)
+#define DYNAMIC_TRACE_SET1_EOFFOUND(traceRegion, eofFound) do {\
+	bool _eofFound = eofFound;\
+	memcpy(&(traceRegion->data())[sizeof(bool)], &_eofFound, sizeof(bool));\
+} while(0)
+#define DYNAMIC_TRACE_SET2_LOWER(traceRegion, lower) do {\
+	z_off_t _lower = lower;\
+	memcpy(&(traceRegion->data())[sizeof(bool) + sizeof(bool)], &_lower, sizeof(z_off_t));\
+} while(0)
+#define DYNAMIC_TRACE_SET3_HIGHER(traceRegion, higher) do {\
+	z_off_t _higher = higher;\
+	memcpy(&(traceRegion->data())[sizeof(bool) + sizeof(bool) + sizeof(z_off_t)], &_higher, sizeof(z_off_t));\
+} while(0)
+#define DYNAMIC_TRACE_SET4_DATA(traceRegion, data, size) do {\
+	memcpy(&(traceRegion->data())[sizeof(bool) + sizeof(bool) + sizeof(z_off_t) + sizeof(z_off_t)], data, size);\
+} while(0)
+#define DYNAMIC_TRACE_RESIZE(traceRegion, len) traceRegion->resize(sizeof(bool) + sizeof(bool) + sizeof(z_off_t) + sizeof(z_off_t) + (len))
+#define DYNAMIC_TRACE_INVALIDATE(traceRegion) do {\
+	DYNAMIC_TRACE_RESIZE(traceRegion, 0);\
+	DYNAMIC_TRACE_SET0_ISINIT(traceRegion, false);\
+	DYNAMIC_TRACE_SET1_EOFFOUND(traceRegion, false);\
+} while(0)
 
 
 int main(int argc, char *argv[]) {
@@ -305,7 +127,7 @@ int main(int argc, char *argv[]) {
 	std::string dynamicTraceFileName;
 	std::vector<std::string> connections;
 	std::map<std::string, std::string> attachedConnections;
-	std::map<std::string, BufferedGzFile *> dynamicTraceFiles;
+	std::map<std::string, gzFile> dynamicTraceFiles;
 	syslog(LOG_NOTICE, "Succesfully created managed shared memory");
 
 	std::string pipePath(PIPE_PATH + std::to_string(pipeID));
@@ -497,8 +319,10 @@ int main(int argc, char *argv[]) {
 
 			if(dynamicTraceFiles.size()) {
 				syslog(LOG_NOTICE, "Closing previous open dynamic trace files...");
-				for(auto &elem : dynamicTraceFiles)
-					delete elem.second;
+				for(auto &elem : dynamicTraceFiles) {
+					gzclose(elem.second);
+					segment.destroy<DynamicTraceRegionTy>(elem.first.c_str());
+				}
 				dynamicTraceFiles.clear();
 				syslog(LOG_NOTICE, "Done");
 			}
@@ -731,61 +555,28 @@ int main(int argc, char *argv[]) {
 			// Open file if not already opened
 			const auto &elem2 = dynamicTraceFiles.find(fullCacheKeyStr);
 			if(elem2 != dynamicTraceFiles.end()) {
-				success = (elem2->second->seekToBase() != -1);
+				success = true;
 			}
 			else {
 				syslog(LOG_NOTICE, "Shared dynamic trace entry does not exist. Creating...");
 				syslog(LOG_NOTICE, "Connection name: %s", connectionName);
 				syslog(LOG_NOTICE, "Cache key: %s", cacheKey);
 
-				std::ifstream futureCacheFile;
-				futureCacheFile.open(connectionName, std::ios::in | std::ios::binary);
-				if(futureCacheFile.is_open()) {
-					/* Check for magic bits in future cache file */
-					char magicBits[4];
-					futureCacheFile.read(magicBits, std::string(FILE_FUTURE_CACHE_MAGIC_STRING).size());
-					magicBits[3] = '\0';
-					if(FILE_FUTURE_CACHE_MAGIC_STRING == std::string(magicBits)) {
-						/* Read cache size */
-						size_t mapSize;
-						futureCacheFile.read((char *) &mapSize, sizeof(size_t));
-						/* Now read each element */
-						for(unsigned i = 0; i < mapSize; i++) {
-							size_t cacheKeySize;
-							futureCacheFile.read((char *) &cacheKeySize, sizeof(size_t));
+				gzFile file = gzopen(dynamicTraceFileName.c_str(), "r");
+				if(file) {
+					DynamicTraceRegionTy *traceRegion = segment.construct<DynamicTraceRegionTy>(fullCacheKeyStr.c_str())(byteAllocInst);
+					if(traceRegion) {
+						DYNAMIC_TRACE_RESIZE(traceRegion, 0);
+						DYNAMIC_TRACE_SET0_ISINIT(traceRegion, false);
+						DYNAMIC_TRACE_SET1_EOFFOUND(traceRegion, false);
 
-							char cacheBuff[BUFF_STR_SZ];
-							futureCacheFile.read(cacheBuff, cacheKeySize);
-							cacheBuff[cacheKeySize] = '\0';
-							std::string curCacheKey(cacheBuff);
+						dynamicTraceFiles.insert(std::make_pair(fullCacheKeyStr, file));
+						success = true;
 
-							long int gzCursor;
-							futureCacheFile.read((char *) &gzCursor, sizeof(long int));
-							futureCacheFile.seekg(5 * sizeof(uint64_t) + sizeof(long int), std::ios_base::cur);
-
-							if(cacheKey != curCacheKey)
-								continue;
-
-							syslog(LOG_NOTICE, "Cache element: %s", cacheBuff);
-							syslog(LOG_NOTICE, "Cursor position: %ld", gzCursor);
-
-							BufferedGzFile *gzFileElement = new BufferedGzFile(dynamicTraceFileName, gzCursor);//, dbgFile);
-							if(!(gzFileElement && gzFileElement->isOpen()))
-								break;
-							if(-1 == gzFileElement->seekToBase()) {
-								delete gzFileElement;
-								futureCacheFile.close();
-								break;
-							}
-
-							dynamicTraceFiles.insert(std::make_pair(fullCacheKeyStr, gzFileElement));
-							success = true;
-
-							syslog(LOG_NOTICE, "Completed loading shared dynamic trace: %s", fullCacheKeyStr.c_str());
-							break;
-						}
-
-						futureCacheFile.close();
+						syslog(LOG_NOTICE, "Completed loading shared dynamic trace: %s", fullCacheKeyStr.c_str());
+					}
+					else {
+						gzclose(file);
 					}
 				}
 			}
@@ -808,7 +599,7 @@ int main(int argc, char *argv[]) {
 			memcpy(&(connection->data())[sizeof(unsigned)], &success, 1);
 			memcpy(connection->data(), &transactionID, sizeof(unsigned));
 		}
-		// Release cached dynamic trace file, returning its cursor
+		// Release cached dynamic trace file
 		// rXXXYYYYYYYYYY...
 		// XXX           Size of YYYYYYYYYY... string
 		// YYYYYYYYYY... Connection name
@@ -878,499 +669,243 @@ int main(int argc, char *argv[]) {
 				syslog(LOG_NOTICE, "Connection name: %s", connectionName);
 			}
 		}
-		// Perform a gzip command directly
-		// gXXXXXXXXXXXXXXXXXX...
+		// Refresh/get dynamic trace buffer
+		// gXXXYYYYYYYYYY...ZZZZZZZZZZWWWWWWWWWWLLLLLLLLLL
+		// XXX           Size of YYYYYYYYYY... string
+		// YYYYYYYYYY... Connection name
+		// ZZZZZZZZZZ    Transaction ID
+		// WWWWWWWWWW    Proposed cursor
+		// LLLLLLLLLL    Max. amount of data to be read starting from proposed cursor
 		else if('g' == buff[0]) {
-			nBytes = read(pipeFD, buff, 1);
-			if(nBytes < 0) {
-				syslog(LOG_ERR, "read() call failed when getting the gzip command character");
+			nBytes = read(pipeFD, buff, 3);
+			if(nBytes != 3) {
+				syslog(LOG_ERR, "read() call failed when getting the connection name string size");
 				retVal = EXIT_FAILURE;
 				goto _err;
 			}
 
-			// Perform gzseek
-			// gsXXXYYYYYYYYYY...ZZZZZZZZZZOOOOOOOOOOW
-			// XXX           Size of YYYYYYYYYY... string
-			// YYYYYYYYYY... Connection name
-			// ZZZZZZZZZZ    Transaction ID
-			// OOOOOOOOOO    Argument 1: offset
-			// W             Argument 2: whence: 1 to SEEK_CUR, 0 to SEEK_SET
-			if('s' == buff[0]) {
-				nBytes = read(pipeFD, buff, 3);
-				if(nBytes != 3) {
-					syslog(LOG_ERR, "read() call failed when getting the connection name string size");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-
-				buff[3] = '\0';
-				unsigned connectionNameSz = 0;
-				try {
-					connectionNameSz = std::stoi(buff);
-				}
-				catch(const std::exception& e) {
-					syslog(LOG_ERR, "Failed to convert connection name string size to int");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-
-				if(connectionNameSz > BUFF_STR_SZ)
-					connectionNameSz = BUFF_STR_SZ;
-
-				char connectionName[BUFF_STR_SZ + 1];
-				connectionName[BUFF_STR_SZ] = '\0';
-				nBytes = read(pipeFD, connectionName, connectionNameSz);
-				if(nBytes != connectionNameSz) {
-					syslog(LOG_ERR, "read() call failed when getting the connection name string");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-				connectionName[connectionNameSz] = '\0';
-
-				nBytes = read(pipeFD, buff, 10);
-				if(nBytes != 10) {
-					syslog(LOG_ERR, "read() call failed when getting the transaction ID");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-
-				buff[10] = '\0';
-				unsigned transactionID = 0;
-				try {
-					transactionID = std::stoi(buff);
-				}
-				catch(const std::exception& e) {
-					syslog(LOG_ERR, "Failed to convert transaction ID to int");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-
-				nBytes = read(pipeFD, buff, 10);
-				if(nBytes != 10) {
-					syslog(LOG_ERR, "read() call failed when getting gzseek argument 0: offset");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-
-				buff[10] = '\0';
-				z_off_t offset = 0;
-				try {
-					offset = std::stoi(buff);
-				}
-				catch(const std::exception& e) {
-					syslog(LOG_ERR, "Failed to convert gzseek argument 0: offset, to int");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-
-				nBytes = read(pipeFD, buff, 1);
-				if(nBytes < 0) {
-					syslog(LOG_ERR, "read() call failed when getting gzseek argument 1: whence");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-
-				int whence = ('1' == buff[0])? SEEK_CUR : SEEK_SET;
-
-				std::string connectionNameStr(connectionName);
-				auto found = attachedConnections.find(connectionNameStr);
-				if(attachedConnections.end() == found) {
-					syslog(LOG_ERR, "No such connection found: %s", connectionName);
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-				std::string cacheKeyStr(found->second);
-				std::string fullCacheKeyStr(connectionNameStr + KEY_SEPARATOR + cacheKeyStr);
-
-				ConnectionRegionTy *connection = segment.find<ConnectionRegionTy>(connectionName).first;
-				// Abort if there is no connection
-				if(!connection) {
-					syslog(LOG_ERR, "No such connection found: %s", connectionName);
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-
-				auto found2 = dynamicTraceFiles.find(fullCacheKeyStr);
-				if(dynamicTraceFiles.end() == found2) {
-					syslog(LOG_ERR, "Could not find open trace file with calculated key");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-
-				z_off_t retVal = found2->second->seek(offset, whence);
-
-				// Set up return values
-				memcpy(&(connection->data())[sizeof(unsigned)], &retVal, sizeof(z_off_t));
-				memcpy(connection->data(), &transactionID, sizeof(unsigned));
+			buff[3] = '\0';
+			unsigned connectionNameSz = 0;
+			try {
+				connectionNameSz = std::stoi(buff);
 			}
-			// Perform gzrewind
-			// grXXXYYYYYYYYYY...ZZZZZZZZZZ
-			// XXX           Size of YYYYYYYYYY... string
-			// YYYYYYYYYY... Connection name
-			// ZZZZZZZZZZ    Transaction ID
-			else if('r' == buff[0]) {
-				nBytes = read(pipeFD, buff, 3);
-				if(nBytes != 3) {
-					syslog(LOG_ERR, "read() call failed when getting the connection name string size");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-
-				buff[3] = '\0';
-				unsigned connectionNameSz = 0;
-				try {
-					connectionNameSz = std::stoi(buff);
-				}
-				catch(const std::exception& e) {
-					syslog(LOG_ERR, "Failed to convert connection name string size to int");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-
-				if(connectionNameSz > BUFF_STR_SZ)
-					connectionNameSz = BUFF_STR_SZ;
-
-				char connectionName[BUFF_STR_SZ + 1];
-				connectionName[BUFF_STR_SZ] = '\0';
-				nBytes = read(pipeFD, connectionName, connectionNameSz);
-				if(nBytes != connectionNameSz) {
-					syslog(LOG_ERR, "read() call failed when getting the connection name string");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-				connectionName[connectionNameSz] = '\0';
-
-				nBytes = read(pipeFD, buff, 10);
-				if(nBytes != 10) {
-					syslog(LOG_ERR, "read() call failed when getting the transaction ID");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-
-				buff[10] = '\0';
-				unsigned transactionID = 0;
-				try {
-					transactionID = std::stoi(buff);
-				}
-				catch(const std::exception& e) {
-					syslog(LOG_ERR, "Failed to convert transaction ID to int");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-
-				std::string connectionNameStr(connectionName);
-				auto found = attachedConnections.find(connectionNameStr);
-				if(attachedConnections.end() == found) {
-					syslog(LOG_ERR, "No such connection found: %s", connectionName);
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-				std::string cacheKeyStr(found->second);
-				std::string fullCacheKeyStr(connectionNameStr + KEY_SEPARATOR + cacheKeyStr);
-
-				ConnectionRegionTy *connection = segment.find<ConnectionRegionTy>(connectionName).first;
-				// Abort if there is no connection
-				if(!connection) {
-					syslog(LOG_ERR, "No such connection found: %s", connectionName);
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-
-				auto found2 = dynamicTraceFiles.find(fullCacheKeyStr);
-				if(dynamicTraceFiles.end() == found2) {
-					syslog(LOG_ERR, "Could not find open trace file with calculated key");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-
-				int retVal = found2->second->rewind();
-
-				// Set up return values
-				memcpy(&(connection->data())[sizeof(unsigned)], &retVal, sizeof(int));
-				memcpy(connection->data(), &transactionID, sizeof(unsigned));
+			catch(const std::exception& e) {
+				syslog(LOG_ERR, "Failed to convert connection name string size to int");
+				retVal = EXIT_FAILURE;
+				goto _err;
 			}
-			// Perform gzeof
-			// geXXXYYYYYYYYYY...ZZZZZZZZZZ
-			// XXX           Size of YYYYYYYYYY... string
-			// YYYYYYYYYY... Connection name
-			// ZZZZZZZZZZ    Transaction ID
-			else if('e' == buff[0]) {
-				nBytes = read(pipeFD, buff, 3);
-				if(nBytes != 3) {
-					syslog(LOG_ERR, "read() call failed when getting the connection name string size");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
 
-				buff[3] = '\0';
-				unsigned connectionNameSz = 0;
-				try {
-					connectionNameSz = std::stoi(buff);
-				}
-				catch(const std::exception& e) {
-					syslog(LOG_ERR, "Failed to convert connection name string size to int");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
+			if(connectionNameSz > BUFF_STR_SZ)
+				connectionNameSz = BUFF_STR_SZ;
 
-				if(connectionNameSz > BUFF_STR_SZ)
-					connectionNameSz = BUFF_STR_SZ;
-
-				char connectionName[BUFF_STR_SZ + 1];
-				connectionName[BUFF_STR_SZ] = '\0';
-				nBytes = read(pipeFD, connectionName, connectionNameSz);
-				if(nBytes != connectionNameSz) {
-					syslog(LOG_ERR, "read() call failed when getting the connection name string");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-				connectionName[connectionNameSz] = '\0';
-
-				nBytes = read(pipeFD, buff, 10);
-				if(nBytes != 10) {
-					syslog(LOG_ERR, "read() call failed when getting the transaction ID");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-
-				buff[10] = '\0';
-				unsigned transactionID = 0;
-				try {
-					transactionID = std::stoi(buff);
-				}
-				catch(const std::exception& e) {
-					syslog(LOG_ERR, "Failed to convert transaction ID to int");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-
-				std::string connectionNameStr(connectionName);
-				auto found = attachedConnections.find(connectionNameStr);
-				if(attachedConnections.end() == found) {
-					syslog(LOG_ERR, "No such connection found: %s", connectionName);
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-				std::string cacheKeyStr(found->second);
-				std::string fullCacheKeyStr(connectionNameStr + KEY_SEPARATOR + cacheKeyStr);
-
-				ConnectionRegionTy *connection = segment.find<ConnectionRegionTy>(connectionName).first;
-				// Abort if there is no connection
-				if(!connection) {
-					syslog(LOG_ERR, "No such connection found: %s", connectionName);
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-
-				auto found2 = dynamicTraceFiles.find(fullCacheKeyStr);
-				if(dynamicTraceFiles.end() == found2) {
-					syslog(LOG_ERR, "Could not find open trace file with calculated key");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-
-				int retVal = found2->second->eof();
-
-				// Set up return values
-				memcpy(&(connection->data())[sizeof(unsigned)], &retVal, sizeof(int));
-				memcpy(connection->data(), &transactionID, sizeof(unsigned));
+			char connectionName[BUFF_STR_SZ + 1];
+			connectionName[BUFF_STR_SZ] = '\0';
+			nBytes = read(pipeFD, connectionName, connectionNameSz);
+			if(nBytes != connectionNameSz) {
+				syslog(LOG_ERR, "read() call failed when getting the connection name string");
+				retVal = EXIT_FAILURE;
+				goto _err;
 			}
-			// Perform gztell
-			// gtXXXYYYYYYYYYY...ZZZZZZZZZZ
-			// XXX           Size of YYYYYYYYYY... string
-			// YYYYYYYYYY... Connection name
-			// ZZZZZZZZZZ    Transaction ID
-			else if('t' == buff[0]) {
-				nBytes = read(pipeFD, buff, 3);
-				if(nBytes != 3) {
-					syslog(LOG_ERR, "read() call failed when getting the connection name string size");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
+			connectionName[connectionNameSz] = '\0';
 
-				buff[3] = '\0';
-				unsigned connectionNameSz = 0;
-				try {
-					connectionNameSz = std::stoi(buff);
-				}
-				catch(const std::exception& e) {
-					syslog(LOG_ERR, "Failed to convert connection name string size to int");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-
-				if(connectionNameSz > BUFF_STR_SZ)
-					connectionNameSz = BUFF_STR_SZ;
-
-				char connectionName[BUFF_STR_SZ + 1];
-				connectionName[BUFF_STR_SZ] = '\0';
-				nBytes = read(pipeFD, connectionName, connectionNameSz);
-				if(nBytes != connectionNameSz) {
-					syslog(LOG_ERR, "read() call failed when getting the connection name string");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-				connectionName[connectionNameSz] = '\0';
-
-				nBytes = read(pipeFD, buff, 10);
-				if(nBytes != 10) {
-					syslog(LOG_ERR, "read() call failed when getting the transaction ID");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-
-				buff[10] = '\0';
-				unsigned transactionID = 0;
-				try {
-					transactionID = std::stoi(buff);
-				}
-				catch(const std::exception& e) {
-					syslog(LOG_ERR, "Failed to convert transaction ID to int");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-
-				std::string connectionNameStr(connectionName);
-				auto found = attachedConnections.find(connectionNameStr);
-				if(attachedConnections.end() == found) {
-					syslog(LOG_ERR, "No such connection found: %s", connectionName);
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-				std::string cacheKeyStr(found->second);
-				std::string fullCacheKeyStr(connectionNameStr + KEY_SEPARATOR + cacheKeyStr);
-
-				ConnectionRegionTy *connection = segment.find<ConnectionRegionTy>(connectionName).first;
-				// Abort if there is no connection
-				if(!connection) {
-					syslog(LOG_ERR, "No such connection found: %s", connectionName);
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-
-				auto found2 = dynamicTraceFiles.find(fullCacheKeyStr);
-				if(dynamicTraceFiles.end() == found2) {
-					syslog(LOG_ERR, "Could not find open trace file with calculated key");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-
-				z_off_t retVal = found2->second->tell();
-
-				// Set up return values
-				memcpy(&(connection->data())[sizeof(unsigned)], &retVal, sizeof(z_off_t));
-				memcpy(connection->data(), &transactionID, sizeof(unsigned));
+			nBytes = read(pipeFD, buff, 10);
+			if(nBytes != 10) {
+				syslog(LOG_ERR, "read() call failed when getting the transaction ID");
+				retVal = EXIT_FAILURE;
+				goto _err;
 			}
-			// Perform gzgets
-			// ggXXXYYYYYYYYYY...ZZZZZZZZZZLLLLLLLLLL
-			// XXX           Size of YYYYYYYYYY... string
-			// YYYYYYYYYY... Connection name
-			// ZZZZZZZZZZ    Transaction ID
-			// LLLLLLLLLL    Argument 1: len
-			else if('g' == buff[0]) {
-				nBytes = read(pipeFD, buff, 3);
-				if(nBytes != 3) {
-					syslog(LOG_ERR, "read() call failed when getting the connection name string size");
-					retVal = EXIT_FAILURE;
-					goto _err;
+
+			buff[10] = '\0';
+			unsigned transactionID = 0;
+			try {
+				transactionID = std::stoi(buff);
+			}
+			catch(const std::exception& e) {
+				syslog(LOG_ERR, "Failed to convert transaction ID to int");
+				retVal = EXIT_FAILURE;
+				goto _err;
+			}
+
+			nBytes = read(pipeFD, buff, 10);
+			if(nBytes != 10) {
+				syslog(LOG_ERR, "read() call failed when getting the proposed cursor");
+				retVal = EXIT_FAILURE;
+				goto _err;
+			}
+
+			buff[10] = '\0';
+			z_off_t proposedCursor = 0;
+			try {
+				proposedCursor = std::stoi(buff);
+			}
+			catch(const std::exception& e) {
+				syslog(LOG_ERR, "Failed to convert proposed cursor to int");
+				retVal = EXIT_FAILURE;
+				goto _err;
+			}
+
+			nBytes = read(pipeFD, buff, 10);
+			if(nBytes != 10) {
+				syslog(LOG_ERR, "read() call failed when getting the max. read length");
+				retVal = EXIT_FAILURE;
+				goto _err;
+			}
+
+			buff[10] = '\0';
+			unsigned len = 0;
+			try {
+				len = std::stoi(buff);
+			}
+			catch(const std::exception& e) {
+				syslog(LOG_ERR, "Failed to convert max. read length to int");
+				retVal = EXIT_FAILURE;
+				goto _err;
+			}
+
+			std::string connectionNameStr(connectionName);
+			auto found = attachedConnections.find(connectionNameStr);
+			if(attachedConnections.end() == found) {
+				syslog(LOG_ERR, "No such connection found: %s", connectionName);
+				retVal = EXIT_FAILURE;
+				goto _err;
+			}
+			std::string cacheKeyStr(found->second);
+			std::string fullCacheKeyStr(connectionNameStr + KEY_SEPARATOR + cacheKeyStr);
+
+			ConnectionRegionTy *connection = segment.find<ConnectionRegionTy>(connectionName).first;
+			// Abort if there is no connection
+			if(!connection) {
+				syslog(LOG_ERR, "No such connection found: %s", connectionName);
+				retVal = EXIT_FAILURE;
+				goto _err;
+			}
+
+			auto found2 = dynamicTraceFiles.find(fullCacheKeyStr);
+			if(dynamicTraceFiles.end() == found2) {
+				syslog(LOG_ERR, "Could not find open trace file with calculated key");
+				retVal = EXIT_FAILURE;
+				goto _err;
+			}
+
+			DynamicTraceRegionTy *traceRegion = segment.find<DynamicTraceRegionTy>(fullCacheKeyStr.c_str()).first;
+			if(!traceRegion) {
+				syslog(LOG_ERR, "Could not find trace region with calculated key");
+				retVal = EXIT_FAILURE;
+				goto _err;
+			}
+
+			bool isInit = DYNAMIC_TRACE_GET0_ISINIT(traceRegion);
+			bool eofFound = DYNAMIC_TRACE_GET1_EOFFOUND(traceRegion);
+			z_off_t lower = DYNAMIC_TRACE_GET2_LOWER(traceRegion);
+			z_off_t higher = DYNAMIC_TRACE_GET3_HIGHER(traceRegion);
+
+			syslog(LOG_NOTICE, "Refresh requested on cache element \"%s\"" , fullCacheKeyStr.c_str());
+			syslog(LOG_NOTICE, "Metadata before refresh:");
+			syslog(LOG_NOTICE, "  isInit: %s", isInit? "true" : "false");
+			if(isInit) {
+				syslog(LOG_NOTICE, "  eofFound: %s", eofFound? "true" : "false");
+				syslog(LOG_NOTICE, "  lower: %ld", lower);
+				syslog(LOG_NOTICE, "  higher: %ld", higher);
+			}
+			syslog(LOG_NOTICE, "Received proposed cursor: %ld", proposedCursor);
+			syslog(LOG_NOTICE, "Max. amount of data to be read starting from proposed cursor: %d", len);
+
+			if(isInit) {
+				VERBOSE_LOG("Refreshing buffer...");
+				bool retValIsNull = false;
+
+				DYNAMIC_TRACE_RESIZE(traceRegion, higher - lower);
+
+				// Adjust the true cursor before reading
+				int retVal = gzseek(found2->second, lower, SEEK_SET);
+				if(-1 == retVal)
+					retValIsNull = true;
+
+				if(!retValIsNull) {
+					int retVal = gzread(found2->second, DYNAMIC_TRACE_GET4_DATA(traceRegion), higher - lower);
+					if(-1 == retVal) {
+						retValIsNull = true;
+					}
+					else if(retVal < (higher - lower)) {
+						eofFound = true;
+						higher = proposedCursor + retVal;
+					}
 				}
 
-				buff[3] = '\0';
-				unsigned connectionNameSz = 0;
-				try {
-					connectionNameSz = std::stoi(buff);
-				}
-				catch(const std::exception& e) {
-					syslog(LOG_ERR, "Failed to convert connection name string size to int");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
+				if(retValIsNull) {
+					syslog(LOG_NOTICE, "Refresh buffer failed, returning NULL and invalidating buffer");
 
-				if(connectionNameSz > BUFF_STR_SZ)
-					connectionNameSz = BUFF_STR_SZ;
+					DYNAMIC_TRACE_INVALIDATE(traceRegion);
+				}
+				else {
+					DYNAMIC_TRACE_SET0_ISINIT(traceRegion, true);
+					DYNAMIC_TRACE_SET1_EOFFOUND(traceRegion, eofFound);
+					DYNAMIC_TRACE_SET2_LOWER(traceRegion, lower);
+					DYNAMIC_TRACE_SET3_HIGHER(traceRegion, higher);
 
-				char connectionName[BUFF_STR_SZ + 1];
-				connectionName[BUFF_STR_SZ] = '\0';
-				nBytes = read(pipeFD, connectionName, connectionNameSz);
-				if(nBytes != connectionNameSz) {
-					syslog(LOG_ERR, "read() call failed when getting the connection name string");
-					retVal = EXIT_FAILURE;
-					goto _err;
+					syslog(LOG_NOTICE, "Refresh buffer finished");
+					syslog(LOG_NOTICE, "Metadata after refresh:");
+					syslog(LOG_NOTICE, "  isInit: %s", isInit? "true" : "false");
+					syslog(LOG_NOTICE, "  eofFound: %s", eofFound? "true" : "false");
+					syslog(LOG_NOTICE, "  lower: %ld", lower);
+					syslog(LOG_NOTICE, "  higher: %ld", higher);
 				}
-				connectionName[connectionNameSz] = '\0';
-
-				nBytes = read(pipeFD, buff, 10);
-				if(nBytes != 10) {
-					syslog(LOG_ERR, "read() call failed when getting the transaction ID");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-
-				buff[10] = '\0';
-				unsigned transactionID = 0;
-				try {
-					transactionID = std::stoi(buff);
-				}
-				catch(const std::exception& e) {
-					syslog(LOG_ERR, "Failed to convert transaction ID to int");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-
-				nBytes = read(pipeFD, buff, 10);
-				if(nBytes != 10) {
-					syslog(LOG_ERR, "read() call failed when getting gzseek argument 1: len");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-
-				buff[10] = '\0';
-				int len = 0;
-				try {
-					len = std::stoi(buff);
-				}
-				catch(const std::exception& e) {
-					syslog(LOG_ERR, "Failed to convert gzseek argument 1: len, to int");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-
-				std::string connectionNameStr(connectionName);
-				auto found = attachedConnections.find(connectionNameStr);
-				if(attachedConnections.end() == found) {
-					syslog(LOG_ERR, "No such connection found: %s", connectionName);
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-				std::string cacheKeyStr(found->second);
-				std::string fullCacheKeyStr(connectionNameStr + KEY_SEPARATOR + cacheKeyStr);
-
-				ConnectionRegionTy *connection = segment.find<ConnectionRegionTy>(connectionName).first;
-				// Abort if there is no connection
-				if(!connection) {
-					syslog(LOG_ERR, "No such connection found: %s", connectionName);
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-
-				auto found2 = dynamicTraceFiles.find(fullCacheKeyStr);
-				if(dynamicTraceFiles.end() == found2) {
-					syslog(LOG_ERR, "Could not find open trace file with calculated key");
-					retVal = EXIT_FAILURE;
-					goto _err;
-				}
-
-				char *retVal = found2->second->gets(&(connection->data())[sizeof(unsigned) + 1], len);
-				bool retValIsNotNull = (retVal != Z_NULL);
 
 				// Set up return values
-				memcpy(&(connection->data())[sizeof(unsigned)], &retValIsNotNull, 1);
+				bool returnIsInverted = !retValIsNull;
+				memcpy(&(connection->data())[sizeof(unsigned)], &returnIsInverted, sizeof(bool));
 				memcpy(connection->data(), &transactionID, sizeof(unsigned));
 			}
 			else {
-				syslog(LOG_ERR, "Invalid gzip command received");
-				retVal = EXIT_FAILURE;
-				goto _err;
+				VERBOSE_LOG("Initialising buffer...");
+				bool retValIsNull = false;
+
+				DYNAMIC_TRACE_RESIZE(traceRegion, DYNAMIC_TRACE_DEFAULT_BUFFER_SIZE);
+
+				// Adjust the true cursor before reading
+				int retVal = gzseek(found2->second, proposedCursor, SEEK_SET);
+				if(-1 == retVal)
+					retValIsNull = true;
+
+				if(!retValIsNull) {
+					int retVal = gzread(found2->second, DYNAMIC_TRACE_GET4_DATA(traceRegion), DYNAMIC_TRACE_DEFAULT_BUFFER_SIZE);
+					if(-1 == retVal) {
+						retValIsNull = true;
+					}
+					else if(retVal < DYNAMIC_TRACE_DEFAULT_BUFFER_SIZE) {
+						eofFound = true;
+						lower = proposedCursor;
+						higher = proposedCursor + retVal;
+					}
+					else {
+						lower = proposedCursor;
+						higher = proposedCursor + DYNAMIC_TRACE_DEFAULT_BUFFER_SIZE;
+					}
+				}
+
+				if(retValIsNull) {
+					syslog(LOG_NOTICE, "Initialise buffer failed, returning NULL and invalidating buffer");
+
+					DYNAMIC_TRACE_INVALIDATE(traceRegion);
+				}
+				else {
+					DYNAMIC_TRACE_SET0_ISINIT(traceRegion, true);
+					DYNAMIC_TRACE_SET1_EOFFOUND(traceRegion, eofFound);
+					DYNAMIC_TRACE_SET2_LOWER(traceRegion, lower);
+					DYNAMIC_TRACE_SET3_HIGHER(traceRegion, higher);
+
+					syslog(LOG_NOTICE, "Initialise buffer finished");
+					syslog(LOG_NOTICE, "Metadata after initialise:");
+					syslog(LOG_NOTICE, "  isInit: %s", isInit? "true" : "false");
+					syslog(LOG_NOTICE, "  eofFound: %s", eofFound? "true" : "false");
+					syslog(LOG_NOTICE, "  lower: %ld", lower);
+					syslog(LOG_NOTICE, "  higher: %ld", higher);
+				}
+
+				// Set up return values
+				bool returnIsInverted = !retValIsNull;
+				memcpy(&(connection->data())[sizeof(unsigned)], &returnIsInverted, sizeof(bool));
+				memcpy(connection->data(), &transactionID, sizeof(unsigned));
 			}
 		}
 		else if('\0' == buff[0] || '\n' == buff[0]) {
@@ -1397,8 +932,10 @@ _err:
 	syslog(LOG_NOTICE, "=============================");
 #endif
 
-	for(auto &elem : dynamicTraceFiles)
-		delete elem.second;
+	for(auto &elem : dynamicTraceFiles) {
+		gzclose(elem.second);
+		segment.destroy<DynamicTraceRegionTy>(elem.first.c_str());
+	}
 	dynamicTraceFiles.clear();
 
 	for(auto &elem : connections)

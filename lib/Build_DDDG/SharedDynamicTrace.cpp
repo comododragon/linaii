@@ -9,38 +9,42 @@ using namespace llvm;
 
 unsigned SharedDynamicTrace::transactionID = 0;
 
+/* Internal gets() method. This method assumes that all needed data is already on buffered cache */
+/* Then it just proceeds as a normal gets() call would */
+char *SharedDynamicTrace::_gets(char *buff, int len) {
+	// The beginning of gets() call guarantees that proposedCursor will be within the buffered region
+	// That is, proposedCursor should never be above higherCursor
+	if(proposedCursor >= DYNAMIC_TRACE_GET3_HIGHER(dynamicTrace)) {
+		DYNAMIC_TRACE_INVALIDATE(dynamicTrace);
+		return Z_NULL;
+	}
+
+	// Also the logic before this call guarantees that there will be enough characters in buffer
+	// to fulfill this function
+	z_off_t idx;
+	for(idx = proposedCursor; idx < DYNAMIC_TRACE_GET3_HIGHER(dynamicTrace) && (idx - proposedCursor) < (len - 1); idx++) {
+		// If a newline was found, we found our match
+		if('\n' == DYNAMIC_TRACE_GET4_DATA(dynamicTrace)[idx - DYNAMIC_TRACE_GET2_LOWER(dynamicTrace)]) {
+			idx++;
+			break;
+		}
+	}
+
+	// Copy content and close string
+	memcpy(buff, &(DYNAMIC_TRACE_GET4_DATA(dynamicTrace))[proposedCursor - DYNAMIC_TRACE_GET2_LOWER(dynamicTrace)], idx - proposedCursor);
+	buff[idx - proposedCursor] = '\0';
+
+	// Update cursors
+	proposedCursor = idx;
+	curCursor = idx;
+
+	return buff;
+}
+
 SharedDynamicTrace::SharedDynamicTrace(std::string dynamicTraceFileName, std::string futureCacheFileName) {
 	curCacheKey = "uncached";
-
-#if 0
-	// If linad pipe file is not visible, perhaps linad is not running
-	// Check if an instance of linad is open by checking the pipe file
-	bool hadToSpawn = false;
-	struct stat statBuff;
-	if(stat(PIPE_PATH, &statBuff)) {
-		VERBOSE_PRINT(errs() << "[linad-link] could not find \"linad\" pipe file. Will try to spawn a \"linad\" instance...\n");
-		system("linad");
-
-		// For one second, check if file is now up
-		for(int i = 0; i < 5 && stat(PIPE_PATH, &statBuff); i++)
-			sleep(0.2);
-		assert(!stat(PIPE_PATH, &statBuff) && "After 1 second, linad pipe file is still not present");
-
-		hadToSpawn = true;
-	}
-
-	linadPipe.open(PIPE_PATH);
-	assert(linadPipe.is_open() && "Could not open linad pipe file");
-	VERBOSE_PRINT(errs() << "[linad-link] Successfully opened \"linad\" pipe file\n");
-
-	if(hadToSpawn) {
-		VERBOSE_PRINT(errs() << "[linad-link] Attaching dynamic trace\n");
-
-		std::stringstream ss;
-		ss << std::setw(3) << std::setfill('0') << dynamicTraceFileName.length();
-		linadPipe << "d" << ss.str() << dynamicTraceFileName << std::flush;
-	}
-#endif 
+	curCursor = 0;
+	proposedCursor = 0;
 
 	// The full future cache path is used as connection key with linad
 	// TODO This could be improved at some point (for example, using a command-line argument as key)
@@ -101,7 +105,7 @@ SharedDynamicTrace::~SharedDynamicTrace() {
 	}
 }
 
-void SharedDynamicTrace::_attach(std::string cacheKey, long int *fallbackCursor) {
+void SharedDynamicTrace::attach(std::string cacheKey, long int baseCursor) {
 	std::stringstream ss;
 	ss << std::setfill('0') << "a"
 		<< std::setw(3) << futureCacheRealName.length() << futureCacheRealName
@@ -112,28 +116,34 @@ void SharedDynamicTrace::_attach(std::string cacheKey, long int *fallbackCursor)
 	// Wait for reply
 	while((((unsigned *) (connection->data()))[0]) != transactionID);
 
-	// If attach did not succeed, switch to uncached
+	bool switchToUncached = false;
 	if((*connection)[sizeof(unsigned)]) {
-		curCacheKey = cacheKey;
-		VERBOSE_PRINT(errs() << "[linad-link] Successfully attached to " << curCacheKey << "\n");
+		std::string fullCacheKeyStr(futureCacheRealName + DYNAMIC_TRACE_KEY_SEPARATOR + cacheKey);
+		// Wait until dynamic trace region is created, or timeout
+		for(int i = 0; i < 5; i++) {
+			dynamicTrace = segment.find<DynamicTraceRegionTy>(fullCacheKeyStr.c_str()).first;
+			if(dynamicTrace)
+				break;
+			sleep(1.0);
+		}
+		if(!dynamicTrace)
+			switchToUncached = true;
 	}
 	else {
-		curCacheKey = "uncached";
-		VERBOSE_PRINT(errs() << "[linad-link] Could not attach to " << curCacheKey << ", using local file instead\n");
-
-		if(fallbackCursor) {
-			VERBOSE_PRINT(errs() << "[linad-link] Using fallback cursor " << std::to_string(*fallbackCursor) << "\n");
-			gzseek(uncachedFile, *fallbackCursor, SEEK_SET);
-		}
+		switchToUncached = true;
 	}
-}
 
-void SharedDynamicTrace::attach(std::string cacheKey) {
-	return _attach(cacheKey, NULL);
-}
-
-void SharedDynamicTrace::attach(std::string cacheKey, long int fallbackCursor) {
-	return _attach(cacheKey, &fallbackCursor);
+	// If attach did not succeed, switch to uncached
+	if(switchToUncached) {
+		curCacheKey = "uncached";
+		gzseek(uncachedFile, baseCursor, SEEK_SET);
+		VERBOSE_PRINT(errs() << "[linad-link] Could not attach to " << curCacheKey << ", using local file instead\n");
+	}
+	else {
+		curCacheKey = cacheKey;
+		proposedCursor = baseCursor;
+		VERBOSE_PRINT(errs() << "[linad-link] Successfully attached to " << curCacheKey << "\n");
+	}
 }
 
 
@@ -145,6 +155,7 @@ void SharedDynamicTrace::release() {
 		linadPipe << ss.str() << std::flush;
 
 		curCacheKey = "uncached";
+		dynamicTrace = NULL;
 
 		VERBOSE_PRINT(errs() << "[linad-link] Successfully released cache file\n");
 	}
@@ -155,18 +166,15 @@ z_off_t SharedDynamicTrace::seek(z_off_t offset, int whence) {
 		return gzseek(uncachedFile, offset, whence);
 	}
 	else {
-		std::stringstream ss;
-		ss << std::setfill('0') << "gs"
-			<< std::setw(3) << futureCacheRealName.length() << futureCacheRealName
-			<< std::setw(10) << ++transactionID
-			<< std::setw(10) << offset
-			<< ((SEEK_CUR == whence)? "1" : "0");
-		linadPipe << ss.str() << std::flush;
+		if(whence != SEEK_SET && whence != SEEK_CUR)
+			return -1;
 
-		// Wait for reply
-		while((((unsigned *) (connection->data()))[0]) != transactionID);
+		if(SEEK_CUR == whence)
+			proposedCursor += offset;
+		else
+			proposedCursor = offset;
 
-		return ((z_off_t *) &(connection->data())[sizeof(unsigned)])[0];
+		return proposedCursor;
 	}
 }
 
@@ -175,16 +183,8 @@ int SharedDynamicTrace::rewind() {
 		return gzrewind(uncachedFile);
 	}
 	else {
-		std::stringstream ss;
-		ss << std::setfill('0') << "gr"
-			<< std::setw(3) << futureCacheRealName.length() << futureCacheRealName
-			<< std::setw(10) << ++transactionID;
-		linadPipe << ss.str() << std::flush;
-
-		// Wait for reply
-		while((((unsigned *) (connection->data()))[0]) != transactionID);
-
-		return ((int *) &(connection->data())[sizeof(unsigned)])[0];
+		proposedCursor = 0;
+		return 0;
 	}
 }
 
@@ -193,16 +193,10 @@ int SharedDynamicTrace::eof() {
 		return gzeof(uncachedFile);
 	}
 	else {
-		std::stringstream ss;
-		ss << std::setfill('0') << "ge"
-			<< std::setw(3) << futureCacheRealName.length() << futureCacheRealName
-			<< std::setw(10) << ++transactionID;
-		linadPipe << ss.str() << std::flush;
-
-		// Wait for reply
-		while((((unsigned *) (connection->data()))[0]) != transactionID);
-
-		return ((int *) &(connection->data())[sizeof(unsigned)])[0];
+		if(DYNAMIC_TRACE_GET0_ISINIT(dynamicTrace))
+			return DYNAMIC_TRACE_GET1_EOFFOUND(dynamicTrace)? (curCursor >= DYNAMIC_TRACE_GET3_HIGHER(dynamicTrace)) : 0;
+		else
+			return 0;
 	}
 }
 
@@ -211,16 +205,7 @@ z_off_t SharedDynamicTrace::tell() {
 		return gztell(uncachedFile);
 	}
 	else {
-		std::stringstream ss;
-		ss << std::setfill('0') << "gt"
-			<< std::setw(3) << futureCacheRealName.length() << futureCacheRealName
-			<< std::setw(10) << ++transactionID;
-		linadPipe << ss.str() << std::flush;
-
-		// Wait for reply
-		while((((unsigned *) (connection->data()))[0]) != transactionID);
-
-		return ((z_off_t *) &(connection->data())[sizeof(unsigned)])[0];
+		return proposedCursor;
 	}
 }
 
@@ -229,23 +214,69 @@ char *SharedDynamicTrace::gets(char *buff, int len) {
 		return gzgets(uncachedFile, buff, len);
 	}
 	else {
-		std::stringstream ss;
-		ss << std::setfill('0') << "gg"
-			<< std::setw(3) << futureCacheRealName.length() << futureCacheRealName
-			<< std::setw(10) << ++transactionID
-			<< std::setw(10) << len;
-		linadPipe << ss.str() << std::flush;
+		if(DYNAMIC_TRACE_GET0_ISINIT(dynamicTrace)) {
+			bool readjustBuffer = false;
+			if(proposedCursor != curCursor) {
+				// If proposed cursor is out of bounds of buffer, readjust buffer
+				if(proposedCursor < DYNAMIC_TRACE_GET2_LOWER(dynamicTrace)) {
+					DYNAMIC_TRACE_SET2_LOWER(dynamicTrace, proposedCursor);
+					readjustBuffer = true;
+				}
+				// Only readjust up if EOF has not been reached
+				if(!DYNAMIC_TRACE_GET1_EOFFOUND(dynamicTrace) && (proposedCursor > DYNAMIC_TRACE_GET3_HIGHER(dynamicTrace))) {
+					DYNAMIC_TRACE_SET3_HIGHER(dynamicTrace, proposedCursor);
+					readjustBuffer = true;
+				}
+			}
+			// If buffer has no remaining len-1 elements to be read, readjust buffer
+			// Only readjust up if EOF has not been reached
+			if(!DYNAMIC_TRACE_GET1_EOFFOUND(dynamicTrace) && ((proposedCursor + (len - 1)) > DYNAMIC_TRACE_GET3_HIGHER(dynamicTrace))) {
+				DYNAMIC_TRACE_SET3_HIGHER(dynamicTrace, proposedCursor + DYNAMIC_TRACE_DEFAULT_BUFFER_SIZE);
+				readjustBuffer = true;
+			}
 
-		// Wait for reply
-		while((((unsigned *) (connection->data()))[0]) != transactionID);
+			// If buffer must be readjusted, issue refresh command
+			if(readjustBuffer) {
+				std::stringstream ss;
+				ss << std::setfill('0') << "g"
+					<< std::setw(3) << futureCacheRealName.length() << futureCacheRealName
+					<< std::setw(10) << ++transactionID
+					<< std::setw(10) << proposedCursor
+					<< std::setw(10) << len;
+				linadPipe << ss.str() << std::flush;
 
-		// Check if gets returned NULL or not
-		// Return buffer if gets did not return NULL
-		if((*connection)[sizeof(unsigned)]) {
-			memcpy(buff, &(connection->data())[sizeof(unsigned) + 1], len);
-			return buff;
+				// Wait for reply
+				while((((unsigned *) (connection->data()))[0]) != transactionID);
+
+				// If reply is NULL, return NULL
+				if(!((*connection)[sizeof(unsigned)]))
+					return Z_NULL;
+
+				curCursor = proposedCursor;
+			}
+
+			return _gets(buff, len);
 		}
+		/* No buffered data yet or it has been invalidated. Issue refresh command */
+		else {
+			std::stringstream ss;
+			ss << std::setfill('0') << "g"
+				<< std::setw(3) << futureCacheRealName.length() << futureCacheRealName
+				<< std::setw(10) << ++transactionID
+				<< std::setw(10) << proposedCursor
+				<< std::setw(10) << len;
+			linadPipe << ss.str() << std::flush;
 
-		return Z_NULL;
+			// Wait for reply
+			while((((unsigned *) (connection->data()))[0]) != transactionID);
+
+			// If reply is NULL, return NULL
+			if(!((*connection)[sizeof(unsigned)]))
+				return Z_NULL;
+
+			curCursor = proposedCursor;
+
+			return _gets(buff, len);
+		}
 	}
 }

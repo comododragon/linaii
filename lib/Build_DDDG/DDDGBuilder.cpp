@@ -831,7 +831,7 @@ intervalTy DDDGBuilder::getTraceLineFromToBeforeNestedLoop(SharedDynamicTrace &t
 				VERBOSE_PRINT(errs() << "\t\tCached cursor hit\n");
 				VERBOSE_PRINT(errs() << "\t\tSkipping further " << std::to_string(cacheHit->second.gzCursor - progressiveTraceCursor) << " bytes from trace\n");
 
-				traceFile.attach(FutureCache::constructKey(wholeLoopName, DatapathType::NON_PERFECT_BEFORE, progressiveTraceCursor, progressiveTraceInstCount));
+				traceFile.attach(FutureCache::constructKey(wholeLoopName, DatapathType::NON_PERFECT_BEFORE, progressiveTraceCursor, progressiveTraceInstCount), cacheHit->second.gzCursor);
 
 				byteFrom = cacheHit->second.byteFrom;
 				instCount = cacheHit->second.instCount;
@@ -1017,7 +1017,7 @@ intervalTy DDDGBuilder::getTraceLineFromToAfterNestedLoop(SharedDynamicTrace &tr
 			VERBOSE_PRINT(errs() << "\t\tCached cursor hit\n");
 			VERBOSE_PRINT(errs() << "\t\tSkipping further " << std::to_string(cacheHit->second.gzCursor - progressiveTraceCursor) << " bytes from trace\n");
 
-			traceFile.attach(FutureCache::constructKey(wholeLoopName, DatapathType::NON_PERFECT_AFTER, progressiveTraceCursor, progressiveTraceInstCount));
+			traceFile.attach(FutureCache::constructKey(wholeLoopName, DatapathType::NON_PERFECT_AFTER, progressiveTraceCursor, progressiveTraceInstCount), cacheHit->second.gzCursor);
 
 			byteFrom = cacheHit->second.byteFrom;
 			instCount = cacheHit->second.instCount;
@@ -1149,7 +1149,7 @@ intervalTy DDDGBuilder::getTraceLineFromToBetweenAfterAndBefore(SharedDynamicTra
 			VERBOSE_PRINT(errs() << "\t\tCached cursor hit\n");
 			VERBOSE_PRINT(errs() << "\t\tSkipping further " << std::to_string(cacheHit->second.gzCursor - progressiveTraceCursor) << " bytes from trace\n");
 
-			traceFile.attach(FutureCache::constructKey(wholeLoopName, DatapathType::NON_PERFECT_BETWEEN, progressiveTraceCursor, progressiveTraceInstCount));
+			traceFile.attach(FutureCache::constructKey(wholeLoopName, DatapathType::NON_PERFECT_BETWEEN, progressiveTraceCursor, progressiveTraceInstCount), cacheHit->second.gzCursor);
 
 			byteFrom = cacheHit->second.byteFrom;
 			instCount = cacheHit->second.instCount;
@@ -1373,7 +1373,7 @@ intervalTy DDDGBuilder::getTraceLineFromTo(SharedDynamicTrace &traceFile) {
 				VERBOSE_PRINT(errs() << "\t\tCached cursor hit\n");
 				VERBOSE_PRINT(errs() << "\t\tSkipping further " << std::to_string(cacheHit->second.gzCursor - progressiveTraceCursor) << " bytes from trace\n");
 
-				traceFile.attach(FutureCache::constructKey(wholeLoopName, DatapathType::NORMAL_LOOP, progressiveTraceCursor, progressiveTraceInstCount));
+				traceFile.attach(FutureCache::constructKey(wholeLoopName, DatapathType::NORMAL_LOOP, progressiveTraceCursor, progressiveTraceInstCount), cacheHit->second.gzCursor);
 
 				byteFrom = cacheHit->second.byteFrom;
 				instCount = cacheHit->second.instCount;

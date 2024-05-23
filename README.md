@@ -1,4 +1,22 @@
-***NOTE: This is a development branch of Lina and should not be used! For the working version, please refer to https://github.com/comododragon/lina***
+***NOTE: For the first version that does not include off-chip memory optimisation (published in 2021 IEEE paper), refer to https://github.com/comododragon/lina***
+
+**This README.md must be updated according to this version of lina including off-chip optimisations. Sorry for the inconvenience**
+**The cirith-fpga repository (https://github.com/comododragon/cirith-fpga.git) uses this version. It is a good reference on how to use this tool**
+
+**Also, this repository includes two versions of lina, as follows:**
+```
+1. New version of lina that includes a cache daemon (linad)
+   This cache daemon helps to accelerate multiple lina executions when executed in parallel
+   This implementation is present on the cachedaemon branch:
+   https://github.com/comododragon/linaii/tree/cachedaemon
+   The cache daemon is experimental, but usable"
+
+2. Old new version of lina, without cache daemon
+   This version is functionally equivalent, including off-chip support, but without the
+   cache daemon. This might degrade performance if executed in parallel with many threads
+   This implementation is present on the main branch:
+   https://github.com/comododragon/linaii/tree/master
+```
 
 # Lina
 

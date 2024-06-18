@@ -1025,7 +1025,7 @@ intervalTy DDDGBuilder::getTraceLineFromToAfterNestedLoop(SharedDynamicTrace &tr
 			progressiveTraceInstCount = cacheHit->second.progressiveTraceInstCount;
 			to = cacheHit->second.to;
 
-			// TODO to be removed on release
+			// TODO may be removed at a later point
 			assert(!to && "Value of \"to\" is not zero, this could likely be a bug");
 
 			firstTraverse = false;
@@ -1154,7 +1154,7 @@ intervalTy DDDGBuilder::getTraceLineFromToBetweenAfterAndBefore(SharedDynamicTra
 			byteFrom = cacheHit->second.byteFrom;
 			instCount = cacheHit->second.instCount;
 
-			// TODO to be removed on release
+			// TODO may be removed at a later point
 			assert(progressiveTraceCursor == cacheHit->second.progressiveTraceCursor && "progressiveTraceCursor from past and now are different in a BETWEEN DDDG");
 			assert(progressiveTraceInstCount == cacheHit->second.progressiveTraceInstCount && "progressiveTraceInstCount from past and now are different in a BETWEEN DDDG");
 
@@ -1382,7 +1382,7 @@ intervalTy DDDGBuilder::getTraceLineFromTo(SharedDynamicTrace &traceFile) {
 				lastInstExitingCounter = cacheHit->second.lastInstExitingCounter;
 				to = cacheHit->second.to;
 
-				// TODO to be removed on release
+				// TODO may be removed at a later point
 				assert(!lastInstExitingCounter && "Value of \"lastInstExitingCounter\" is not zero, this could likely be a bug");
 				assert(!to && "Value of \"to\" is not zero, this could likely be a bug");
 

@@ -583,7 +583,7 @@ void XilinxZCUMemoryModel::findInBursts(
 
 		// Lina supports burst mix, which means that it can form bursts when there are mixed-array contiguous transactions
 		// With DDR banking, burst mix is always disabled
-		// TODO BURST MIX WILL BE DISCONTINUED!
+		// XXX BURST MIX IS IMPLEMENTED, BUT NOT SUPPORTED ANYMORE
 		bool shouldMix = false;
 		//if(args.fBurstMix && !ddrBanking)
 		//	shouldMix = true;

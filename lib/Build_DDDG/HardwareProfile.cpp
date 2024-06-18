@@ -455,7 +455,6 @@ bool HardwareProfile::callTryAllocate(bool commit) {
 bool HardwareProfile::ddrOpTryAllocate(unsigned node, int opcode, bool commit) {
 	// First, we check if the respective read or write AXI port is in use. If positive, we fail right away
 	// (please note that silent operations are not actually executed, so there is no port limitation for them)
-	// TODO: Maybe the read port should not be separated from the write port. We must check that!
 	if((LLVM_IR_DDRReadReq == opcode || LLVM_IR_DDRRead == opcode) && ddrReadPortInUse)
 		return false;
 	if((LLVM_IR_DDRWriteReq == opcode || LLVM_IR_DDRWrite == opcode || LLVM_IR_DDRWriteResp == opcode) && ddrWritePortInUse)

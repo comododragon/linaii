@@ -16,7 +16,7 @@
 #include <string>
 #include <zlib.h>
 
-// TODO Improve this
+// XXX Improve this?
 #define SHARED_MEMORY_NAME "LinadSharedMemory."
 #define PIPE_PATH "/tmp/linad.pipe."
 #define DYNAMIC_TRACE_KEY_SEPARATOR "?"

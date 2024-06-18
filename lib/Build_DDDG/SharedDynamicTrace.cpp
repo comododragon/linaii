@@ -53,7 +53,7 @@ SharedDynamicTrace::SharedDynamicTrace(std::string dynamicTraceFileName, std::st
 	futureCacheRealName.assign(buff2);
 	free(buff2);
 
-	// TODO Improve this
+	// XXX Improve this
 	// (i.e. somehow get an ID value that defines the futurecache from command line)
 	// That'll need mods on cirith
 	std::string pipeIDStr;
@@ -71,7 +71,7 @@ SharedDynamicTrace::SharedDynamicTrace(std::string dynamicTraceFileName, std::st
 	ss << std::setw(3) << std::setfill('0') << futureCacheRealName.length();
 	linadPipe << "c" << ss.str() << futureCacheRealName << std::flush;
 
-	// TODO Improve this
+	// XXX Improve this
 	std::string fullSharedMemoryName(SHARED_MEMORY_NAME + pipeIDStr);
 	segment = boost::interprocess::managed_shared_memory(boost::interprocess::open_only, fullSharedMemoryName.c_str());
 	// Wait until connection memory region is created, or timeout

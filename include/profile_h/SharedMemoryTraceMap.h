@@ -13,7 +13,7 @@
 #pragma GCC diagnostic pop
 #endif
 
-// TODO Improve this
+// XXX Improve this?
 #ifndef SHARED_MEMORY_NAME_0
 #define SHARED_MEMORY_NAME_0 "LinadSharedMemory.0"
 #endif

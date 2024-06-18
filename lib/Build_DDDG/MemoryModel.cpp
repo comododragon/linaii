@@ -582,7 +582,7 @@ void XilinxZCUMemoryModel::findInBursts(
 
 		// Lina supports burst mix, which means that it can form bursts when there are mixed-array contiguous transactions
 		// With DDR banking, burst mix is always disabled
-		// TODO BURST MIX WILL BE DISCONTINUED!
+		// XXX BURST MIX IS IMPLEMENTED, BUT NOT SUPPORTED ANYMORE
 		bool shouldMix = false;
 		//if(args.fBurstMix && !ddrBanking)
 		//	shouldMix = true;
@@ -1081,7 +1081,7 @@ void XilinxZCUMemoryModel::analyseAndTransform() {
 				addrVec.resize(addrVecSize);
 
 				std::pair<std::string, std::string> wholeLoopNameInstNamePair = std::make_pair(std::string(bufferedWholeLoopName), std::string(buffer));
-				// TODO: THIS DOES NOT SEEM TO BE A GOOD IDEA
+				// XXX THIS DOES NOT SEEM TO BE A GOOD IDEA (but works...)
 				traceShortFile.read((char *) addrVec.data(), addrVecSize * sizeof(uint64_t));
 				memoryTraceMap.insert(std::make_pair(wholeLoopNameInstNamePair, addrVec));
 			}

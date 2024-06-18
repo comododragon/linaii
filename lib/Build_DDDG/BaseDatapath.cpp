@@ -279,7 +279,6 @@ artificialNodeTy BaseDatapath::createArtificialNode(artificialNodeTy &aNode, int
 	// Create the node
 	insertMicroop(opcode);
 
-	// TODO: checar se está tudo sendo atualizado apropriadamente nas próximas linhas
 	PC.unlock();
 	PC.openAllFilesForWrite();
 	// Update ParsedTraceContainer containers with the new node.
@@ -2042,13 +2041,12 @@ uint64_t BaseDatapath::getLoopTotalLatency(uint64_t maxII) {
 			// at the same time as the enter condition of the following loop). Since right now consecutive inner loops are only
 			// possible with unroll, we compensate this cycle difference with the loop unroll factor
 			// XXX: However, if there are DDR operations before AND after the DDDG, we do not merge if the address space overlap
-			// TODO: Requires further testing
 			if(shouldShrink)
 				noPipelineLatency -= (upperLoopUnrollFactor - 1) * std::min(extraEnter, extraExit);
 		}
 	}
 
-	// TODO: Requires further testing (possible unconsidered cases regarding out-bursted transactions)
+	// TODO: possible unconsidered cases regarding out-bursted transactions
 	if(enablePipelining) {
 		unsigned unrollFactor = targetUnroll.at(loopLevel - 1);
 

@@ -10,6 +10,8 @@
 
 // Uncomment this line if you want to see all the variables in the world printed for debugging
 //#define DBG_PRINT_ALL
+// Uncomment this to see debug specific to ContextManager
+//#define DBG_PRINT_CTX
 
 // Debug file: by activating this macro, a debug file will be available at the PWD after execution
 // you can fill this debug file by using DBG_DUMP

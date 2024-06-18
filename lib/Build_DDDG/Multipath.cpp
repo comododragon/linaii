@@ -75,7 +75,6 @@ void Multipath::_Multipath() {
 			}
 		}
 
-		// TODO: Requires further testing
 		if(DatapathType::NORMAL_LOOP == latencyType) {
 			uint64_t unrolledBound = loopBound / currUnrollFactor;
 
@@ -117,7 +116,6 @@ void Multipath::_Multipath() {
 			// are present, a cycle for each loop overhead can be merged (i.e. the exit condition of a loop can be evaluated
 			// at the same time as the enter condition of the following loop). Since right now consecutive inner loops are only
 			// possible with unroll, we compensate this cycle difference with the loop unroll factor
-			// TODO: same as BaseDatapath, this wasn't thoroughly tested!
 			if((currUnrollFactor > 1) && !(allocatedDDDGBefore && allocatedDDDGAfter && canOutBurstsOverlap))
 				numCycles -= (currUnrollFactor - 1) * std::min(extraEnter, extraExit) * (loopBound / currUnrollFactor);
 		}

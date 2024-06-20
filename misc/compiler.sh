@@ -47,7 +47,7 @@ rm cfe-3.5.0.src.tar.xz
 
 echo -e "\u001b[1m\u001b[92m--> Cloning LINA (Mark 2)...\u001b[0m"
 git clone https://github.com/comododragon/linaii.git
-mv lina llvm/tools/lina
+mv linaii llvm/tools/lina
 
 echo -e "\u001b[1m\u001b[93m--> This is Lina Mark 2 (for offchip transactions)\u001b[0m"
 echo -e "\u001b[1m\u001b[93m--> For the original version published in 2021 and earlier, please visit: https://github.com/comododragon/lina.git\u001b[0m"

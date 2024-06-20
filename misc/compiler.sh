@@ -24,7 +24,7 @@ rm -rf llvm
 rm -rf cfe-3.5.0.src.tar.xz
 rm -rf cfe-3.5.0.src
 rm -rf llvm/tools/clang
-rm -rf lina
+rm -rf linaii
 rm -rf llvm/tools/lina
 rm -rf boost_1_57_0.tar.gz
 rm -rf boost_1_57_0
@@ -45,9 +45,26 @@ tar xvf cfe-3.5.0.src.tar.xz
 mv cfe-3.5.0.src llvm/tools/clang
 rm cfe-3.5.0.src.tar.xz
 
-echo -e "\u001b[1m\u001b[92m--> Cloning LINA...\u001b[0m"
+echo -e "\u001b[1m\u001b[92m--> Cloning LINA (Mark 2)...\u001b[0m"
 git clone https://github.com/comododragon/linaii.git
 mv linaii llvm/tools/lina
+
+echo -e "\u001b[1m\u001b[93m--> This is Lina Mark 2 (for offchip transactions)\u001b[0m"
+echo -e "\u001b[1m\u001b[93m--> For the original version published in 2021 and earlier, please visit: https://github.com/comododragon/lina.git\u001b[0m"
+echo -e "\u001b[1m\u001b[93m--> This repo contains two versions of Lina Mark 2:\u001b[0m"
+echo -e "\u001b[1m\u001b[93m--> 1. Version without Cache Daemon (final PhD version) (commit ...)\u001b[0m"
+echo -e "\u001b[1m\u001b[93m--> 2. Version with Cache Daemon (linad) (DEFAULT)\u001b[0m"
+echo -ne "\u001b[1m\u001b[92m--> Please choose one version to compile (or simply press ENTER for DEFAULT): \u001b[0m"
+read LINAVERSION
+
+if [ "1" == "$LINAVERSION" ]; then
+	echo -e "\u001b[1m\u001b[92m--> Using version without Cache Daemon (final PhD version)...\u001b[0m"
+else
+	echo -e "\u001b[1m\u001b[92m--> Using version with Cache Daemon (linad)...\u001b[0m"
+	cd llvm/tools/lina
+	git checkout cachedaemon
+	cd ../../..
+fi
 
 echo -e "\u001b[1m\u001b[92m--> Adapting CMAKE files...\u001b[0m"
 sed -i "s/add_llvm_tool_subdirectory(opt)/add_llvm_tool_subdirectory(lina)\nadd_llvm_tool_subdirectory(opt)/g" llvm/tools/CMakeLists.txt
@@ -129,4 +146,15 @@ while true; do
 	fi
 done
 
+if [ "$LINAVERSION" != "1" ]; then
+	echo -e "\u001b[1m\u001b[92m--> Now compiling Lina Cache Daemon (linad)...\u001b[0m"
+	echo -e "\u001b[1m\u001b[92m--> Reusing boost files already downloaded...\u001b[0m"
+	ln -s ../../../../../boost llvm/tools/lina/misc/linad/boost_1_57_0
+	echo -e "\u001b[1m\u001b[92m--> Running make...\u001b[0m"
+	make -C llvm/tools/lina/misc/linad
+	echo -e "\u001b[1m\u001b[93m--> Done!\u001b[0m"
+	echo -e "\u001b[1m\u001b[92m--> Binary for linad is at llvm/tools/lina/misc/linad \u001b[0m"
+fi
+
 echo -e "\u001b[1m\u001b[93m--> See ya!\u001b[0m"
+

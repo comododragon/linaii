@@ -24,7 +24,7 @@ Lina currently has two big checkpoints, Mark 1 and Mark 2. See [Versions](#versi
 	1. [Automatic Compilation](#automatic-compilation)
 	1. [Manual Compilation](#manual-compilation)
 1. [Differences Between Mark 1 and 2](#differences-between-mark-1-and-2)
-	1. [Command-line Arguments](#commandline-arguments)
+	1. [Command-line Arguments](#command-line-arguments)
 1. [Usage](#usage)
 	1. [Use by Example](#use-by-example)
 	1. [Configuration File](#configuration-file)

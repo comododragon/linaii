@@ -267,6 +267,7 @@ This version of Lina includes the arguments in Mark 1, along these additional:
 	* *It is recommended to use this argument instead of* `--mem-trace`, *since the binary trace is often more efficient to be parsed*;
 * ```--fno-mma```: disable off-chip memory model analysis **(DEFAULT IS ENABLED)**;
 * ```--f-burstaggr```: enable burst aggregation: sequential off-chip operations inside a DDDG are grouped together to form coalesced bursts;
+	* *Only groups operations from same array*;
 	* *This argument has no effect if* `--fno-mma` *is set*;
 * ```--f-burstmix```: enable burst aggregation: coalesced bursts can be mixed between arrays;
 	* *This argument has no effect if* `--fno-mma` *is set*;
@@ -278,18 +279,17 @@ This version of Lina includes the arguments in Mark 1, along these additional:
 	* *This argument requires* `--f-burstaggr`;
 	* *This argument has no effect if* `--mma-mode` *is* `off`;
 * ```-d LEVEL``` or ```--ddrsched=LEVEL```: specify the DDR scheduling policy:
-	* ```0```: DDR transactions of same type (read/write) cannot overlap (i.e. once a transaction starts, it must end before others of same type can start;
-		* **DEFAULT**;
+	* ```0```: DDR transactions of same type (read/write) cannot overlap (i.e. once a transaction starts, it must end before others of same type can start **(DEFAULT)**;
 	* ```1```: DDR transactions can overlap if their memory spaces are disjoint;
 	* See [DDR Scheduling Policies](#ddr-scheduling-policies);
 * ```--mma-mode=MODE```: select Lina execution model according to MMA mode:
-	* ```off```: run Lina normally;
-		* **DEFAULT**;
+	* ```off```: run Lina normally **(DEFAULT)**;
 	* ```gen```: perform memory model analysis, generate a context import file and stop execution;
 	* ```use```: skip profiling and DDDG generation, proceed directly to memory model analysis;
 		* In this mode context import file is used to generate the DDDG and other data;
 		* The context-import should have been generated with a previous execution of Lina with ```--mma-mode=gen```, otherwise Lina fails;
 	* *This argument has no effect if* `--mode` *is* `trace`;
+	* See [Context-mode Execution](#context-mode-execution);
 
 
 

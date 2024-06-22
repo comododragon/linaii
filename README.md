@@ -246,7 +246,7 @@ If using `cachedaemon`, the Lina Daemon must also be built. After running all st
 3. If build went well, ```linad``` will be present at ```/path/to/lina/llvm/tools/lina/misc/linad/linad```.
 
 
-## Differences between Mark 1 and 2
+## Differences Between Mark 1 and 2
 
 *TODO: this section is still being populated*
 
@@ -254,9 +254,11 @@ Basic usage of Lina is explained in detail on the Mark 1 README. See [here](http
 
 This README will focus on the differences between Mark 1 and 2.
 
-### Command-line arguments
+### Command-line Arguments
 
-This version of Lina includes the arguments in Mark 1, along these additional:
+Command-line arguments from Mark 1 (also functional here) are included [here](https://github.com/comododragon/lina/blob/master/README.md#usage).
+
+These are the Mark 2 specific arguments:
 
 * ```--mem-trace```: depends on mode `-m`:
 	* if `trace`, a textual memory trace is generated with name `mem_trace.txt`;
@@ -291,11 +293,22 @@ This version of Lina includes the arguments in Mark 1, along these additional:
 	* *This argument has no effect if* `--mode` *is* `trace`;
 	* See [Context-mode Execution](#context-mode-execution);
 
+### Configuration File
 
+Configuration file structure from Mark 1 (also applicable here) are included [here](https://github.com/comododragon/lina/blob/master/README.md#configuration-file).
 
+On Mark 2, there is a new type of entry called `global`, which can be used to enable/disable global exploration parameters. The format is:
+```
+global,<NAME>,<VALUE>
+# Example
+global,ddrbanking,1
+```
 
+Currently, there is a single `global` parameter:
 
-
+* ```ddrbanking```: toggles DDR banking:
+	* ```0```: all off-chip arrays are considered to be in the same shared memory space **(DEFAULT)**;
+	* ```1```: all off-chip arrays are considered to be in separate DDR banks. That means separate memory spaces.
 
 *TODO: README is still being populated from this point onwards*
 

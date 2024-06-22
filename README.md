@@ -197,9 +197,9 @@ The automatic compilation script simply executes the following steps:
 5. Clone Lina Mark 2 to folder ```llvm/tools/lina```:
 	```
 	$ git clone https://github.com/comododragon/linaii.git
-	$ mv lina llvm/tools/lina
+	$ mv linaii llvm/tools/lina
 	```
-	* **NOTE:** For `cachedaemon` finish this step by running: ```cd llvm/tools/lina; git checkout cachedaemon``` (see **Versions** for more information);
+	* **NOTE:** For `cachedaemon` finish this step by running: ```cd llvm/tools/lina; git checkout cachedaemon``` (see [Versions](#versions) for more information);
 6. Add the line ```add_llvm_tool_subdirectory(lina)``` right before ```add_llvm_tool_subdirectory(opt)``` at file ```llvm/tools/CMakeLists.txt```. It should look something like:
 	```
 	...
@@ -245,9 +245,11 @@ If using `cachedaemon`, the Lina Daemon must also be built. After running all st
 	```
 3. If build went well, ```linad``` will be present at ```/path/to/lina/llvm/tools/lina/misc/linad/linad```.
 
+
 ## Differences between Mark 1 and 2
 
 *TODO: this section is still being populated*
+
 Basic usage of Lina is explained in detail on the Mark 1 README. See [here](https://github.com/comododragon/lina/blob/master/README.md).
 
 This README will focus on the differences between Mark 1 and 2.

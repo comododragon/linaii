@@ -477,7 +477,7 @@ Commands are simple structured strings. Below is a list of supported commands:
 	* `WWW` is the size of `KKKKKKKKKK...` string (3-digit positive integer);
 	* `KKKKKKKKKK...` is the cache entry name to attach to;
 	* **Example:** `a015connectionName00000000010010midRegion2` attaches the `connectionName0` connection to a dynamic trace file pointer identified as `midRegion2`;
-	* *The transaction ID is used to identify when the transaction has been completed and loaded to the shared memory buffer (see [shared memory manager](#shared-memory-manager) below);
+	* *The transaction ID is used to identify when the transaction has been completed and loaded to the shared memory buffer (see [shared memory manager](#shared-memory-manager) below)*;
 	* When attaching, `linad` checks if the provided "cache entry name" (unique key) already exists;
 		* If it exists, there is an associated open dynamic trace file, and this one is used;
 		* If it doesn't exist, a new dynamic trace file pointer is opened, and associated with the provided unique key;

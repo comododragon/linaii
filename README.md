@@ -294,7 +294,7 @@ These are the Mark 2 specific arguments:
 		* In this mode context import file is used to generate the DDDG and other data;
 		* The context-import should have been generated with a previous execution of Lina with ```--mma-mode=gen```, otherwise Lina fails;
 	* *This argument has no effect if* `--mode` *is* `trace`;
-	* See [Context-mode Execution](#context-mode-execution);
+	* See [Context-based Dual Execution](#context-based-dual-execution);
 
 ### Configuration File
 

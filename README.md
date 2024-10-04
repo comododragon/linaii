@@ -410,22 +410,22 @@ The `PIPEID` argument is a positive number used to identify the IPC pipe, see [I
 
 For the memory trace, the whole file is loaded to shared memory when a load command is specified. For dynamic traces, the functionality is quite different.
 
-A single `lina` execution usually accesses very scattered regions of the dynamic trace, and it reads a small-to-moderate amount of data in each of those sparse points. On top of that, multiple `lina` calls share approximate regions. Without `linad`, explorations on really large dynamic trace files will incur in significant overheads when seeking the compressed file (i.e. `gzseek()` calls). If multiple dynamic trace file pointers are opened and seeked, one for each of the scattered regions accessed by the `lina` calls, it becomes way faster to read these regions multiple times. This eliminates multiple `gzseek()` calls that incurs in large IO overhead.
+A single `lina` execution usually accesses very scattered regions of the dynamic trace, and it reads a small-to-moderate amount of data in each of those sparse points. On top of that, multiple `lina` calls share approximate regions. Without `linad`, explorations on really large dynamic trace files will incur in significant overheads when seeking the compressed file (i.e. `gzseek()` calls). If multiple dynamic trace file pointers are opened and seeked, one for each of the scattered regions accessed by the `lina` calls, it becomes way faster to read these regions multiple times. This eliminates multiple `gzseek()` calls that incurs in large IO overhead, by using the right files to the right scattered regions.
 
 As an example, let's say that all `lina` calls for a single DSE results in accessing at most five scattered regions of the dynamic trace. Each of those regions are identified by a unique key inside the `lina` calls. These keys are passed to `linad`, and each key results in one dynamic trace file pointer being opened and seeked to the respective scattered region. Every time a new `lina` call wants to access something near these regions, it uses the unique keys to select the file pointer that is closest, potentially avoiding large seek calls.
 
 Therefore, the logic for the shared dynamic trace works as follows:
 
-1. A `lina` call creates a connection to the shared dynamic trace logic;
+1. A `lina` call creates a connection to the shared dynamic trace logic on `linad`;
 	* This creates a shared memory region that is used as a buffer for the dynamic trace contents;
 1. Lina performs internal calculations and decides which scattered region it must read for a certain DDDG generation;
 	* This scattered region is identified by a unique key across `lina` calls;
 1. Lina attaches to a dynamic trace file pointer using the unique key;
-	* If there is already a dynamic trace file pointer using this unique key, it is used;
-	* Otherwise, a new dynamic trace file pointer is opened, and seeked to the proposed scattered region;
+	* If there is already a dynamic trace file pointer using this unique key, `linad` uses it;
+	* Otherwise, `linad` opens a new dynamic trace file pointer, and seeks to the proposed scattered region;
 1. Lina then requests this region to be read from the attached dynamic file, and stored on the shared memory buffer;
 1. Then, Lina uses the shared memory buffer to read the contents from the dynamic trace;
-1. If more data is needed, Lina can request further buffer reads from the attached dynamic trace file;
+1. If more data is needed, Lina can request `linad` for further buffer reads from the attached dynamic trace file;
 1. When Lina is done with this scattered region, it detaches from the current file;
 	* The file is not closed by `linad`, but it is set aside, as it may be used on other attach calls pointing to this region (or a close point);
 1. If another scattered region is needed (e.g. to generate another DDDG), Lina attaches to a new unique key;

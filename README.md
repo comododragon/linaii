@@ -1,34 +1,68 @@
-***NOTE: For the first version that does not include off-chip memory optimisation (published in 2021 IEEE paper), refer to https://github.com/comododragon/lina***
-
-**This README.md must be updated according to this version of lina including off-chip optimisations. Sorry for the inconvenience**
-**The cirith-fpga repository (https://github.com/comododragon/cirith-fpga.git) uses this version. It is a good reference on how to use this tool**
-
-**Also, this repository includes two versions of lina, as follows:**
-```
-1. New version of lina that includes a cache daemon (linad)
-   This cache daemon helps to accelerate multiple lina executions when executed in parallel
-   This implementation is present on the cachedaemon branch:
-   https://github.com/comododragon/linaii/tree/cachedaemon
-   The cache daemon is experimental, but usable"
-
-2. Old new version of lina, without cache daemon
-   This version is functionally equivalent, including off-chip support, but without the
-   cache daemon. This might degrade performance if executed in parallel with many threads
-   This implementation is present on the main branch:
-   https://github.com/comododragon/linaii/tree/master
-```
-
-# Lina
+# Lina (Mark 2)
 
 (yet another) High Level Analysis Tool for FPGA Accelerators
+
+**MARK 2**
+
+**THIS IS THE CACHEDAEMON VARIANT, SEE MORE BELOW**
+
 
 ## Introduction
 
 Lina is a pre-HLS performance estimator for C/C++ codes targetting Xilinx FPGAs with Vivado HLS or its variants. Given a C/C++ code, it generates the Dynamic Data Dependence Graph (DDDG) and schedules its nodes to estimate the performance (cycle count) of the code for the Vivado HLS toolchain. Several optimisation directives (e.g. loop unroll, pipelining) can be provided and Lina estimates the performance according to those constraints. Lina enables fast design space exploration by providing results in significantly less time than FPGA synthesis or even the HLS compilation process.
 
-Lina is an expansion of the Lin-Analyzer project (see https://github.com/zhguanw/lin-analyzer). It uses the same traced execution and (pretty much the same) DDDG scheduling. However, Lina adds Timing-Constrained Scheduling (TCS) and Non-Perfect Loop Analysis (NPLA). The TCS provides a more precise estimation considering a user-provided operational frequency for the design, while NPLA generalises the estimation to non-perfect loop nests. Moreover, Lina has some improved logic to estimate certain border cases where Lin-Analyzer did not properly estimate.
+Lina is an expansion of the Lin-Analyzer project (see https://github.com/zhguanw/lin-analyzer). It uses the same traced execution and (pretty much the same) DDDG scheduling.
 
-For more information regarding Lina, please refer to our paper (see Section ***Publications***).
+Lina currently has two big checkpoints, Mark 1 and Mark 2. See [Versions](#versions) for an explanation of differences.
+
+
+## Table of Contents
+
+1. [Versions](#versions)
+1. [Licence](#licence)
+1. [Publications](#publications)
+1. [Setup](#setup)
+1. [Compilation](#compilation)
+	1. [Automatic Compilation](#automatic-compilation)
+	1. [Manual Compilation](#manual-compilation)
+1. [Differences Between Mark 1 and 2](#differences-between-mark-1-and-2)
+	1. [Command-line Arguments](#command-line-arguments)
+	1. [Configuration File](#configuration-file)
+	1. [Memory Trace File](#memory-trace-file)
+	1. [Context-based Dual Execution](#context-based-dual-execution)
+	1. [Off-chip Memory Model](#off-chip-memory-model)
+	1. [Different Dynamic Trace Format](#different-dynamic-trace-format)
+	1. [Lina Daemon (linad)](#lina-daemon-linad)
+1. [Usage](#usage)
+1. [Perform an Exploration](#perform-an-exploration)
+1. [Supported Platforms](#supported-platforms)
+1. [Files Description](#files-description)
+1. [Troubleshooting](#troubleshooting)
+1. [Acknowledgments](#acknowledgments)
+
+
+## Versions
+
+### Mark 1
+
+Mark 1 is the first consistent version of Lina. Results with this version were published on the IEEE Transactions on Computers paper of 2021 (see [Publications](#publications)).
+
+This version is available on a separate repository: https://github.com/comododragon/lina.
+
+This version includes:
+
+* A Timing-Constrained Scheduler (TCS) that supports a continuous interval of operating clock frequencies;
+* A Non-Perfect Loop Analysis (NPLA), which allows a finer estimation of non-perfect loop nests by generating DDDGs for different segments of the loop nest;
+* A comprehensive resource estimation that considers the usage of integer FUs, floating-point FUs, supporting computations (e.g. loop/array indexing), intermediate registers, multiplexing and memory related resources (e.g. distributed RAM or completetly partitioned arrays).
+
+### Mark 2
+
+Mark 2 includes all the features from Mark 1, but it also includes the following features:
+
+* A **memory model** that is able to estimate the latency of off-chip transactions, including common memory patterns or features such as coalescing, data packing and memory banking;
+* A new **caching logic** that reduces the amount of I/O accesses during parallel exploration. That allows multiple parallel exploration threads to be executed with significantly less I/O bottlenecking.
+	* Feature available in the `cachedaemon` git branch of this repository.
+
 
 ## Licence
 
@@ -38,7 +72,34 @@ According to Lin-Analyzer repository: *"Dynamic data graph generation (DDDG) and
 
 The ```common.h``` header is distributed under the GPL-3.0 licence. See the following repo for details: https://github.com/comododragon/commonh
 
-The kernels in folder ```misc/smalldse``` are adapted from PolyBench/C, which follows the GPL-2.0 licence. Please see: https://sourceforge.net/projects/polybench/
+PolyBench/C kernels are used in ```misc/smalldse``` and ```misc/largedse```, which follows the GPL-2.0 licence. Please see: https://sourceforge.net/projects/polybench/
+
+
+## Publications
+
+Refer to our papers for detailed descriptions of the contributions presented in Lina (also if you use Lina in your research, please kindly cite one or more papers below):
+
+**Lina Mark 2 (Off-chip memory model):**
+
+* *A link to this material will be added soon*
+
+**Lina Mark 1:**
+
+* A. Bannwart Perina, A. Silitonga, J. Becker and V. Bonato, "Fast Resource and Timing Aware Design Optimisation for High-Level Synthesis," in IEEE Transactions on Computers, doi: [10.1109/TC.2021.3112260](https://doi.org/10.1109/TC.2021.3112260).
+
+**Thesis (contains most of Mark 2 except `cachedaemon`):**
+
+* A. Bannwart Perina, "Lina: a fast design optimisation tool for software-based FPGA programming," doctoral dissertation, Universidade de São Paulo, 2022.
+	* **URL:** https://www.teses.usp.br/teses/disponiveis/55/55134/tde-23082022-101507/en.php
+
+A much simpler validation with an early version of Lina was presented in our FPT-2019 paper (see [Versions](#versions) for more information):
+
+* A. Bannwart Perina, J. Becker and V. Bonato, "Lina: Timing-Constrained High-Level Synthesis Performance Estimator for Fast DSE," 2019 International Conference on Field-Programmable Technology (ICFPT), 2019, pp. 343-346, doi: [10.1109/ICFPT47387.2019.00063](https://doi.org/10.1109/ICFPT47387.2019.00063).
+
+Several parts of Lina were inherited from Lin-analyzer. For more information about Lin-analyzer, please see:
+
+* G. Zhong, A. Prakash, Y. Liang, T. Mitra and S. Niar, "Lin-Analyzer: A high-level performance analysis tool for FPGA-based accelerators," 2016 53nd ACM/EDAC/IEEE Design Automation Conference (DAC), 2016, pp. 1-6, doi: [10.1145/2897937.2898040](https://doi.org/10.1145/2897937.2898040).
+
 
 ## Setup
 
@@ -51,45 +112,56 @@ Compilation of Lina was tested in the following systems:
 Before proceeding to compilation, you must ensure that the following packages are installed:
 
 * GNU Compiler Collection. For Ubuntu, run:
-
-```$ sudo apt-get install build-essential```
+	```
+	$ sudo apt-get install build-essential
+	```
 * ZLIB development libraries. For Ubuntu, run:
-
-```$ sudo apt-get install zlib1g-dev```
+	```
+	$ sudo apt-get install zlib1g-dev
+	```
 * GIT. For Ubuntu, run:
-
-```$ sudo apt-get install git```
+	```
+	$ sudo apt-get install git
+	```
 * CMAKE. For Ubuntu, run:
-
-```$ sudo apt-get install cmake```
-
+	```
+	$ sudo apt-get install cmake
+	```
 *You can also compile LLVM using other toolchains, such as ```clang```. Please see https://releases.llvm.org/3.5.0/docs/GettingStarted.html*
 
-At last, the relation between ```cmake``` and ```zlib``` is quite tricky, mainly in Ubuntu. We are assuming here that installing the ```zlib``` package will put the shared library ```zlib.so``` at ```/usr/lib```. Ubuntu puts ```zlib``` on a different location and this breaks compilation. ***Please make sure that you have a valid library (or a link to) at the /usr/lib/libz.so location.*** You can do that by listing the file:
+**We assume here that ZLIB is located at /usr/lib.libz.so.** Note that certain distributions (e.g. Ubuntu) might place it in a different path. You can check that by listing the file:
 ```
 $ ls /usr/lib/libz.so
 ```
 
-If it shows ```no such file or directory``` or it lists a broken link, please (re-)create the soft link pointing to the correct library. In Ubuntu 18.04 for example, it is located at ```/lib/x86_64-linux-gnu/libz.so.1```. In this case the soft-link should be created as:
-```
-$ cd /usr/lib
-$ ln -s /lib/x86_64-linux-gnu/libz.so.1 libz.so
-```
+If ```no such file or directory``` appears, there are a couple of options:
+* If manually compiling Lina, modify the value passed to the ```-DZLIB_LIBRARY=``` flag of the ```cmake``` command;
+* If using the compiler script, a notification will pop up if ZLIB is not found and you will have the chance to set a custom path;
+* You can (re-)create the soft link pointing to the correct library (**this is not a recommended approach**). In Ubuntu 18.04 for example, it is located at ```/lib/x86_64-linux-gnu/libz.so.1```. In this case the soft-link should be created as:
+	```
+	$ cd /usr/lib
+	$ ln -s /lib/x86_64-linux-gnu/libz.so.1 libz.so
+	```
 
-Alternatively, you can change the compiler script (or the ```cmake``` command if compiling manually) to point to the correct ```zlib``` position. You can do that by modifying the value passed to the ```-DZLIB_LIBRARY=``` flag of the ```cmake``` command. In this case you don't need to perform any soft-linking.
+### Linad
+
+If the `cachedaemon` version is selected, you must also compile the Lina Daemon (linad). Along the packages cited above, you will also need:
+* `librt`
+* `libpthread`
+
 
 ## Compilation
 
-You can either compile Lina by using the automated compiling script, or manually by following the instructions presented in Section ***Manual Compilation***.
+You can either compile Lina by using the automated compiling script, or manually by following the instructions presented in [Manual Compilation](#manual-compilation).
 
 ### Automatic Compilation
 
-We have provided an automated BASH compilation script at ```misc/compiler.sh```. It simply follows the instructions from ***Manual Compilation*** and applies patches automatically if necessary.
+We have provided an automated BASH compilation script at ```misc/compiler.sh```. It simply follows the instructions from **Manual Compilation** and applies patches automatically if necessary.
 
 To use automatic compilation:
 
-1. Make sure you read and understood the Section ***Setup*** (in other words, make sure that you have ```gcc```, ```zlib```, ```git``` and ```cmake```);
-2. Download the automated compilation script at ```misc/compiler.sh```(https://raw.githubusercontent.com/comododragon/lina/master/misc/compiler.sh);
+1. Make sure you read and understood the [Setup](#setup) (in other words, make sure that you have ```gcc```, ```zlib```, ```git``` and ```cmake```);
+2. Download the automated compilation script at ```misc/compiler.sh```(https://raw.githubusercontent.com/comododragon/linaii/master/misc/compiler.sh);
 3. Create a folder where you wish to compile everything (for example purposes, we will refer this path as ```/path/to/lina```) and place the compiler script inside;
 4. Give execution permission to ```compiler.sh```:
 	```
@@ -101,16 +173,17 @@ To use automatic compilation:
 	```
 6. Follow the instructions on-screen;
 	* The script will download LLVM, CLANG, BOOST and Lina, prepare the folders and execute ```cmake```;
-	* It will ask before compiling if you want to apply some patches. Please read Section ***Troubleshooting*** for better understanding. In doubt, just press ENTER and the patches will be ignored. If compilation fails, you will have another chance to apply the patches;
-	* ***Every time the script is executed, the whole operation is re-executed (i.e. no incremental compilation with the script!);***
-	* Right after ```cmake``` and before starting the whole compilation process, the script will give you the option to abort the script and leave the project as is. At this point you will have the project ready to be compiled, where you can insert your modifications or fix some system-related problems regarding dependencies. Then, simply follow Section ***Manual Compilation*** from step ***10***;
-	* If everything goes right, you should have the ```lina``` binary at ```/path/to/lina/build/bin/lina```.
+	* It will ask before compiling if you want to apply some patches. Please read [Troubleshooting](#troubleshooting) for better understanding. In doubt, you can refuse the patches. If compilation fails, you will have another chance to apply the patches;
+	* **Every time the script is executed, the whole operation is re-executed (i.e. no incremental compilation with the script!);**
+	* Right after ```cmake``` and before starting the whole compilation process, the script will give you the option to abort the script and leave the project as is. At this point you will have the project ready to be compiled, where you can insert your modifications or fix some system-related problems regarding dependencies. Then, simply follow [Manual Compilation](#manual-compilation) from step **10**;
+	* If everything goes right, you should have the ```lina``` binary at ```/path/to/lina/build/bin/lina```;
+	* If using the `cachedaemon` version, ```linad``` will be built at ```/path/to/lina/llvm/tools/lina/misc/linad/linad```.
 
 ### Manual Compilation
 
 The automatic compilation script simply executes the following steps:
 
-1. Make sure you read and understood the Section ***Setup*** (in other words, make sure that you have ```gcc```, ```zlib```, ```git``` and ```cmake```);
+1. Make sure you read and understood the [Setup](#setup) (in other words, make sure that you have ```gcc```, ```zlib```, ```git``` and ```cmake```);
 2. Create your compilation folder and ```cd``` to it:
 	```
 	$ mkdir /path/to/lina
@@ -128,11 +201,12 @@ The automatic compilation script simply executes the following steps:
 	$ tar xvf cfe-3.5.0.src.tar.xz
 	$ mv cfe-3.5.0.src llvm/tools/clang
 	```
-5. Clone Lina to folder ```llvm/tools/lina```:
+5. Clone Lina Mark 2 to folder ```llvm/tools/lina```:
 	```
-	$ git clone https://github.com/comododragon/lina.git
-	$ mv lina llvm/tools/lina
+	$ git clone https://github.com/comododragon/linaii.git
+	$ mv linaii llvm/tools/lina
 	```
+	* **NOTE:** For `cachedaemon` finish this step by running: ```cd llvm/tools/lina; git checkout cachedaemon``` (see [Versions](#versions) for more information);
 6. Add the line ```add_llvm_tool_subdirectory(lina)``` right before ```add_llvm_tool_subdirectory(opt)``` at file ```llvm/tools/CMakeLists.txt```. It should look something like:
 	```
 	...
@@ -162,457 +236,356 @@ The automatic compilation script simply executes the following steps:
 	```
 	$ make
 	```
-11. If everything goes well, you will have the Lina binary at ```path/to/lina/build/bin```. If not, please see Section ***Troubleshooting***.
+11. If everything goes well, you will have the Lina binary at ```path/to/lina/build/bin```. If not, please see [Troubleshooting](#troubleshooting).
 
-## Usage
+#### Linad
 
-After compiled, you can install Lina by using ```make install``` or you can simply put Lina somewhere and update ```PATH```:
-```
-$ export PATH=/path/to/lina/build/bin:$PATH
-```
+If using `cachedaemon`, the Lina Daemon must also be built. After running all steps above:
 
-*Please note that ```/path/to/lina/build/bin``` has also the LLVM and CLANG binaries. Exporting this ```PATH``` will override your default LLVM/CLANG configuration.*
-
-You should now be able to use the ```lina``` executable. You can test by requesting the help text:
-```
-$ lina -h
-```
-
-Calling ```lina -h``` will show you the help, which is pretty self-explanatory. The most important flags are:
-
-* ```-h```: to show you the pretty help text;
-* ```-c FILE``` or ```--config-file=FILE```: use ```FILE``` as the configuration file. See Section ***Configuration File***;
-* ```-m MODE``` or ```--mode=MODE```: set ```MODE``` as the execution mode of Lina. Three values are possible:
-	* ```all```: execute traced execution and performance estimation;
-	* ```trace```: execute only traced execution, generating the dynamic trace. Lina hangs before performance estimation;
-	* ```estimation```: execute only performance estimation. The dynamic trace must be already generated;
-* ```-t TARGET``` or ```--target=TARGET```: select the FPGA to perform cycle estimation:
-	* ```ZC702:``` Xilinx Zynq-7000 SoC (DEFAULT);
-	* ```ZCU102:``` Xilinx Zynq UltraScale+ ZCU102 kit;
-	* ```ZCU104:``` Xilinx Zynq UltraScale+ ZCU104 kit;
-	* ```VC707:``` Xilinx Virtex-7 FPGA;
-* ```-v``` or ```--verbose```: show more details about the estimation process and the results;
-* ```-f FREQ``` or ```--frequency=FREQ```: specify the target clock, in MHz;
-* ```-u UNCTY``` or ```--uncertainty=UNCTY```: specify the clock uncertainty, in percentage;
-* ```-l LOOPS``` or ```--loops=LOOPS```: specify which top-level loops should be analysed, starting from 0;
-* ```--f-npla```: activate non-perfect loop analysis (disabled by default);
-* ```--f-notcs```: deactivate timing-constrained scheduling (enabled by default).
-
-### Use by Example
-
-Let's estimate the cycle count for a simple matrix vector and product:
-```
-#define SIZE 32
-
-void mvp(float A[SIZE * SIZE], float x[SIZE], float y[SIZE]) {
-	for(int i = 0; i < SIZE; i++)
-		for(int j = 0; j < SIZE; j++)
-			x[i] += A[i * SIZE + j] * y[j];
-}
-
-int main(void) {
-	float A[SIZE * SIZE], x[SIZE], y[SIZE];
-
-	for(int j = 0; j < SIZE; j++) {
-		y[j] = j;
-
-		for(int i = 0; i < SIZE; i++)
-			A[i * SIZE + j] = i + j;
-	}
-
-	mvp(A, x, y);
-
-	return 0;
-}
-```
-
-1. First, make sure you are using LLVM 3.5.0 binaries, as other versions may have incompatible intermediate representations. You can find the 3.5.0 binaries together with the compilation of Lina:
+1. Cd to the `linad` folder:
 	```
-	$ export PATH=/path/to/lina/build/bin:$PATH
+	$ cd /path/to/lina/llvm/tools/lina/misc/linad
 	```
-2. Create a folder for your Lina project, create a file ```test.cpp``` and insert the contents of the code above;
-3. No we have to create a configuration file for this project, which will inform Lina the size of each array and also optimisation directives. Let's create a file ```config.cfg``` and enable partial loop unrolling with factor 4 on both loops (please see Section ***Configuration File*** for more information about this file):
+2. Make:
 	```
-	array,A,4096,4
-	array,x,128,4
-	array,y,128,4
-	unrolling,mvp,0,1,4,4
-	unrolling,mvp,0,2,5,4
+	$ make
 	```
-4. We must compile ```test.cpp``` to the LLVM intermediate representation and also apply some optimisations before using Lina:
-	```
-	$ clang -O1 -emit-llvm -c test.cpp -o test.bc
-	$ opt -mem2reg -instnamer -lcssa -indvars test.bc -o test_opt.bc
-	```
-5. Then, we can run Lina. You must pass the ```test_opt.bc``` file and the kernel name ```mvp``` as the two last positional arguments of Lina:
-	```
-	lina --config-file=config.cfg --target=ZCU102 --loops=0 test_opt.bc mvp
-	```
-6. Lina should give you a report of the cycle counts, similar to:
-	```
-	░░░░░░░░░░░░░░░░░░░░░░░░░░░░▒▒
-	░░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▒▒
-	░░▓░░▓▓▓▓░░▓▓░░▓▓░░▓▓▓░░░░▓▓▒▒
-	░░▓░░▓▓▓▓░░▓▓░░░▓░░▓▓░░▓▓░░▓▒▒
-	░░▓░░▓▓▓▓░░▓▓░░░░░░▓▓░░░░░░▓▒▒
-	░░▓░░▓▓▓▓░░▓▓░░▓░░░▓▓░░▓▓░░▓▒▒
-	░░▓░░░░▓▓░░▓▓░░▓▓░░▓▓░░▓▓░░▓▒▒
-	░░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▒▒
-	▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒
-	========================================================
-	Building mangled-demangled function name map
-	========================================================
-	Counting number of top-level loops in "_Z3mvpPfS_S_"
-	========================================================
-	Assigning IDs to BBs, acquiring array names
-	========================================================
-	Assigning IDs to load and store instructions
-	========================================================
-	Extracting loops information
-	========================================================
-	Starting code instrumentation for DDDG generation
-	********************************************************
-	********************************************************
-	************** See ya in a minute or so! ***************
-	********************************************************
-	********************************************************
-	********************* Hello back! **********************
-	********************************************************
-	********************************************************
-	[][][_Z3mvpPfS_S__loop-0_2] Estimated cycles: 5672
-	```
+3. If build went well, ```linad``` will be present at ```/path/to/lina/llvm/tools/lina/misc/linad/linad```.
 
-We can compare the results against the reports from Vivado. In this case, we used Vivado HLS 2018.2 for the ZCU102 Xilinx UltraScale+ Board.
 
-1. We have to modify ```test.cpp``` to insert the unrolling pragmas for Vivado:
-	```
-	#define SIZE 32
+## Differences Between Mark 1 and 2
 
-	void mvp(float A[SIZE * SIZE], float x[SIZE], float y[SIZE]) {
-		for(int i = 0; i < SIZE; i++) {
-	#pragma HLS unroll factor=4
-			for(int j = 0; j < SIZE; j++) {
-	#pragma HLS unroll factor=4
-				x[i] += A[i * SIZE + j] * y[j];
-			}
-		}
-	}
+Basic usage of Lina is explained in detail on the Mark 1 README. See [here](https://github.com/comododragon/lina/blob/master/README.md).
 
-	int main(void) {
-		float A[SIZE * SIZE], x[SIZE], y[SIZE];
+This README will focus on the differences between Mark 1 and 2.
 
-		for(int j = 0; j < SIZE; j++) {
-			y[j] = j;
+### Command-line Arguments
 
-			for(int i = 0; i < SIZE; i++)
-				A[i * SIZE + j] = i + j;
-		}
+Command-line arguments from Mark 1 (also functional here) are included [here](https://github.com/comododragon/lina/blob/master/README.md#usage).
 
-		mvp(A, x, y);
+These are the Mark 2 specific arguments:
 
-		return 0;
-	}
-	```
-2. Then, we can create a script ```script.tcl``` for Vivado HLS with the same configurations as Lina:
-	```
-	open_project mvp
-	set_top mvp
-	add_files test.cpp
-	open_solution "solution1"
-	set_part {xczu9eg-ffvb1156-2-e}
-	create_clock -period 10 -name default
-	set_clock_uncertainty 27.0%
-	csynth_design
-	exit
-	```
-3. Run Vivado and wait for the HLS process to finish:
-	```
-	$ vivado_hls -f script.tcl
-	```
-4. You can find at ```mvp/solution1/syn/report/mvp_csynth.rpt``` the cycle count for the loop:
-	```
-	+-------------+------+------+----------+-----------+-----------+------+----------+
-	|             |   Latency   | Iteration|  Initiation Interval  | Trip |          |
-	|  Loop Name  |  min |  max |  Latency |  achieved |   target  | Count| Pipelined|
-	+-------------+------+------+----------+-----------+-----------+------+----------+
-	|- Loop 1     |  5672|  5672|       709|          -|          -|     8|    no    |
-	+-------------+------+------+----------+-----------+-----------+------+----------+
-	```
+* ```--mem-trace```: depends on mode `-m`:
+	* if `trace`, a textual memory trace is generated with name `mem_trace.txt`;
+	* if `estimation`, the file `mem_trace.txt` is loaded to the off-chip memory model;
+* ```--short-mem-trace```: depends on mode `-m`:
+	* if `trace`, a binary memory trace is generated with name `mem_trace_short.bin`;
+	* if `estimation`, the file `mem_trace_short.bin` is loaded to the off-chip memory model;
+	* *It is recommended to use this argument instead of* `--mem-trace`, *since the binary trace is often more efficient to be parsed*;
+* ```--fno-mma```: disable off-chip memory model analysis **(DEFAULT IS ENABLED)**;
+* ```--f-burstaggr```: enable burst aggregation: sequential off-chip operations inside a DDDG are grouped together to form coalesced bursts;
+	* *Only groups operations from same array*;
+	* *This argument has no effect if* `--fno-mma` *is set*;
+* ```--f-burstmix```: enable burst aggregation: coalesced bursts can be mixed between arrays;
+	* *This argument has no effect if* `--fno-mma` *is set*;
+	* *This argument requires* `--f-burstaggr`;
+	* *This argument has no effect if global parameter* `ddrbanking` *is set*;
+	* *This feature is almost in deprecated state*;
+* ```--f-vec```: enable array vectorisation analysis, which tries to find a suitable SIMD type for the off-chip arrays;
+	* *This argument has no effect if* `--fno-mma` *is set*;
+	* *This argument requires* `--f-burstaggr`;
+	* *This argument has no effect if* `--mma-mode` *is* `off`;
+* ```-d LEVEL``` or ```--ddrsched=LEVEL```: specify the DDR scheduling policy:
+	* ```0```: DDR transactions of same type (read/write) cannot overlap (i.e. once a transaction starts, it must end before others of same type can start **(DEFAULT)**;
+	* ```1```: DDR transactions can overlap if their memory spaces are disjoint;
+	* See [DDR Scheduling Policies](#ddr-scheduling-policies);
+* ```--mma-mode=MODE```: select Lina execution model according to MMA mode:
+	* ```off```: run Lina normally **(DEFAULT)**;
+	* ```gen```: perform memory model analysis, generate a context import file and stop execution;
+	* ```use```: skip profiling and DDDG generation, proceed directly to memory model analysis;
+		* In this mode context import file is used to generate the DDDG and other data;
+		* The context-import should have been generated with a previous execution of Lina with ```--mma-mode=gen```, otherwise Lina fails;
+	* *This argument has no effect if* `--mode` *is* `trace`;
+	* See [Context-based Dual Execution](#context-based-dual-execution);
 
 ### Configuration File
 
-Lina uses a configuration file to inform array information and optimisation directives. This file is only necessary to the estimation mode of Lina. The configuration file is parsed line by line. See the following configuration file as an example of supported directives:
+Configuration file structure from Mark 1 (also applicable here) are included [here](https://github.com/comododragon/lina/blob/master/README.md#configuration-file).
+
+The subsections below present the differences.
+
+#### Mapping Arrays to Offchip Memory
+
+On Mark 2, arrays can be declared as offchip:
+```
+array,foo,65536,8,offchip
+```
+
+On the example above, array `foo` is declared as offchip. This means that its scheduling will be handed to the Memory Model, which is reponsible for dealing with the estimation of offchip transactions.
+
+When arrays are declared as in Mark 1, they are considered as onchip and behaviour is similar to Mark 1. The only difference is if you want to use scope arguments (e.g. `rwvar`). In this case, the `onchip` keyword must be added before the scope:
+```
+array,foo,65536,8,onchip,rwvar
+```
+
+#### Global parameters
+
+On Mark 2, there is a new type of entry called `global`, which can be used to enable/disable global exploration parameters. The format is:
+```
+global,<NAME>,<VALUE>
+# Example
+global,ddrbanking,1
+```
+
+Currently, there is a single `global` parameter:
+
+* ```ddrbanking```: toggles DDR banking:
+	* ```0```: all off-chip arrays are considered in the same shared memory space **(DEFAULT)**;
+	* ```1```: all off-chip arrays are considered in separate DDR banks. That means separate memory spaces.
+
+### Memory Trace File
+
+For offchip scheduling estimation, the address of the memory accesses must be known. This is needed to evaluate optimisations such as burst coalescing.
+
+A memory trace can be generated by using the `--mem-trace` or `--short-mem-trace` options. The first option is also present on Mark 1 and even on Lin-analyzer, and it generates a textual file named `mem_trace.txt`.
+
+However, this file can easily grow up in size if the kernel under test performs too many memory transactions, and this can degrade Lina's performance. In order to reduce its overhead, Mark 2 includes the `--short-mem-trace` option. This generates a binary memory trace called `memory_trace_short.bin`. Its structure is optimised to use less space as the textual representation and it does not require formatted parsing. This way, it can be loaded much faster. **It is recommended to use this option.**
+
+### Context-based Dual Execution
+
+On Mark 1, Lina is executed a single time for each design point to be explored. However, this limits the amount of offchip optimisations that Lina can perform. This limitation arises from the way Lina's code was constructed. More specifically, it is related to the original code construction of Lin-analyzer, that Lina inherited.
+
+Changing this would require significant code rewrite and re-testing. For this reason, if you want to fully utilise the memory model capabilities, you will need to run Lina twice for each design point:
+
+- The first execution (called **generate** mode) performs a first pass and DDDG generation. Execution is interrupted before actual estimation starts. Relevant data structures are saved to a context file named `context.dat`;
+- The second execution (called **use** mode) uses the `context.dat` file to repopulate several data structures, and then memory model optimisation can proceed with much more useful information.
+
+This mode is used to improve burst optimisation detection across different loop iterations. More specifically, it helps to filter out burst optimisations that are not possible when multiple DDDGs of the code are analysed. In short, certain burst optimisations can be detected if using single mode, but refused when the dual execution mode is used.
+
+This dual mode is simply done by calling Lina twice for each design point. All arguments can be the same within calls, except for `--mma-mode`. On the first execution, it shall be `--mma-mode=gen`. On the second execution, it shall be `--mma-mode=use`.
+
+You can disable this dual execution mode by either not providing the `--mma-mode` option, or by setting it as `--mma-mode=off`.
+
+For detailed code information, you can take a look on the file `lib/Build_DDDG/MemoryModel.cpp`, at function `findOutBursts()`.
+
+### Off-chip Memory Model
+
+The greatest addition of Mark 2 is the off-chip memory model. It has several responsibilities:
+
+- Analyses potential optimisations;
+- Performs off-chip memory scheduling;
+- Performs allocation of scheduled off-chip memory nodes;
+- Generates the memory optimisation report.
+
+Most of the memory model is implemented on the `MemoryModel` class. Take a look there for details.
+
+Please see [Command-line Arguments](#command-line-arguments) for information about possible optimisations. More specifically, see the following arguments: `--fno-mma`, `--f-burstaggr`, `--f-burstmix`, `--f-vec`, `--ddrsched`, and `--mma-mode`.
+
+Information about how the model works can be found in the latest publication or thesis. See [Publications](#publications).
+
+#### DDR Scheduling Policies
+
+Lina's off-chip memory model has different scheduling policies that affects how off-chip transactions may overlap. The policy is selected via the `--ddrsched` argument. These are the options:
+
+* `0` (conservative): DDR transactions of same type (read/write) cannot overlap (i.e. once a transaction starts, it must end before others of same type can start;
+* `1` (permissive): DDR transactions can overlap if their memory spaces are disjoint.
+
+Please refer to the [thesis](#publications) or [last published paper](#publications) for actual details on the policies.
+
+#### ResMIIMemRec Calculation
+
+The memory model is also responsible for providing the calculation of ResMIIMemRec. This is the "Resource/Recurrence-Constrained Minimum Initiation Interval", constrained by dependent memory accesses. A better explanation for this calculation is presented on the latest publication. See [Publications](#publications).
+
+The implementation can be found at `MemoryModel::calculateResIIMemRec()`.
+
+### Different Dynamic Trace Format
+
+Mark 1 and Mark 2 both use gzip compression to store the dynamic trace file, but they use a different compression ratio. The gzip files generated by both versions are interchangeable, however there might be differences in file sizes and performance (Mark 2 generates a larger file, but with faster processing due to reduced compression ratio).
+
+### Lina Daemon (linad)
+
+Mark 2 has a special variant present on [cachedaemon branch](https://github.com/comododragon/linaii/tree/cachedaemon) that uses shared memory and a daemon to reduce IO bottleneck during DSE.
+
+When several `lina` instances are running in parallel, competition for IO resources increase (i.e. high demand on memory trace map and dynamic trace). But, it is not uncommon that several instances access - roughly - the same memory regions. Therefore, it is beneficial to cache these regions on memory, and provide access of these regions to the parallel `lina` instances.
+
+This is achieved by using `linad`. It is a daemon that opens the dynamic trace and memory trace map, and caches accessed data to a shared memory region. The shared memory region is then accessible by the multiple `lina` calls, and thus IO accesses are greatly reduced.
+
+Using `linad` is beneficial when `lina` accesses really large files during exploration. Further analysis and details can be found in the latest [publication](#publications).
+
+Calling `linad` is simple. Only a single argument exists and it is optional:
 
 ```
-# Any line starting with a "#" is ignored by the parser
-array,A,4096,4
-unrolling,mvp,0,1,4,4
-pipeline,mvp,0,2
-partition,block,A,4096,4,8
+linad [PIPEID]
 ```
 
-Now line by line:
+The `PIPEID` argument is a positive number used to identify the IPC pipe, see [IPC](#IPC) below. If absent, `PIPEID` is 0. Setting `PIPEID` allows multiple instances of `linad` to be executed, each pointing to a different IPC pipe. This is useful on multi-node systems that uses a shared filesystem.
 
-* ```# Any line starting with a "#" is ignored by the parser```
-	* Pretty self-explanatory;
-* ```array,A,4096,4```
-	* Declare an array. The arguments are the array name, total size in bytes and word size in bytes, respectively;
-	* Equivalent to ```uint32_t A[1024];```
-	* All arrays of the kernel must be declared here;
-* ```unrolling,mvp,0,1,4,4```
-	* Set unroll. The arguments are the kernel name, the top-level loop ID (starts from 0), the loop depth (1 is the top-level), the loop header line number and the unroll factor;
-	* Equivalent to ```#pragma HLS unroll factor=4```
-* ```pipeline,mvp,0,2```
-	* Set pipeline. The arguments are the kernel name, the top-level loop ID and the loop depth;
-	* Equivalent to ```#pragma HLS pipeline```
-* ```partition,block,A,4096,4,8```
-	* Set array partitioning. The arguments are the partitioning type, the array name, total size in bytes, word size in bytes and partition factor;
-	* Types of partitioning include ```block```, ```cyclic``` or ```complete```;
-	* If ```complete``` is used, you can omit the last argument (partition factor);
-	* Equivalent to ```#pragma HLS array_partition variable=A block factor=8```
+For the memory trace, the whole file is loaded to shared memory when a load command is specified. For dynamic traces, the functionality is quite different.
 
-### Enabling Design Space Exploration
+A single `lina` execution usually accesses very scattered regions of the dynamic trace, and it reads a small-to-moderate amount of data in each of those sparse points. On top of that, multiple `lina` calls share approximate regions. Without `linad`, explorations on really large dynamic trace files will incur in significant overheads when seeking the compressed file (i.e. `gzseek()` calls). If multiple dynamic trace file pointers are opened and seeked, one for each of the scattered regions accessed by the `lina` calls, it becomes way faster to read these regions multiple times. This eliminates multiple `gzseek()` calls that incurs in large IO overhead, by using the right files to the right scattered regions.
 
-The idea of Lina is to provide fast estimations for design space exploration. Lina is divided in two stages: trace and estimation. The first is the most time-consuming, however it has to be performed only once. Therefore, general flow for DSE would be:
+As an example, let's say that all `lina` calls for a single DSE results in accessing at most five scattered regions of the dynamic trace. Each of those regions are identified by a unique key inside the `lina` calls. These keys are passed to `linad`, and each key results in one dynamic trace file pointer being opened and seeked to the respective scattered region. Every time a new `lina` call wants to access something near these regions, it uses the unique keys to select the file pointer that is closest, potentially avoiding large seek calls.
 
-1. Follow the steps above to generate the ```*.bc``` file for input to Lina;
-2. Perform traced execution:
-	```
-	$ lina --mode=trace test_opt.bc mvp
-	```
-3. Create a ```config.cfg``` with the optimisation configurations that you wish to test:
-4. Perform estimation:
-	```
-	$ lina --mode=estimation --config-file=config.cfg --target=ZCU102 --loops=0 test_opt.bc mvp
-	```
-5. Repeat from step ***3***.
+Therefore, the logic for the shared dynamic trace works as follows:
 
-## Perform a Small Exploration
+1. A `lina` call creates a connection to the shared dynamic trace logic on `linad`;
+	* This creates a shared memory region that is used as a buffer for the dynamic trace contents;
+1. Lina performs internal calculations and decides which scattered region it must read for a certain DDDG generation;
+	* This scattered region is identified by a unique key across `lina` calls;
+1. Lina attaches to a dynamic trace file pointer using the unique key;
+	* If there is already a dynamic trace file pointer using this unique key, `linad` uses it;
+	* Otherwise, `linad` opens a new dynamic trace file pointer, and seeks to the proposed scattered region;
+1. Lina then requests this region to be read from the attached dynamic file, and stored on the shared memory buffer;
+1. Then, Lina uses the shared memory buffer to read the contents from the dynamic trace;
+1. If more data is needed, Lina can request `linad` for further buffer reads from the attached dynamic trace file;
+1. When Lina is done with this scattered region, it detaches from the current file;
+	* The file is not closed by `linad`, but it is set aside, as it may be used on other attach calls pointing to this region (or a close point);
+1. If another scattered region is needed (e.g. to generate another DDDG), Lina attaches to a new unique key;
+1. This attach/detach process is repeated until Lina finishes processing all required DDDGs;
+1. Then, the connection is closed;
+	* That effectively deallocates the shared memory region allocated as buffer.
 
-At folder ```misc/smalldse``` from this repository, you can find files to perform a small exploration similar as in the paper.
+It is important to note that `linad` does not perform any analysis to decide which dynamic trace file pointer is best to use when `lina` asks for attachment. This decision is actually done by `lina` according to the provided unique key during attachment.
 
-To run this exploration, you must perform some setup first:
-1. Compile Lina following the instructions from Sections ***Setup*** and ***Compilation***;
-	* We will refer to the path for this version as ```/path/to/new/lina/build/bin```;
-2. Also compile an adapted version from Lina for comparison purposes in a different folder:
-	* This version is a refactored version of Lin-Analyzer, before TCS and NPLA were implemented. It should work the same way as Lin-Analyzer however with some minor performance improvements;
-	* ***Manual compile:***
-		* Follow the same instructions as in ***Setup*** and ***Compilation*** but clone this branch instead:
-		```
-		$ git clone -b 2_updlat https://github.com/comododragon/lina.git
-		```
-		* Please note that this branch points to a preliminar version of Lina where it still used the original Lin-Analyzer branding. Compilation files are configured for this name, thus you must change from ```lina``` to ```lin-analyzer``` in steps 5 (```mv lina llvmtools/lin-analyzer```) and 6 (```add_llvm_tool_subdirectory(lin-analyzer)```) from Section ***Manual Compilation***;
-	* ***Automatic compile:*** please use the compiling script located at ```misc/compile.2_updlat.sh```;
-	* We will refer to the path for this version as ```/path/to/old/lina/build/bin```;
-3. You will also need Python 3. Please install it using your OS repository. For example in Ubuntu:
-	```
-	$ sudo apt-get install python3
-	```
-4. Generate the traces;
-	* The folder ```misc/smalldse/baseFiles/traces``` must contain 9 folders, one for each kernel (```atax```, ```bicg``` and so on) and inside each folder should be the dynamic trace for each kernel (a file named ```dynamic_trace.gz```);
-	* You can manually generate the traces by running ```lina```  or ```lin-analyzer``` in mode ```trace```, OR;
-	* You can download the traces already generated from [here](https://drive.google.com/file/d/1FGNUzlMfG1_pRp1Fb5CeYX5C3vyCbGfl/view?usp=sharing) (almost 1GB!) and put all the folders inside ```misc/smalldse/baseFiles/traces```;
-5. Set the correct path for the lina and lin-analyzer binaries at file ```misc/smalldse/vai.py``` according to your installation:
-	```
-	paths = {
-		"2_updlat": "/path/to/old/lina/build/bin",
-		"7_npla": "/path/to/new/lina/build/bin"
-	}
-	```
-6. Explore all design points using lin-analyzer/lina:
-	```
-	$ ./runall.sh
-	```
-	* You can also run a single point by running ```vai.py```;
-7. To explore all design points using Vivado, first make sure that the Vivado binaries are reachable (e.g. ```source ~/xilinx/SDx/2018.2/settings64.sh```) and run:
-	```
-	$ ./runallvivado.sh
-	```
-	* You can also run a single point by running ```vivai.py```;
-8. After executing both explorations, you can see the precision results at ```misc/smalldse/processedResults/full.ods```.
+The daemon is mainly structured in two parts: the IPC and the shared memory manager.
 
-The clock uncertainty, array partitioning, loop pipelining and unrolling directives are passed to the design point explorers as arguments for the ```vai.py``` and ```vivai.py``` python scripts. Please run the scripts without any arguments for more information.
+#### IPC
 
-If you want to try other values for the directives, changes are needed in the design point explorer scripts. For example if you want to try other partition factors:
-* For ```vai.py```:
-	* The partition factors are defined at the ```configScheme``` variable. For example for kernel ```atax```, it will be at ```configScheme["atax"]["partitioning"]["1"]```:
-	```
-	configScheme = {
-		# ...
-		"atax": {
-			"arrays": [
-				# ...
-			],
-			"partitioning": {
-				"0": [],
-				"1": [
-					("cyclic", 4), # <-- Change this value
-					("complete", 0),
-					("complete", 0)
-				]
-			},
-			"pipelining": {
-				# ...
-			},
-			"unrolling": {
-				# ...
-			}
-		},
-		# ...
-	}
-	```
-	* You must change the values that are grouped with the "cyclic" and "block" elements from ```configScheme```;
-* For ```vivai.py```:
-	* The partition factors are defined at the ```arrayConfigs``` variable. For example for kernel ```atax```, it will be at ```arrayConfigs["atax"]```:
-	```
-	arrayConfigs = {
-		# ...
-		"atax": [
-			("A", "cyclic", 4), # <-- Change this value
-			("x", "complete", 0),
-			("tmp", "complete", 0)
-		],
-		# ...
-	}
-	```
-	* You must change the values that are grouped with the "cyclic" and "block" elements from ```arrayConfigs```;
+The IPC is the inter-process communication part. This is used to control `linad`, set up the traces, attach/detach shared memory regions, etc.
+
+Communication is done via named pipes. Linad uses the `PIPEID` argument to define the named pipe as follows: `/tmp/linad.pipe.<PIPEID>`. For example, a `linad` instance with `PIPEID` = 5 will open its pipe on `/tmp/linad.pipe.5`.
+
+Commands are simple structured strings. Below is a list of supported commands:
+
+* `l` command: Load memory trace;
+	* **Format:** `lXXXYYYYYYYYYYY...`;
+	* `XXX` is the size of `YYYYYYYYYYY...` string (3-digit positive integer);
+	* `YYYYYYYYYYY...` is the memory trace file name;
+	* **Example:** `l028/path/to/mem_trace_short.bin` would load `/path/to/mem_trace_short.bin` as the memory trace file;
+	* *The memory trace file is fully loaded to shared memory when this command is issued*;
+* `d` command: Load dynamic trace;
+	* **Format:** `dXXXYYYYYYYYYYY...`;
+	* `XXX` is the size of `YYYYYYYYYYY...` string (3-digit positive integer);
+	* `YYYYYYYYYYY...` is the dynamic trace file name;
+	* **Example:** `d025/path/to/dynamic_trace.gz` would load `/path/to/dynamic_trace.gz` as the dynamic trace file;
+	* *Differently from the memory trace, the dynamic trace is not fully loaded at once*;
+* `c` command: Create a connection;
+	* **Format:** `cXXXYYYYYYYYYYY...`;
+	* `XXX` is the size of `YYYYYYYYYYY...` string (3-digit positive integer);
+	* `YYYYYYYYYYY...` is the connection name;
+	* **Example:** `d015connectionName0` creates a connection with name `connectionName0`;
+	* *When a connection is created, a shared memory region is created that is used as buffer for dynamic trace contents*;
+* `x` command: Close a connection;
+	* **Format:** `xXXXYYYYYYYYYYY...`;
+	* `XXX` is the size of `YYYYYYYYYYY...` string (3-digit positive integer);
+	* `YYYYYYYYYYY...` is the connection name;
+	* **Example:** `x015connectionName0` closes the connection with name `connectionName0`;
+	* *When a connection is closed, the related shared memory buffer is released*;
+* `a` command: "Attach to / open" a cached dynamic trace file;
+	* **Format:** `aXXXYYYYYYYYYY...ZZZZZZZZZZWWWKKKKKKKKKK...`;
+	* `XXX` is the size of `YYYYYYYYYY...` string (3-digit positive integer);
+	* `YYYYYYYYYYY...` is the connection name;
+	* `ZZZZZZZZZZ` is the transaction ID (10-digit positive integer);
+	* `WWW` is the size of `KKKKKKKKKK...` string (3-digit positive integer);
+	* `KKKKKKKKKK...` is the cache entry name to attach to;
+	* **Example:** `a015connectionName00000000010010midRegion2` attaches the `connectionName0` connection to a dynamic trace file pointer identified as `midRegion2`;
+	* *The transaction ID is used to identify when the transaction has been completed and loaded to the shared memory buffer (see [shared memory manager](#shared-memory-manager) below)*;
+	* When attaching, `linad` checks if the provided "cache entry name" (unique key) already exists;
+		* If it exists, there is an associated open dynamic trace file, and this one is used;
+		* If it doesn't exist, a new dynamic trace file pointer is opened, and associated with the provided unique key;
+* `r` command: Release/Detach;
+	* **Format:** `rXXXYYYYYYYYYYY...`;
+	* `XXX` is the size of `YYYYYYYYYYY...` string (3-digit positive integer);
+	* `YYYYYYYYYYY...` is the connection name;
+	* **Example:** `r015connectionName0` detaches whatever is attached to the connection with name `connectionName0`;
+	* *If there is any attached dynamic trace file, it is detached, but not closed. It is set aside and may be reused by other future attach calls*;
+* `g` command: Refresh/get dynamic trace buffer;
+	* **Format:** `gXXXYYYYYYYYYY...ZZZZZZZZZZWWWWWWWWWWLLLLLLLLLL`;
+	* `XXX` is the size of `YYYYYYYYYYY...` string (3-digit positive integer);
+	* `YYYYYYYYYYY...` is the connection name;
+	* `ZZZZZZZZZZ` is the transaction ID (10-digit positive integer);
+	* `WWWWWWWWWW` is the proposed file cursor (10-digit positive integer);
+	* `LLLLLLLLLL` is the max. amount of data to be read starting from the proposed cursor (10-digit positive integer);
+	* **Example:** `g015connectionName0000000001100000111110000010000`: 10000 bytes are read starting from file cursor 11111, and its content are stored on the shared memory buffer from `connectionName0`.
+
+#### Shared Memory Manager
+
+The shared memory manager is responsible for dealing with the shared memory regions.
+
+For the memory trace map, the whole memory trace map file is inserted at once to a shared memory region once an `l` command is issued.
+
+For the dynamic trace file, functionality is different. Shared memory regions are created when connections are created (i.e. `c` command) and are destroyed when connections are closed (i.e. `x` commands).
+
+These shared memory regions are composed of two super-segments: the **connection** and the **buffer**.
+
+* **Connection**:
+	* `TRANSACTIONID` (unsigned): always points to the transaction ID from the latest processed command via IPC (see [IPC commands](#ipc) with transaction ID arguments);
+		* This can be used on `lina` to identify when a command that uses transaction ID has been fully processed;
+	* `SUCCESS` (1 byte): indicates if the last command (identified by the transaction ID) has been successfuly processed or not.
+* **Buffer**:
+	* `ISINIT` (1 byte): indicates if the shared memory region is initialised with valid data;
+	* `EOFFOUND` (1 byte): indicates if `EOF` was reached during dynamic trace read;
+	* `LOWER` (8 bytes): indicates the lower byte cursor of the shared memory buffer;
+	* `HIGHER` (8 bytes): indicates the higher byte cursor of the shared memory buffer;
+	* `DATA` (`HIGHER-LOWER` bytes): the shared memory buffer.
+
+Usually, `lina` should issue commands with unique transaction IDs (can be sequential), and then wait on the connection segments for the respective transaction ID. When it matches, `lina` should check `SUCCESS` to see if the command has been successfuly processed or not.
+
+These segments are updated when `g` commands are issued. Then, `lina` can use these segments to read the dynamic trace as if it were reading from the file itself. Please refer to `lib/Build_DDDG/SharedDynamicTrace.cpp` to see how this is actually implemented.
+
+
+## Usage
+
+Basic usage of Lina is explained in detail on the Mark 1 README. See [here](https://github.com/comododragon/lina/blob/master/README.md#usage).
+
+After reading Mark 1's README, see the differences [here](#differences-between-mark-1-and-2).
+
+
+## Perform an Exploration
+
+There are three DSE infrastructures developed around Lina. See [Mark 1 README](https://github.com/comododragon/lina/blob/master/README.md#perform-an-exploration) for the first two versions.
+
+The latest version is using the `cirith-fpga` framework. Please refer to [cirith repository](https://github.com/comododragon/cirith-fpga) for complete examples of DSE using the Mark 2 lina.
+
 
 ## Supported Platforms
 
-Currently three platforms are supported:
-* ```ZC702:``` Xilinx Zynq-7000 SoC (DEFAULT);
-* ```ZCU102:``` Xilinx Zynq UltraScale+ ZCU102 kit;
-* ```ZCU104:``` Xilinx Zynq UltraScale+ ZCU104 kit;
-* ```VC707:``` Xilinx Virtex-7 FPGA.
+Although lina supports multiple platforms as presented in Mark 1, this version was heavily optimised for the Zynq UltraScale+ architectures. Therefore, full support is only provided for the following platforms:
+* ```ZCU102```: Xilinx Zynq UltraScale+ ZCU102 kit;
+* ```ZCU104```: Xilinx Zynq UltraScale+ ZCU104 kit;
 
 You can select one by specifying the ```-t``` or ```--target``` option.
 
-*ZC702 and VC707 use the legacy hardware profile library from Lin-Analyzer, therefore timing-constrained scheduling is not supported for these platforms and must be disabled with ```--f-notcs```.*
-
-### Adding a New Platform
-
-Several points of the code must be adjusted if you want to insert a new platform. For example, additional logic has to be created for selecting the new platform and so on. However, the most important part of adding a new platform is defining the hardware profile library. This library is composed of three data structures:
-* Total resource count for the platform;
-	* Check the enums with ```MAX_DSP```, ```MAX_FF``` and so on at ```include/profile_h/HardwareProfile.h```;
-* Timing-constrained latencies;
-	* Check the variable ```timeConstrainedLatencies``` at ```include/profile_h/HardwareProfile.h```;
-* Timing-constrained resources;
-	* Check the variables ```timeConstrainedDSPs```, ```timeConstrainedFFs``` and ```timeConstrainedLUTs``` at ```include/profile_h/HardwareProfile.h```.
 
 ## Files Description
 
+See [here](https://github.com/comododragon/lina/blob/master/README.md#files-description) for a description on files common to Marks 1 and 2. Below only the files specific to Mark 2 are presented:
+
 * ***include/profile_h***;
-	* ***ArgPack.h:*** struct with the options passed by command line to Lina;
-	* ***AssignBasicBlockIDPass.h:*** pass to assign ID to basic blocks;
-	* ***AssignLoadStoreIDPass.h:*** pass to assign ID to load/stores;
-	* ***auxiliary.h:*** auxiliary functions and variables;
-	* ***BaseDatapath.h:*** base class for DDDG estimation;
-	* ***colors.h:*** colour definitions used to generate the DDDGs as DOT files;
-	* ***DDDGBuilder.h:*** DDDG builder;
-	* ***DynamicDatapath.h:*** extended class from BaseDatapath, simply coordinates some BaseDatapath calls;
-	* ***ExtractLoopInfoPass.h:*** pass to extract loop information;
-	* ***FunctionNameMapperPass.h:*** pass to map mangled/demangled function names;
-	* ***HardwareProfile.h:*** hardware profile library, characterising resources and latencies;
-	* ***InstrumentForDDDGPass.h:*** pass to instrument and execute the input code;
-	* ***lin-profile.h:*** main function;
-	* ***LoopNumberPass.h:*** pass to number loops;
-	* ***Multipath.h:*** class to handle a set of datapaths (non-perfect loop analysis);
-	* ***opcodes.h:*** LLVM opcodes;
-	* ***Passes.h:*** declaration of all passes;
-	* ***SlotTracker.h:*** slot tracker used by InstrumentForDDDGPass;
-	* ***TraceFunctions.h:*** trace functions used by InstrumentForDDDGPass;
+	* ***ContextManager.h:*** handles Lina's dual-mode execution, handling the context file;
+	* ***MemoryModel.h:*** the off-chip memory model;
 * ***lib***;
 	* ***Aux:*** auxiliary library;
-		* ***auxiliary.cpp:*** auxiliary functions and variables;
+		* ***globalCfgParams.cpp:*** class containing the [global parameters](#global-parameters);
 	* ***Build_DDDG:*** (part of) trace and estimation library;
-		* ***BaseDatapath.cpp:*** base class for DDDG estimation;
-		* ***DDDGBuilder.cpp:*** DDDG builder;
-		* ***DynamicDatapath.cpp:*** extended class from BaseDatapath, simply coordinates some BaseDatapath calls;
-		* ***HardwareProfile.cpp:*** hardware profile library, characterising resources and latencies;
-		* ***Multipath.cpp:*** class to handle a set of datapaths (non-perfect loop analysis);
-		* ***opcodes.cpp:*** LLVM opcodes;
-		* ***SlotTracker.cpp:*** slot tracker used by InstrumentForDDDGPass;
-		* ***TraceFunctions.cpp:*** trace functions used by InstrumentForDDDGPass;
-	* ***Profile:*** LLVM passes that compose Lina;
-		* ***AssignBasicBlockIDPass.cpp:*** pass to assign ID to basic blocks;
-		* ***AssignLoadStoreIDPass.cpp:*** pass to assign ID to load/stores;
-		* ***ExtractLoopInfoPass.cpp:*** pass to extract loop information;
-		* ***FunctionNameMapperPass.cpp:*** pass to map mangled/demangled function names;
-		* ***InstrumentForDDDGPass.cpp:*** pass to instrument and execute the input code;
-		* ***lin-profile.cpp:*** main function;
+		* ***ContextManager.cpp:*** handles Lina's dual-mode execution, handling the context file;
+		* ***MemoryModel.cpp:*** the off-chip memory model;
 * ***misc***;
-	* ***smalldse:*** small exploration with 9 PolyBench-based kernels;
-		* ***baseFiles:*** common files that are shared among design points;
-			* ***makefiles:*** Makefiles used by Lina or Vivado;
-			* ***parsers:*** parser scripts used by the main python script;
-			* ***project:*** C projects prepared for Lina;
-			* ***traces:*** folder where all traces should be placed (please see Section ***Perform a Small Exploration***);
-			* ***vivadoprojs:*** C projects prepared for Vivado;
-		* ***csvs:*** folder where the results for each design point is saved as CSV;
-		* ***processedResults:*** automatic spreadsheets that provide results according to the CSV files;
-		* ***workspace:*** exploration workspace;
-		* ***vai.py:*** main python script for one design point with Lina
-		* ***vivai.py:*** main python script for one design point with Vivado
-		* ***runall.sh:*** call ```vai.py``` several times to perform small exploration with Lina;
-		* ***runallvivado.sh:*** call ```vivai.py``` several times to perform small exploration with Vivado;
-	* ***compiler.sh:*** automatic Lina compiler script (please see Section ***Automatic Compilation***);
-	* ***compiler.2_updlat.sh:*** automatic compiler script for the ```2_updlat``` version of Lina (older version from branch ```2_updlat```, see Section ***Perform a Small Exploration***).
+	* ***smalldseddr1:*** small exploration that was used to elaborate the off-chip memory model. Kept only for historical reasons.
+
+Below is a list of files specific to the `cachedaemon` version (i.e. [cachedaemon branch](https://github.com/comododragon/linaii/tree/cachedaemon)): 
+
+* ***include/profile_h***;
+	* ***SharedDynamicTrace.h:*** class that interfaces with the shared memory region for the dynamic trace;
+	* ***SharedMemoryTraceMap.h:*** class that interfaces with the shared memory region for the memory trace map;
+* ***lib***;
+	* ***Build_DDDG:*** (part of) trace and estimation library;
+		* ***SharedDynamicTrace.cpp:*** class that interfaces with the shared memory region for the dynamic trace;
+* ***misc***;
+	* ***linad:*** the lina shared memory daemon;
+		* ***Makefile:*** self-explanatory;
+		* ***linad.cpp:*** complete source code for daemon;
+		* ***run.py:*** DSE run script adapted to use linad. It should replace the original `run.py` on the [Cirith framework](https://github.com/comododragon/cirith-fpga).
+
 
 ## Troubleshooting
 
-Some problems may arise during compilation, since LLVM 3.5.0 was designed to be compiled by older versions of GCC or C/C++ standards.
+So far there are no troubleshooting related specifically to Mark 2. For a general troubleshooting, see [here](https://github.com/comododragon/lina/blob/master/README.md#troubleshooting).
 
-### "is private within this context"
 
-If you get the following error:
-```
-error: ‘{anonymous}::ChainedIncludesSource* llvm::IntrusiveRefCntPtr<{anonymous}::ChainedIncludesSource>::Obj’ is private within this context
-```
+## Acknowledgments
 
-This is caused by newer versions of GCC being more sensitive to certain C++ syntaxes. To solve this problem:
-
-1. At file ```llvm/include/llvm/ADT/IntrusiveRefCntPtr.h```, find the following line:
-	```
-		template <class X>
-		IntrusiveRefCntPtr(IntrusiveRefCntPtr<X>&& S) : Obj(S.get()) {
-			S.Obj = 0;
-		}
-	```
-2. Right before, add the following lines:
-	```
-		template <class X>
-		friend class IntrusiveRefCntPtr;
-	```
-3. Resume compilation.
-
-Source: http://lists.llvm.org/pipermail/llvm-bugs/2014-July/034874.html
-
-### Problems with Parallel Compilation
-
-After setting up all files and folder, you can compile using parallel compilation like:
-```
-make -j3
-```
-
-However, compilation might fail at some point due to broken dependencies with TableGen:
-```
-fatal error: llvm/IR/Intrinsics.gen: No such file or directory
-```
-
-One workaround for this is to compile for the first time without parallel compilation:
-```
-make
-```
-
-Then, the following compilations will work normally with ```-j2```, ```-j3```, etc. There should be no problems if you only manipulate the source files inside Lina.
-
-## TODOs
-
-* Improve the inner loop body scheduling system to better reflect certain optimisations from Vivado that are not covered by Lina, mainly when pipelining is enabled;
-* Add support to global memories (e.g. DDR);
-
-## Acknowledgements
-
-The project author would like to thank São Paulo Research Foundation (FAPESP), who funds the research where this project is inserted (Grant 2016/18937-7).
+The project author would like to thank São Paulo Research Foundation (FAPESP), who funded the research where this project was inserted (Grants 2016/18937-7 and 2018/22289-6).
 
 The opinions, hypotheses, conclusions or recommendations contained in this material are the sole responsibility of the author(s) and do not necessarily reflect FAPESP opinion.
+

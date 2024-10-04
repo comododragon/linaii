@@ -369,7 +369,7 @@ Most of the memory model is implemented on the `MemoryModel` class. Take a look 
 
 Please see [Command-line Arguments](#command-line-arguments) for information about possible optimisations. More specifically, see the following arguments: `--fno-mma`, `--f-burstaggr`, `--f-burstmix`, `--f-vec`, `--ddrsched`, and `--mma-mode`.
 
-Information about how the model works can be found in the latest publication. See [Publications](#publications).
+Information about how the model works can be found in the latest publication or thesis. See [Publications](#publications).
 
 #### DDR Scheduling Policies
 
@@ -382,7 +382,7 @@ Please refer to the [thesis](#publications) or [last published paper](#publicati
 
 #### ResMIIMemRec Calculation
 
-The memory model is also responsible for providing the calculation of ResMIIMemRec. This is the "Resource/Recurrence-Constrained Minimum Initiation Interval", constrained by dependent memory accesses. A better explanation for this calculation is presented on the latest publication. See [Publication](#publications).
+The memory model is also responsible for providing the calculation of ResMIIMemRec. This is the "Resource/Recurrence-Constrained Minimum Initiation Interval", constrained by dependent memory accesses. A better explanation for this calculation is presented on the latest publication. See [Publications](#publications).
 
 The implementation can be found at `MemoryModel::calculateResIIMemRec()`.
 
@@ -394,11 +394,11 @@ Mark 1 and Mark 2 both use gzip compression to store the dynamic trace file, but
 
 Mark 2 has a special variant present on [cachedaemon branch](https://github.com/comododragon/linaii/tree/cachedaemon) that uses shared memory and a daemon to reduce IO bottleneck during DSE.
 
-When several `lina` instances are running in parallel, competition for IO resources increase (i.e. high demand on memory trace map and dynamic trace). But, it is not uncommon that several instances access - roughly - the same memory regions. Therefore, it is benefitial cache these regions on memory, and provide access of these regions to the parallel `lina` instances.
+When several `lina` instances are running in parallel, competition for IO resources increase (i.e. high demand on memory trace map and dynamic trace). But, it is not uncommon that several instances access - roughly - the same memory regions. Therefore, it is beneficial to cache these regions on memory, and provide access of these regions to the parallel `lina` instances.
 
 This is achieved by using `linad`. It is a daemon that opens the dynamic trace and memory trace map, and caches accessed data to a shared memory region. The shared memory region is then accessible by the multiple `lina` calls, and thus IO accesses are greatly reduced.
 
-Using `linad` is benefitial when `lina` accesses really large files during exploration. Further analysis and details can be found in the latest [publication](#publication).
+Using `linad` is beneficial when `lina` accesses really large files during exploration. Further analysis and details can be found in the latest [publication](#publication).
 
 Calling `linad` is simple. Only a single argument exists and it is optional:
 

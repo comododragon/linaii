@@ -85,6 +85,11 @@ Refer to our papers for detailed descriptions of the contributions presented in 
 
 * A. Bannwart Perina, A. Silitonga, J. Becker and V. Bonato, "Fast Resource and Timing Aware Design Optimisation for High-Level Synthesis," in IEEE Transactions on Computers, doi: [10.1109/TC.2021.3112260](https://doi.org/10.1109/TC.2021.3112260).
 
+**Thesis (contains most of Mark 2 except `cachedaemon`):**
+
+* A. Bannwart Perina, "Lina: a fast design optimisation tool for software-based FPGA programming," doctoral dissertation, Universidade de São Paulo, 2022.
+	* **URL:** https://www.teses.usp.br/teses/disponiveis/55/55134/tde-23082022-101507/en.php
+
 A much simpler validation with an early version of Lina was presented in our FPT-2019 paper (see [Versions](#versions) for more information):
 
 * A. Bannwart Perina, J. Becker and V. Bonato, "Lina: Timing-Constrained High-Level Synthesis Performance Estimator for Fast DSE," 2019 International Conference on Field-Programmable Technology (ICFPT), 2019, pp. 343-346, doi: [10.1109/ICFPT47387.2019.00063](https://doi.org/10.1109/ICFPT47387.2019.00063).
@@ -365,6 +370,15 @@ Most of the memory model is implemented on the `MemoryModel` class. Take a look 
 Please see [Command-line Arguments](#command-line-arguments) for information about possible optimisations. More specifically, see the following arguments: `--fno-mma`, `--f-burstaggr`, `--f-burstmix`, `--f-vec`, `--ddrsched`, and `--mma-mode`.
 
 Information about how the model works can be found in the latest publication. See [Publications](#publications).
+
+#### DDR Scheduling Policies
+
+Lina's off-chip memory model has different scheduling policies that affects how off-chip transactions may overlap. The policy is selected via the `--ddrsched` argument. These are the options:
+
+* `0` (conservative): DDR transactions of same type (read/write) cannot overlap (i.e. once a transaction starts, it must end before others of same type can start;
+* `1` (permissive): DDR transactions can overlap if their memory spaces are disjoint.
+
+Please refer to the [thesis](#publications) or [last published paper](#publications) for actual details on the policies.
 
 #### ResMIIMemRec Calculation
 

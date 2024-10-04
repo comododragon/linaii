@@ -455,14 +455,14 @@ Commands are simple structured strings. Below is a list of supported commands:
 	* **Format:** `dXXXYYYYYYYYYYY...`;
 	* `XXX` is the size of `YYYYYYYYYYY...` string;
 	* `YYYYYYYYYYY...` is the dynamic trace file name;
-	* **Example:** `d029/path/to/dynamic_trace.gz` would load `/path/to/dynamic_trace.gz` as the dynamic trace file;
+	* **Example:** `d025/path/to/dynamic_trace.gz` would load `/path/to/dynamic_trace.gz` as the dynamic trace file;
 	* *Differently from the memory trace, the dynamic trace is not fully loaded at once*;
 * `c` command: Create a connection;
 	* **Format:** `cXXXYYYYYYYYYYY...`;
 	* `XXX` is the size of `YYYYYYYYYYY...` string;
 	* `YYYYYYYYYYY...` is the connection name;
 	* **Example:** `d015connectionName0` creates a connection with name `connectionName0`;
-	* *When a connection is created a shared memory region is created that is used as buffer for dynamic trace contents*;
+	* *When a connection is created, a shared memory region is created that is used as buffer for dynamic trace contents*;
 * `x` command: Close a connection;
 	* **Format:** `xXXXYYYYYYYYYYY...`;
 	* `XXX` is the size of `YYYYYYYYYYY...` string;
@@ -504,13 +504,20 @@ For the memory trace map, the whole memory trace map file is inserted at once to
 
 For the dynamic trace file, functionality is different. Shared memory regions are created when connections are created (i.e. `c` command) and are destroyed when connections are closed (i.e. `x` commands).
 
-These shared memory regions are composed of the following segments:
+These shared memory regions are composed of two super-segments: the **connection** and the **buffer**.
 
-* `ISINIT` (1 byte): indicates if the shared memory region is initialised with valid data;
-* `EOFFOUND` (1 byte): indicates if `EOF` was reached during dynamic trace read;
-* `LOWER` (8 bytes): indicates the lower byte cursor of the shared memory buffer;
-* `HIGHER` (8 bytes): indicates the higher byte cursor of the shared memory buffer;
-* `DATA` (`HIGHER-LOWER` bytes): the shared memory buffer.
+* **Connection**:
+	* `TRANSACTIONID` (unsigned): always points to the transaction ID from the latest processed command via IPC (see [IPC commands](#ipc) with transaction ID arguments);
+		* This can be used on `lina` to identify when a command that uses transaction ID has been fully processed;
+	* `SUCCESS` (1 byte): indicates if the last command (identified by the transaction ID) has been successfuly processed or not.
+* **Buffer**:
+	* `ISINIT` (1 byte): indicates if the shared memory region is initialised with valid data;
+	* `EOFFOUND` (1 byte): indicates if `EOF` was reached during dynamic trace read;
+	* `LOWER` (8 bytes): indicates the lower byte cursor of the shared memory buffer;
+	* `HIGHER` (8 bytes): indicates the higher byte cursor of the shared memory buffer;
+	* `DATA` (`HIGHER-LOWER` bytes): the shared memory buffer.
+
+Usually, `lina` should issue commands with unique transaction IDs (can be sequential), and then wait on the connection segments for the respective transaction ID. When it matches, `lina` should check `SUCCESS` to see if the command has been successfuly processed or not.
 
 These segments are updated when `g` commands are issued. Then, `lina` can use these segments to read the dynamic trace as if it were reading from the file itself. Please refer to `lib/Build_DDDG/SharedDynamicTrace.cpp` to see how this is actually implemented.
 

@@ -398,7 +398,7 @@ When several `lina` instances are running in parallel, competition for IO resour
 
 This is achieved by using `linad`. It is a daemon that opens the dynamic trace and memory trace map, and caches accessed data to a shared memory region. The shared memory region is then accessible by the multiple `lina` calls, and thus IO accesses are greatly reduced.
 
-Using `linad` is beneficial when `lina` accesses really large files during exploration. Further analysis and details can be found in the latest [publication](#publication).
+Using `linad` is beneficial when `lina` accesses really large files during exploration. Further analysis and details can be found in the latest [publication](#publications).
 
 Calling `linad` is simple. Only a single argument exists and it is optional:
 
@@ -410,7 +410,7 @@ The `PIPEID` argument is a positive number used to identify the IPC pipe, see [I
 
 For the memory trace, the whole file is loaded to shared memory when a load command is specified. For dynamic traces, the functionality is quite different.
 
-A single `lina` execution usually accesses very scattered regions of the dynamic trace, and it reads a small-to-moderate amount of data in each of those sparse points. On top of that, multiple `lina` calls share approximate regions. Without `linad`, explorations on really large dynamic trace files will incur in significant overheads when seeking the compressed file (i.e. `gzseek()` calls). If a dynamic trace file pointer is opened and seeked for each of the scattered regions accessed by the `lina` calls, it becomes way faster to read these regions multiple times. This eliminates multiple `gzseek()` calls that incurs in large IO overhead.
+A single `lina` execution usually accesses very scattered regions of the dynamic trace, and it reads a small-to-moderate amount of data in each of those sparse points. On top of that, multiple `lina` calls share approximate regions. Without `linad`, explorations on really large dynamic trace files will incur in significant overheads when seeking the compressed file (i.e. `gzseek()` calls). If multiple dynamic trace file pointers are opened and seeked, one for each of the scattered regions accessed by the `lina` calls, it becomes way faster to read these regions multiple times. This eliminates multiple `gzseek()` calls that incurs in large IO overhead.
 
 As an example, let's say that all `lina` calls for a single DSE results in accessing at most five scattered regions of the dynamic trace. Each of those regions are identified by a unique key inside the `lina` calls. These keys are passed to `linad`, and each key results in one dynamic trace file pointer being opened and seeked to the respective scattered region. Every time a new `lina` call wants to access something near these regions, it uses the unique keys to select the file pointer that is closest, potentially avoiding large seek calls.
 

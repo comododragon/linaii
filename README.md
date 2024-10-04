@@ -494,7 +494,7 @@ Commands are simple structured strings. Below is a list of supported commands:
 	* `ZZZZZZZZZZ` is the transaction ID (10-digit positive integer);
 	* `WWWWWWWWWW` is the proposed file cursor (10-digit positive integer);
 	* `LLLLLLLLLL` is the max. amount of data to be read starting from the proposed cursor (10-digit positive integer);
-	* **Example:** `g015connectionName0000000001100000111110000010000`: 10000 bytes are read starting from file cursor 1111, and its content are stored on the shared memory buffer from `connectionName0`.
+	* **Example:** `g015connectionName0000000001100000111110000010000`: 10000 bytes are read starting from file cursor 11111, and its content are stored on the shared memory buffer from `connectionName0`.
 
 #### Shared Memory Manager
 

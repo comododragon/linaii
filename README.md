@@ -535,6 +535,16 @@ There are three DSE infrastructures developed around Lina. See [Mark 1 README](h
 
 The latest version is using the `cirith-fpga` framework. Please refer to [cirith repository](https://github.com/comododragon/cirith-fpga) for complete examples of DSE using the Mark 2 lina.
 
+### The Script
+
+The `run.py` script located at `misc/largedse` is an update of the original `run.py` from [Mark 1](https://github.com/comododragon/lina?tab=readme-ov-file#the-script), but with some new options and support to Mark 2. The `cachedaemon` version of this repo also has a slightly modified version to support `linad`.
+
+Most of the explanation for Mark 1 also applies here. The major difference to be presented here is a new option for the JSON file:
+
+* `loopid`: an integer specifying which top-level loop from the C/C++ function that lina should explore;
+	* If the C/C++ function to be explored has multiple top-level loops, Lina must know which one it should be explored;
+	* Default is 0.
+
 
 ## Supported Platforms
 

@@ -33,6 +33,7 @@ Lina currently has two big checkpoints, Mark 1 and Mark 2. See [Versions](#versi
 	1. [Lina Daemon (linad)](#lina-daemon-linad)
 1. [Usage](#usage)
 1. [Perform an Exploration](#perform-an-exploration)
+	1. [The Script](#the-script)
 1. [Supported Platforms](#supported-platforms)
 1. [Files Description](#files-description)
 1. [Troubleshooting](#troubleshooting)

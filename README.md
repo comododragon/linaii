@@ -82,16 +82,16 @@ Refer to our papers for detailed descriptions of the contributions presented in 
 
 **Lina Mark 2 (Off-chip memory model):**
 
-* *A link to this material will be added soon*
+* A. Bannwart Perina, J. Becker and V. Bonato (in press), "Memory Aware Design Optimisation for High-Level Synthesis," in Journal of Signal Processing Systems, 2024, doi: **IN PRESS**.
+	* In press, please wait for further updates.
 
 **Lina Mark 1:**
 
-* A. Bannwart Perina, A. Silitonga, J. Becker and V. Bonato, "Fast Resource and Timing Aware Design Optimisation for High-Level Synthesis," in IEEE Transactions on Computers, doi: [10.1109/TC.2021.3112260](https://doi.org/10.1109/TC.2021.3112260).
+* A. Bannwart Perina, A. Silitonga, J. Becker and V. Bonato, "Fast Resource and Timing Aware Design Optimisation for High-Level Synthesis," in IEEE Transactions on Computers, 2021, doi: [10.1109/TC.2021.3112260](https://doi.org/10.1109/TC.2021.3112260).
 
 **Thesis (contains most of Mark 2 except `cachedaemon`):**
 
-* A. Bannwart Perina, "Lina: a fast design optimisation tool for software-based FPGA programming," doctoral dissertation, Universidade de São Paulo, 2022.
-	* **URL:** https://www.teses.usp.br/teses/disponiveis/55/55134/tde-23082022-101507/en.php
+* A. Bannwart Perina, "Lina: a fast design optimisation tool for software-based FPGA programming," doctoral dissertation, Universidade de São Paulo, 2022, doi: [10.11606/T.55.2022.tde-23082022-101507](https://doi.org/10.11606/T.55.2022.tde-23082022-101507).
 
 A much simpler validation with an early version of Lina was presented in our FPT-2019 paper (see [Versions](#versions) for more information):
 
